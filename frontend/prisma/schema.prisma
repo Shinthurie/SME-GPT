@@ -1,0 +1,89 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id                 String              @id @default(cuid())
+  fullName           String?
+  companyName        String?
+  email              String              @unique
+  password           String
+
+  resetToken         String?
+  resetTokenExpiry   DateTime?
+
+  phone              String?
+  jobTitle           String?
+  country            String?
+
+  businessUnit       String?
+  department         String?
+  primaryLanguage    String?             @default("en")
+  autoClassify       Boolean             @default(true)
+
+  twoFactorEnabled   Boolean             @default(false)
+  sessionVersion     Int                 @default(1)
+
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+
+  trustedDevices     TrustedDevice[]
+  loginVerifications LoginVerification[]
+  activityLogs       ActivityLog[]
+  uploadedFiles      UploadedFile[]
+}
+
+model TrustedDevice {
+  id          String   @id @default(cuid())
+  userId      String
+  deviceToken String   @unique
+  deviceName  String?
+  ipAddress   String?
+  userAgent   String?
+  trustedAt   DateTime @default(now())
+  lastUsedAt  DateTime @default(now())
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model LoginVerification {
+  id          String   @id @default(cuid())
+  userId      String
+  token       String   @unique
+  deviceToken String
+  deviceName  String?
+  ipAddress   String?
+  userAgent   String?
+  expiresAt   DateTime
+  used        Boolean  @default(false)
+  trusted     Boolean  @default(false)
+  approved    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model ActivityLog {
+  id        String   @id @default(cuid())
+  userId    String
+  type      String
+  content   String
+  response  String?
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model UploadedFile {
+  id        String   @id @default(cuid())
+  userId    String
+  fileName  String
+  fileUrl   String
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
