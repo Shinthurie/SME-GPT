@@ -7,6 +7,7 @@ import LanguageSwitcher from "@/components/layout/LanguageSwitcher";
 import BottomNav from "@/components/layout/BottomNav";
 import { getSession, logoutUser, SessionUser, getStoredToken } from "@/lib/auth";
 import { AppLanguage, getStoredLanguage, ui } from "@/lib/i18n";
+import { hasUnreadNotifications } from "@/lib/notifications";
 
 const BACKEND_URL ="http://127.0.0.1:8000";
 
@@ -111,7 +112,7 @@ export default function DashboardPage() {
   const [lang, setLang] = useState<AppLanguage>("en");
   const [summary, setSummary] = useState<SummaryData | null>(null);
   const [error, setError] = useState("");
-
+  const [hasUnread, setHasUnread] = useState(false);
   useEffect(() => {
     const load = async () => {
       setLang(getStoredLanguage());
@@ -163,7 +164,23 @@ export default function DashboardPage() {
 
     load();
   }, [router]);
+  
 
+  useEffect(() => {
+  const updateUnread = () => {
+    setHasUnread(hasUnreadNotifications());
+  };
+
+  updateUnread();
+
+  window.addEventListener("notifications-updated", updateUnread);
+  window.addEventListener("storage", updateUnread);
+
+  return () => {
+    window.removeEventListener("notifications-updated", updateUnread);
+    window.removeEventListener("storage", updateUnread);
+  };
+}, []);
   if (!session) return null;
 
   const t = ui[lang];
@@ -205,17 +222,27 @@ export default function DashboardPage() {
             <div className="flex flex-wrap items-center gap-2">
               <LanguageSwitcher />
 
-              <button className="flex h-10 w-10 items-center justify-center rounded-full bg-[#eef2f7] text-[#475569] transition hover:bg-[#e6ebf2]">
-                <span className="material-symbols-outlined text-[18px]">
-                  notifications
-                </span>
-              </button>
+              <button
+  onClick={() => router.push("/notifications")}
+  className="relative flex h-10 w-10 items-center justify-center rounded-full transition hover:bg-slate-100"
+>
+  <span className="material-symbols-outlined text-slate-700">
+    notifications
+  </span>
 
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#f7b092] text-white shadow-sm">
-                <span className="material-symbols-outlined text-[18px]">
-                  person
-                </span>
-              </div>
+  {hasUnread && (
+    <span className="absolute right-2 top-2 h-2.5 w-2.5 rounded-full bg-red-500" />
+  )}
+</button>
+
+              <button
+  onClick={() => router.push("/profile")}
+  className="flex h-12 w-12 items-center justify-center rounded-full bg-[#f7b092] text-white transition hover:scale-[1.03] hover:shadow-md"
+>
+  <span className="material-symbols-outlined text-[24px]">
+    person
+  </span>
+</button>
 
               <button
                 onClick={async () => {

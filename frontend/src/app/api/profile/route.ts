@@ -18,19 +18,25 @@ export async function GET() {
         email: true,
         companyName: true,
         businessUnit: true,
-        department: true,
         primaryLanguage: true,
         autoClassify: true,
         twoFactorEnabled: true,
         phone: true,
         jobTitle: true,
         country: true,
+        profileImage: true,
       },
     });
 
-    return NextResponse.json({ user: fullUser });
+    return NextResponse.json({
+      user: {
+        ...fullUser,
+        profileImage: fullUser?.profileImage || "",
+      },
+    });
   } catch (error) {
     console.error("PROFILE GET ERROR:", error);
+
     return NextResponse.json(
       { error: "Failed to load profile" },
       { status: 500 }
@@ -51,14 +57,15 @@ export async function PUT(req: Request) {
     const updatedUser = await prisma.user.update({
       where: { id: user.id },
       data: {
+        fullName: body.fullName || null,
         companyName: body.companyName || null,
         businessUnit: body.businessUnit || null,
-        department: body.department || null,
         primaryLanguage: body.primaryLanguage || "en",
         autoClassify: Boolean(body.autoClassify),
         phone: body.phone || null,
         jobTitle: body.jobTitle || null,
         country: body.country || null,
+        profileImage: body.profileImage || null,
       },
       select: {
         id: true,
@@ -66,13 +73,13 @@ export async function PUT(req: Request) {
         email: true,
         companyName: true,
         businessUnit: true,
-        department: true,
         primaryLanguage: true,
         autoClassify: true,
         twoFactorEnabled: true,
         phone: true,
         jobTitle: true,
         country: true,
+        profileImage: true,
       },
     });
 
@@ -90,6 +97,7 @@ export async function PUT(req: Request) {
     });
   } catch (error) {
     console.error("PROFILE UPDATE ERROR:", error);
+
     return NextResponse.json(
       { error: "Failed to update profile" },
       { status: 500 }

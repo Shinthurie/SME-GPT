@@ -13,7 +13,22 @@ export default function LanguageSwitcher() {
   const handleChange = (next: AppLanguage) => {
     setLang(next);
     setStoredLanguage(next);
-    window.location.reload();
+    // notify other client components about the language change so they can update immediately
+    try {
+      window.dispatchEvent(new CustomEvent("app-language-changed", { detail: next }));
+    } catch (e) {
+      // ignore if dispatch fails in some environments
+    }
+    // Also perform a short-delayed full reload so pages that rely on a reload to
+    // pick up the change (SSR or pages that don't listen to the event) will update.
+    // Keep the delay small to allow other listeners/storage to process first.
+    setTimeout(() => {
+      try {
+        window.location.reload();
+      } catch (e) {
+        // ignore
+      }
+    }, 50);
   };
 
   return (

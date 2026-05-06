@@ -7,7 +7,7 @@ import BottomNav from "@/components/layout/BottomNav";
 import LanguageSwitcher from "@/components/layout/LanguageSwitcher";
 import { AppLanguage, getStoredLanguage } from "@/lib/i18n";
 
-const BACKEND_URL ="http://127.0.0.1:8000";
+const BACKEND_URL = "http://127.0.0.1:8000";
 
 type RepoDocument = {
   document_id: string;
@@ -15,9 +15,12 @@ type RepoDocument = {
   company_name: string;
   supplier_name: string;
   date: string;
-  final_total_amount: string;
+  raw_total_amount?: string | number;
+  final_total_amount?: string | number;
+  payable_amount?: string | number;
   currency: string;
   status: string;
+  flow_type?: string;
 };
 
 type TabType = "all" | "invoice" | "po" | "dn" | "receipt";
@@ -25,6 +28,12 @@ type TabType = "all" | "invoice" | "po" | "dn" | "receipt";
 function getAuthToken() {
   if (typeof window === "undefined") return "";
   return localStorage.getItem("token") || sessionStorage.getItem("token") || "";
+}
+
+function isUsableValue(value: unknown) {
+  if (value === undefined || value === null) return false;
+  const text = String(value).trim();
+  return text !== "" && text.toUpperCase() !== "NULL";
 }
 
 function TypeIcon({ type }: { type: RepoDocument["document_type"] }) {
@@ -147,18 +156,41 @@ export default function RepositoryPage() {
     lang === "si" ? "SME-ව්‍යාපාර ලේඛන" : "SME business documents";
 
   const formatAmount = (item: RepoDocument) => {
-    if (!item.final_total_amount || item.final_total_amount === "NULL") {
+    const selectedAmount =
+      isUsableValue(item.payable_amount)
+        ? item.payable_amount
+        : isUsableValue(item.final_total_amount)
+        ? item.final_total_amount
+        : isUsableValue(item.raw_total_amount)
+        ? item.raw_total_amount
+        : null;
+
+    if (!selectedAmount) {
       return "No Amount";
     }
 
-    const currency = item.currency && item.currency !== "NULL" ? item.currency : "LKR";
-    return `${currency} ${item.final_total_amount}`;
+    const currency =
+      item.currency && item.currency !== "NULL" && String(item.currency).trim() !== ""
+        ? item.currency
+        : "LKR";
+
+    return `${currency} ${selectedAmount}`;
   };
 
   const getPartyName = (item: RepoDocument) => {
     if (item.company_name && item.company_name !== "NULL") return item.company_name;
     if (item.supplier_name && item.supplier_name !== "NULL") return item.supplier_name;
     return "Unknown Party";
+  };
+
+  const getPartyLabel = (item: RepoDocument) => {
+    if (item.document_type === "po") return "Client";
+    if (item.document_type === "dn") return "Receiver";
+
+    if (String(item.flow_type || "").toLowerCase() === "receivable") return "Customer";
+    if (String(item.flow_type || "").toLowerCase() === "payable") return "Vendor";
+
+    return "Vendor";
   };
 
   return (
@@ -244,13 +276,7 @@ export default function RepositoryPage() {
 
                       <div className="mt-2 grid gap-3 sm:grid-cols-2">
                         <div>
-                          <p className="text-[11px] text-[#94a3b8]">
-                            {item.document_type === "po"
-                              ? "Client"
-                              : item.document_type === "dn"
-                              ? "Receiver"
-                              : "Vendor"}
-                          </p>
+                          <p className="text-[11px] text-[#94a3b8]">{getPartyLabel(item)}</p>
                           <p className="text-[13px] text-[#334155]">{getPartyName(item)}</p>
                         </div>
 

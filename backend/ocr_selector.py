@@ -12,7 +12,10 @@ def score_ocr_text(text: str) -> float:
 
     keywords = [
         "date", "order", "invoice", "receipt", "total",
-        "cash", "amount", "rs", "qty", "quantity", "po", "dn"
+        "cash", "amount", "rs", "qty", "quantity", "po", "dn",
+        "bill", "balance", "subtotal", "discount", "tax",
+        "payment", "paid", "due", "credit", "debit",
+        "grand total", "amount due", "supplier", "customer"
     ]
     lower_text = clean.lower()
     for kw in keywords:
@@ -21,6 +24,16 @@ def score_ocr_text(text: str) -> float:
 
     number_matches = re.findall(r'\d+', clean)
     score += min(len(number_matches) * 0.5, 5.0)
+
+    sinhala_chars = re.findall(r'[\u0D80-\u0DFF]', clean)
+    if len(sinhala_chars) > 10:
+        score += 2.0
+
+    money_patterns = re.findall(r'(rs\.?|lkr|\d+\.\d{2})', lower_text)
+    score += min(len(money_patterns) * 0.4, 4.0)
+
+    page_markers = re.findall(r'=== page \d+ ===', lower_text)
+    score += min(len(page_markers) * 0.8, 3.0)
 
     html_tags = re.findall(r"<[^>]+>", clean)
     score -= len(html_tags) * 1.2

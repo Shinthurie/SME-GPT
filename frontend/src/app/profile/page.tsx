@@ -5,20 +5,34 @@ import { useRouter } from "next/navigation";
 import MobileShell from "@/components/layout/MobileShell";
 import BottomNav from "@/components/layout/BottomNav";
 import LanguageSwitcher from "@/components/layout/LanguageSwitcher";
-import { getSession, logoutUser, SessionUser } from "@/lib/auth";
-import { AppLanguage, getStoredLanguage, ui } from "@/lib/i18n";
-import { setStoredLanguage } from "@/lib/i18n";
+import { getSession, logoutUser, SessionUser, getStoredToken } from "@/lib/auth";
+import { AppLanguage, getStoredLanguage, ui, setStoredLanguage } from "@/lib/i18n";
+
+const BACKEND_URL = "http://127.0.0.1:8000";
 
 type ProfileData = {
+  fullName: string;
+  profileImage: string;
   companyName: string;
   businessUnit: string;
-  department: string;
   primaryLanguage: string;
   autoClassify: boolean;
   twoFactorEnabled: boolean;
   phone: string;
   jobTitle: string;
   country: string;
+};
+
+type QueryHistoryItem = {
+  id: string;
+  company_name: string;
+  question: string;
+  answer: string;
+  explanation: string;
+  metrics: Record<string, any>;
+  evidence: any[];
+  source_file: string;
+  created_at: string;
 };
 
 function SectionTitle({
@@ -76,7 +90,7 @@ function FieldRow({
   return (
     <div className="grid gap-2 px-4 py-4 sm:grid-cols-[180px_minmax(0,1fr)] sm:items-center">
       <p className="text-[13px] text-[#64748b]">{label}</p>
-      <p className="text-[15px] font-semibold text-[#0f172a] break-words">
+      <p className="text-[15px] break-words font-semibold text-[#0f172a]">
         {value || "-"}
       </p>
     </div>
@@ -180,21 +194,25 @@ export default function ProfilePage() {
   const [lang, setLang] = useState<AppLanguage>("en");
   const [session, setSession] = useState<SessionUser | null>(null);
   const [form, setForm] = useState<ProfileData>({
-    companyName: "",
-    businessUnit: "",
-    department: "",
-    primaryLanguage: "en",
-    autoClassify: true,
-    twoFactorEnabled: false,
-    phone: "",
-    jobTitle: "",
-    country: "",
-  });
+  fullName: "",
+  profileImage: "",
+  companyName: "",
+  businessUnit: "",
+  primaryLanguage: "en",
+  autoClassify: true,
+  twoFactorEnabled: false,
+  phone: "",
+  jobTitle: "",
+  country: "",
+});
   const [initialForm, setInitialForm] = useState<ProfileData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [historyLoading, setHistoryLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
+  const [historyError, setHistoryError] = useState("");
   const [isEditing, setIsEditing] = useState(false);
+  const [queryHistory, setQueryHistory] = useState<QueryHistoryItem[]>([]);
 
   useEffect(() => {
     const load = async () => {
@@ -208,21 +226,35 @@ export default function ProfilePage() {
       setSession(currentSession);
 
       try {
-        const res = await fetch("/api/profile");
+        const res = await fetch("/api/profile", {
+          cache: "no-store",
+        });
         const data = await res.json();
 
         if (res.ok && data.user) {
           const loadedData: ProfileData = {
-            companyName: data.user.companyName || "",
-            businessUnit: data.user.businessUnit || "",
-            department: data.user.department || "",
-            primaryLanguage: data.user.primaryLanguage || "en",
-            autoClassify: data.user.autoClassify ?? true,
-            twoFactorEnabled: data.user.twoFactorEnabled ?? false,
-            phone: data.user.phone || "",
-            jobTitle: data.user.jobTitle || "",
-            country: data.user.country || "",
-          };
+  fullName: data.user.fullName || currentSession.fullName || "",
+  profileImage: data.user.profileImage || "",
+  companyName: data.user.companyName || "",
+  businessUnit: data.user.businessUnit || "",
+  primaryLanguage: data.user.primaryLanguage || "en",
+  autoClassify: data.user.autoClassify ?? true,
+  twoFactorEnabled: data.user.twoFactorEnabled ?? false,
+  phone: data.user.phone || "",
+  jobTitle: data.user.jobTitle || "",
+  country: data.user.country || "",
+};
+
+          // If the app language was changed using the header switcher, prefer showing
+          // the stored app language in the UI so the Primary Language select matches
+          // the rest of the app. Do not overwrite if the user is actively editing.
+          try {
+            if (!isEditing) {
+              loadedData.primaryLanguage = getStoredLanguage();
+            }
+          } catch (e) {
+            // ignore
+          }
 
           setForm(loadedData);
           setInitialForm(loadedData);
@@ -237,12 +269,98 @@ export default function ProfilePage() {
     load();
   }, [router]);
 
+  // Listen for app-wide language changes (dispatched by LanguageSwitcher)
+  useEffect(() => {
+    const onAppLangChanged = (e: Event) => {
+      const next = (e as CustomEvent<AppLanguage>).detail as AppLanguage;
+      if (!next) return;
+
+      // update local UI language
+      setLang(next);
+
+      // if user is not editing profile, reflect the change in the primaryLanguage field
+      setForm((prev) => (isEditing ? prev : { ...prev, primaryLanguage: next }));
+    };
+
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === "app-language" && e.newValue) {
+        const next = (e.newValue as AppLanguage) || getStoredLanguage();
+        setLang(next);
+        setForm((prev) => (isEditing ? prev : { ...prev, primaryLanguage: next }));
+      }
+    };
+
+    window.addEventListener("app-language-changed", onAppLangChanged as EventListener);
+    window.addEventListener("storage", onStorage);
+
+    return () => {
+      window.removeEventListener("app-language-changed", onAppLangChanged as EventListener);
+      window.removeEventListener("storage", onStorage);
+    };
+  }, [isEditing]);
+
+  useEffect(() => {
+    const loadQueryHistory = async () => {
+      const token = getStoredToken();
+
+      if (!token) {
+        setHistoryLoading(false);
+        return;
+      }
+
+      try {
+        setHistoryError("");
+
+        const res = await fetch(`${BACKEND_URL}/query-history`, {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+          cache: "no-store",
+        });
+
+        if (res.status === 401) {
+          localStorage.removeItem("token");
+          sessionStorage.removeItem("token");
+          router.push("/login");
+          return;
+        }
+
+        const data = await res.json();
+
+        if (!res.ok || !data.success) {
+          throw new Error(data.message || "Failed to load query history.");
+        }
+
+        setQueryHistory(data.history || []);
+      } catch (error: any) {
+        console.error("QUERY HISTORY LOAD ERROR:", error);
+        setHistoryError(error.message || "Failed to load query history.");
+      } finally {
+        setHistoryLoading(false);
+      }
+    };
+
+    loadQueryHistory();
+  }, [router]);
+
   const updateField = (key: keyof ProfileData, value: string | boolean) => {
     setForm((prev) => ({
       ...prev,
       [key]: value,
     }));
   };
+  const handleProfileImageChange = (file: File | null) => {
+  if (!file) return;
+
+  const reader = new FileReader();
+
+  reader.onloadend = () => {
+    updateField("profileImage", reader.result as string);
+  };
+
+  reader.readAsDataURL(file);
+};
 
   const handleEdit = () => {
     setMessage("");
@@ -267,16 +385,17 @@ export default function ProfilePage() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          companyName: form.companyName,
-          businessUnit: form.businessUnit,
-          department: form.department,
-          primaryLanguage: form.primaryLanguage,
-          autoClassify: form.autoClassify,
-          phone: form.phone,
-          jobTitle: form.jobTitle,
-          country: form.country,
-        }),
+       body: JSON.stringify({
+  fullName: form.fullName,
+  profileImage: form.profileImage,
+  companyName: form.companyName,
+  businessUnit: form.businessUnit,
+  primaryLanguage: form.primaryLanguage,
+  autoClassify: form.autoClassify,
+  phone: form.phone,
+  jobTitle: form.jobTitle,
+  country: form.country,
+}),
       });
 
       const data = await res.json();
@@ -286,34 +405,23 @@ export default function ProfilePage() {
         return;
       }
 
-      setForm((prev) => ({
-        ...prev,
-        companyName: data.user.companyName || "",
-        businessUnit: data.user.businessUnit || "",
-        department: data.user.department || "",
-        primaryLanguage: data.user.primaryLanguage || "en",
-        autoClassify: data.user.autoClassify ?? true,
-        phone: data.user.phone || "",
-        jobTitle: data.user.jobTitle || "",
-        country: data.user.country || "",
-      }));
+      const updatedData: ProfileData = {
+  fullName: data.user.fullName || form.fullName,
+  profileImage: data.user.profileImage || form.profileImage,
+  companyName: data.user.companyName || "",
+  businessUnit: data.user.businessUnit || "",
+  primaryLanguage: data.user.primaryLanguage || "en",
+  autoClassify: data.user.autoClassify ?? true,
+  twoFactorEnabled: form.twoFactorEnabled,
+  phone: data.user.phone || "",
+  jobTitle: data.user.jobTitle || "",
+  country: data.user.country || "",
+};
 
-      setInitialForm((prev) =>
-        prev
-          ? {
-              ...prev,
-              companyName: data.user.companyName || "",
-              businessUnit: data.user.businessUnit || "",
-              department: data.user.department || "",
-              primaryLanguage: data.user.primaryLanguage || "en",
-              autoClassify: data.user.autoClassify ?? true,
-              phone: data.user.phone || "",
-              jobTitle: data.user.jobTitle || "",
-              country: data.user.country || "",
-            }
-          : prev
-      );
-      setStoredLanguage(form.primaryLanguage as AppLanguage);
+      setForm(updatedData);
+      setInitialForm(updatedData);
+      setStoredLanguage(updatedData.primaryLanguage as AppLanguage);
+      setLang(updatedData.primaryLanguage as AppLanguage);
       setMessage("Profile updated successfully");
       setIsEditing(false);
     } catch (error) {
@@ -359,6 +467,18 @@ export default function ProfilePage() {
     }
   };
 
+  const handleLogout = async () => {
+    try {
+      await logoutUser();
+      sessionStorage.removeItem("query_result");
+      sessionStorage.removeItem("selected_query_history");
+      router.push("/login");
+    } catch (error) {
+      console.error("LOGOUT ERROR:", error);
+      router.push("/login");
+    }
+  };
+
   if (!session || loading) return null;
 
   const t = ui[lang];
@@ -378,29 +498,64 @@ export default function ProfilePage() {
             <div className="flex flex-wrap items-center justify-between gap-4">
               <div className="flex items-center gap-4">
                 <div className="relative">
-                  <div className="flex h-16 w-16 items-center justify-center rounded-full bg-[#f7b092] text-white">
-                    <span className="material-symbols-outlined text-[28px]">
-                      person
-                    </span>
-                  </div>
-                  <div className="absolute -bottom-1 -right-1 flex h-7 w-7 items-center justify-center rounded-full bg-[#2563ff] text-white shadow">
-                    <span className="material-symbols-outlined text-[14px]">
-                      verified
-                    </span>
-                  </div>
-                </div>
+  <label className="group relative flex h-16 w-16 cursor-pointer items-center justify-center overflow-hidden rounded-full bg-[#f7b092] text-white">
+    {form.profileImage ? (
+      <img
+        src={form.profileImage}
+        alt="Profile"
+        className="h-full w-full object-cover"
+      />
+    ) : (
+      <span className="material-symbols-outlined text-[28px]">
+        person
+      </span>
+    )}
 
-                <div className="min-w-0">
-                  <h2 className="truncate text-[18px] font-bold text-[#0f172a]">
-                    {session.fullName}
-                  </h2>
-                  <p className="truncate text-[13px] text-[#64748b]">
-                    {session.email}
-                  </p>
-                  <span className="mt-2 inline-block rounded-full bg-[#e0edff] px-3 py-1 text-[10px] font-bold text-[#2563ff]">
-                    {t.adminAccess}
-                  </span>
-                </div>
+    {isEditing && (
+      <div className="absolute inset-0 flex items-center justify-center bg-black/35 opacity-0 transition group-hover:opacity-100">
+        <span className="material-symbols-outlined text-[20px] text-white">
+          photo_camera
+        </span>
+      </div>
+    )}
+
+    {isEditing && (
+      <input
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={(e) =>
+          handleProfileImageChange(e.target.files?.[0] || null)
+        }
+      />
+    )}
+  </label>
+</div>
+
+<div className="min-w-0">
+  {isEditing ? (
+  <div className="flex flex-col gap-2">
+    <label className="text-[12px] font-medium text-[#64748b]">
+      User Name
+    </label>
+
+    <input
+      value={form.fullName}
+      onChange={(e) => updateField("fullName", e.target.value)}
+      placeholder="User name"
+      className="h-10 w-full max-w-[260px] rounded-xl border border-slate-200 bg-white px-3 text-[15px] font-bold text-[#0f172a] outline-none focus:border-[#2563ff] focus:ring-2 focus:ring-[#2563ff]/15"
+    />
+  </div>
+) : (
+    <h2 className="truncate text-[18px] font-bold text-[#0f172a]">
+      {form.fullName || session.fullName}
+    </h2>
+  )}
+
+  <p className="mt-1 truncate text-[13px] text-[#64748b]">
+    {session.email}
+  </p>
+</div>
               </div>
 
               {!isEditing ? (
@@ -450,13 +605,7 @@ export default function ProfilePage() {
                   onChange={(value) => updateField("businessUnit", value)}
                   placeholder="Business Unit"
                 />
-                <div className="border-t" />
-                <InputRow
-                  label={t.department}
-                  value={form.department}
-                  onChange={(value) => updateField("department", value)}
-                  placeholder="Department"
-                />
+            
                 <div className="border-t" />
                 <InputRow
                   label="Phone"
@@ -484,8 +633,7 @@ export default function ProfilePage() {
                 <FieldRow label={t.organization} value={form.companyName} />
                 <div className="border-t" />
                 <FieldRow label={t.businessUnit} value={form.businessUnit} />
-                <div className="border-t" />
-                <FieldRow label={t.department} value={form.department} />
+
                 <div className="border-t" />
                 <FieldRow label="Phone" value={form.phone} />
                 <div className="border-t" />
@@ -496,48 +644,67 @@ export default function ProfilePage() {
             )}
           </div>
 
-<SectionTitle>{t.documentProcessing}</SectionTitle>
-<div className="overflow-hidden rounded-[20px] border border-slate-200 bg-white shadow-sm">
-<SelectRow
-  label={t.primaryLanguage}
-  value={form.primaryLanguage}
-  onChange={(value) => {
-    const nextLang: AppLanguage = value === "si" ? "si" : "en";
-
-    updateField("primaryLanguage", nextLang);
-    setLang(nextLang);
-    setStoredLanguage(nextLang);
-
-    setForm((prev) => ({
-      ...prev,
-      primaryLanguage: nextLang,
-    }));
-  }}
-  options={[
-    { label: "English", value: "en" },
-    { label: "සිංහල", value: "si" },
-  ]}
-/>
-  <div className="border-t" />
-  <div className="flex items-center justify-between px-5 py-4">
-    <div>
-      <p className="text-[13px] text-[#64748b]">{t.autoClassify}</p>
-      <p className="text-[15px] font-semibold text-[#0f172a]">
-        Invoice / PO / DN
-      </p>
-    </div>
-    <Toggle
-      enabled={form.autoClassify}
-      onClick={() => updateField("autoClassify", !form.autoClassify)}
-    />
-  </div>
-</div>
+          <SectionTitle>{t.documentProcessing}</SectionTitle>
+          <div className="overflow-hidden rounded-[20px] border border-slate-200 bg-white shadow-sm">
+            <SelectRow
+              label={t.primaryLanguage}
+              value={form.primaryLanguage}
+              onChange={(value) => {
+                const nextLang: AppLanguage = value === "si" ? "si" : "en";
+                updateField("primaryLanguage", nextLang);
+                setLang(nextLang);
+                setStoredLanguage(nextLang);
+                setForm((prev) => ({
+                  ...prev,
+                  primaryLanguage: nextLang,
+                }));
+              }}
+              options={[
+                { label: "English", value: "en" },
+                { label: "සිංහල", value: "si" },
+              ]}
+            />
+            <div className="border-t" />
+            <div className="flex items-center justify-between px-5 py-4">
+              <div>
+                <p className="text-[13px] text-[#64748b]">{t.autoClassify}</p>
+                <p className="text-[15px] font-semibold text-[#0f172a]">
+                  Invoice / PO / DN
+                </p>
+              </div>
+              <Toggle
+                enabled={form.autoClassify}
+                onClick={() => updateField("autoClassify", !form.autoClassify)}
+              />
+            </div>
+          </div>
 
           {message && (
             <p className="mt-4 text-center text-[13px] text-[#2563ff]">
               {message}
             </p>
           )}
+
+          <SectionTitle>Query History</SectionTitle>
+          <div className="overflow-hidden rounded-[20px] border border-slate-200 bg-white shadow-sm">
+            <ActionRow
+              icon="history"
+              title="Query History"
+              subtitle={
+                historyLoading
+                  ? "Loading query history..."
+                  : historyError
+                  ? historyError
+                  : `${queryHistory.length} saved queries`
+              }
+              onClick={() => router.push("/profile/query-history")}
+              right={
+                <span className="material-symbols-outlined text-[#94a3b8]">
+                  chevron_right
+                </span>
+              }
+            />
+          </div>
 
           <SectionTitle danger>{t.corporateSecurity}</SectionTitle>
           <div className="overflow-hidden rounded-[20px] border border-slate-200 bg-white shadow-sm">
@@ -590,10 +757,7 @@ export default function ProfilePage() {
           </div>
 
           <button
-            onClick={async () => {
-              await logoutUser();
-              router.push("/login");
-            }}
+            onClick={handleLogout}
             className="mt-8 w-full rounded-[20px] border border-red-300 bg-[#fff5f5] py-4 text-[15px] font-bold text-red-600 sm:text-[16px]"
           >
             {t.signOut}

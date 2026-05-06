@@ -10,24 +10,23 @@ from colab_ocr_client import send_images_to_colab_ocr
 from ocr_selector import select_best_ocr_version
 from llm_correction import llm_refine_text, clean_ocr_text
 from ocr_to_json_extractor import extract_structured_json_from_text
+from arithmetic_validator import validate_arithmetic
+from correction_engine import correct_extracted_fields
+from local_surya_ocr_client import run_local_surya_ocr
 
-# =========================
-# CONFIG
-# =========================
-COLAB_OCR_URL ="https://catechizable-uncongruously-armani.ngrok-free.dev/"
-
-POPPLER_PATH = r"C:\Users\ASUS\Downloads\Release-25.12.0-0\poppler-25.12.0\Library\bin"
+COLAB_OCR_URL = os.getenv("COLAB_OCR_URL", "https://catechizable-uncongruously-armani.ngrok-free.dev/").strip()
+POPPLER_PATH = os.getenv(
+    "POPPLER_PATH",
+    r"C:\Users\ASUS\Downloads\Release-25.12.0-0\poppler-25.12.0\Library\bin"
+)
 
 TEMP_BASE = Path("temp_processing")
 RAW_DIR = TEMP_BASE / "raw"
-ORIG_DIR = TEMP_BASE / "pages" / "orig"
-P_DIR = TEMP_BASE / "pages" / "P"
-M_DIR = TEMP_BASE / "pages" / "M"
+PAGES_DIR = TEMP_BASE / "pages"
+ORIG_DIR = PAGES_DIR / "orig"
+P_DIR = PAGES_DIR / "P"
+M_DIR = PAGES_DIR / "M"
 
-
-# =========================
-# DIRECTORY HELPERS
-# =========================
 def ensure_dirs():
     for d in [RAW_DIR, ORIG_DIR, P_DIR, M_DIR]:
         d.mkdir(parents=True, exist_ok=True)
@@ -57,37 +56,27 @@ def _safe_remove_dir_contents(folder: Path):
 
 
 def clean_temp_files():
-    print("[PIPELINE] Cleaning temp files...", flush=True)
     ensure_dirs()
     for folder in [RAW_DIR, ORIG_DIR, P_DIR, M_DIR]:
         _safe_remove_dir_contents(folder)
-    print("[PIPELINE] Temp folders ready", flush=True)
 
 
-# =========================
-# UPLOAD + STANDARDIZATION
-# =========================
 def save_uploaded_file(upload_path: str) -> Path:
-    print("[PIPELINE] Step 1: Saving uploaded file", flush=True)
-    clean_temp_files()
+    ensure_dirs()
 
     src = Path(upload_path)
     if not src.exists():
         raise FileNotFoundError(f"Uploaded file not found: {upload_path}")
 
+    # Clean only old files if needed, but do not wipe everything on every upload
     dst = RAW_DIR / src.name
     shutil.copy(src, dst)
-
-    print(f"[PIPELINE] Raw file saved to: {dst}", flush=True)
     return dst
 
-
-def standardize_to_image(raw_file_path: Path) -> Path:
-    print("[PIPELINE] Step 2: Standardizing input to image", flush=True)
-    output_path = ORIG_DIR / "page_001.png"
+def standardize_to_images(raw_file_path: Path) -> list[Path]:
+    output_paths: list[Path] = []
 
     if raw_file_path.suffix.lower() == ".pdf":
-        print("[PIPELINE] Detected PDF. Converting first page to image...", flush=True)
         if POPPLER_PATH:
             images = convert_from_path(str(raw_file_path), dpi=300, poppler_path=POPPLER_PATH)
         else:
@@ -96,100 +85,154 @@ def standardize_to_image(raw_file_path: Path) -> Path:
         if not images:
             raise ValueError("No pages found in uploaded PDF.")
 
-        images[0].save(output_path, "PNG")
-        print(f"[PIPELINE] PDF converted to image: {output_path}", flush=True)
+        for i, image in enumerate(images, start=1):
+            output_path = ORIG_DIR / f"page_{i:03d}.png"
+            image.save(output_path, "PNG")
+            output_paths.append(output_path)            
     else:
+        output_path = ORIG_DIR / "page_001.png"
         shutil.copy(raw_file_path, output_path)
-        print(f"[PIPELINE] Image copied as standardized image: {output_path}", flush=True)
+        output_paths.append(output_path)
 
-    return output_path
+    return output_paths
 
+def preprocess_images(orig_paths: list[Path]) -> list[dict]:
+    processed_pages = []
+    for orig_path in orig_paths:
+        filename = orig_path.name
+        p_path = P_DIR / filename
+        m_path = M_DIR / filename
 
-# =========================
-# PREPROCESSING
-# =========================
-def preprocess_image(orig_path: Path):
-    print("[PIPELINE] Step 3: Creating OCR image variants (orig, P, M)", flush=True)
-    p_path = P_DIR / "page_001.png"
-    m_path = M_DIR / "page_001.png"
+        img = cv2.imread(str(orig_path))
+        if img is None:
+            raise ValueError(f"Failed to read standardized image: {orig_path}")
 
-    img = cv2.imread(str(orig_path))
-    if img is None:
-        raise ValueError("Failed to read standardized image.")
+        h, w = img.shape[:2]
 
-    h, w = img.shape[:2]
-    print(f"[PIPELINE] Original image size: {w}x{h}", flush=True)
+        target_w = 1600
+        if w < target_w:
+            scale = target_w / w
+            img = cv2.resize(
+                img,
+                (int(w * scale), int(h * scale)),
+                interpolation=cv2.INTER_CUBIC
+            )
 
-    target_w = 1200
-    if w < target_w:
-        scale = target_w / w
-        img = cv2.resize(
-            img,
-            (int(w * scale), int(h * scale)),
-            interpolation=cv2.INTER_CUBIC
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+
+        # Printed-friendly version
+        den = cv2.fastNlMeansDenoising(gray, None, 12, 7, 21)
+        p_img = cv2.adaptiveThreshold(
+            den,
+            255,
+            cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+            cv2.THRESH_BINARY,
+            31,
+            9
         )
-        print(f"[PIPELINE] Image upscaled to width {target_w}", flush=True)
+        cv2.imwrite(str(p_path), p_img)
 
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        # Messy-document-friendly version
+        m_img = cv2.bilateralFilter(gray, 9, 60, 60)
+        m_img = cv2.normalize(m_img, None, 0, 255, cv2.NORM_MINMAX)
+        cv2.imwrite(str(m_path), m_img)
 
-    den = cv2.fastNlMeansDenoising(gray, None, 10, 7, 21)
-    p_img = cv2.adaptiveThreshold(
-        den,
-        255,
-        cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-        cv2.THRESH_BINARY,
-        35,
-        11
-    )
-    cv2.imwrite(str(p_path), p_img)
+        processed_pages.append({
+            "page_name": filename,
+            "orig": str(orig_path),
+            "P": str(p_path),
+            "M": str(m_path),
+        })
 
-    m_img = cv2.bilateralFilter(gray, 7, 50, 50)
-    m_img = cv2.normalize(m_img, None, 0, 255, cv2.NORM_MINMAX)
-    cv2.imwrite(str(m_path), m_img)
+    return processed_pages
 
-    print(f"[PIPELINE] OCR versions saved:", flush=True)
-    print(f"           orig -> {orig_path}", flush=True)
-    print(f"           P    -> {p_path}", flush=True)
-    print(f"           M    -> {m_path}", flush=True)
+
+def _merge_page_texts(page_entries: list) -> str:
+    merged_parts = []
+
+    for idx, page_entry in enumerate(page_entries, start=1):
+        if isinstance(page_entry, dict):
+            page_text = str(page_entry.get("text", "") or "").strip()
+        else:
+            page_text = str(page_entry or "").strip()
+
+        if not page_text:
+            continue
+
+        merged_parts.append(f"=== PAGE {idx} ===\n{page_text}")
+
+    return "\n\n".join(merged_parts).strip()
+
+
+def _normalize_multi_page_ocr_result(ocr_result: dict) -> dict:
+    versions = ocr_result.get("versions", {}) or {}
+    failures = ocr_result.get("failures", {}) or {}
+    normalized_versions = {}
+
+    for version_name, version_data in versions.items():
+        if isinstance(version_data, dict):
+            pages = version_data.get("pages", []) or []
+            merged_text = version_data.get("text", "") or ""
+
+            if pages and not merged_text.strip():
+                merged_text = _merge_page_texts(pages)
+            elif pages and merged_text.strip():
+                merged_text = merged_text.strip()
+            else:
+                merged_text = str(merged_text or "").strip()
+
+            normalized_versions[version_name] = {
+                "text": merged_text,
+                "pages": pages,
+            }
+
+        elif isinstance(version_data, list):
+            merged_text = _merge_page_texts(version_data)
+            normalized_versions[version_name] = {
+                "text": merged_text,
+                "pages": version_data,
+            }
+        else:
+            normalized_versions[version_name] = {
+                "text": str(version_data or "").strip(),
+                "pages": [],
+            }
 
     return {
-        "orig": str(orig_path),
-        "P": str(p_path),
-        "M": str(m_path),
+        "versions": normalized_versions,
+        "failures": failures,
     }
-
-
-# =========================
-# OCR + LLM PREVIEW
-# =========================
-def build_preview_from_versions(version_paths: dict) -> dict:
-    print("[PIPELINE] Step 4: Sending versions to OCR service", flush=True)
+def build_preview_from_versions(version_paths: list[dict]) -> dict:
     final_colab_url = COLAB_OCR_URL or os.getenv("COLAB_OCR_URL", "").strip()
 
     if not final_colab_url:
         raise ValueError("COLAB_OCR_URL is not set. Please set it before running the backend.")
 
-    ocr_result = send_images_to_colab_ocr(
-        orig_path=version_paths["orig"],
-        p_path=version_paths["P"],
-        m_path=version_paths["M"],
-        colab_url=final_colab_url,
-    )
+    try:
+        print("[PIPELINE] Trying Colab OCR...", flush=True)
 
-    print("[PIPELINE] Step 5: OCR response received", flush=True)
+        ocr_result = send_images_to_colab_ocr(
+            processed_pages=version_paths,
+            colab_url=final_colab_url,
+        )
 
-    versions = ocr_result.get("versions", {})
-    failures = ocr_result.get("failures", {})
+        print("[PIPELINE] Colab OCR completed", flush=True)
+
+    except Exception as e:
+        print(f"[PIPELINE] Colab OCR failed: {e}", flush=True)
+        print("[PIPELINE] Falling back to local Surya OCR...", flush=True)
+
+        ocr_result = run_local_surya_ocr(version_paths)
+
+        print("[PIPELINE] Local Surya OCR completed", flush=True)
+
+    normalized_ocr = _normalize_multi_page_ocr_result(ocr_result)
+    versions = normalized_ocr.get("versions", {})
+    failures = normalized_ocr.get("failures", {})
 
     if not versions:
         raise ValueError(f"No OCR versions returned from Colab OCR API. Failures: {failures}")
 
-    print("\n[PIPELINE] Returned OCR versions:", flush=True)
-    for k, v in versions.items():
-        preview = v.get("text", "")[:250] if isinstance(v, dict) else str(v)[:250]
-        print(f"  - {k} preview: {preview}", flush=True)
-
-    print("[PIPELINE] Step 6: Selecting best OCR version", flush=True)
     selection = select_best_ocr_version(versions)
 
     selected_version = selection["selected_version"]
@@ -198,19 +241,16 @@ def build_preview_from_versions(version_paths: dict) -> dict:
     if not selected_text.strip():
         raise ValueError("Selected OCR text is empty.")
 
+    print("[PIPELINE] OCR selection finished", flush=True)
     selected_text = clean_ocr_text(selected_text)
 
-    print("\n[PIPELINE] Local OCR selection complete.", flush=True)
-    print(f"[PIPELINE] Selected version: {selected_version}", flush=True)
-    print(f"[PIPELINE] Scores: {selection['scores']}", flush=True)
-    print("[PIPELINE] OCR text preview:", flush=True)
-    print(selected_text[:500], flush=True)
-
-    print("\n[PIPELINE] Step 7: Sending selected OCR text to correction LLM...", flush=True)
+    print("[PIPELINE] Starting LLM correction...", flush=True)
     corrected_text = llm_refine_text(selected_text)
-
-    print("\n[PIPELINE] Step 8: Sending corrected text to extraction LLM...", flush=True)
-    extracted_json = extract_structured_json_from_text(corrected_text)
+    print("[PIPELINE] LLM correction finished", flush=True)
+ 
+    print("[PIPELINE] Starting structured extraction...", flush=True)
+    extracted_json = extract_structured_json_from_text(selected_text)
+    print("[PIPELINE] Structured extraction finished", flush=True)
 
     extracted_json["document_type"] = str(
         extracted_json.get("document_type", "unknown")
@@ -219,41 +259,54 @@ def build_preview_from_versions(version_paths: dict) -> dict:
     extracted_json["corrected_text"] = corrected_text
     extracted_json["raw_text"] = selected_text
     extracted_json["ocr_selected_version"] = selected_version
-    extracted_json["ocr_scores"] = selection["scores"]
+    extracted_json["ocr_scores"] = selection.get("scores", {})
     extracted_json["ocr_failures"] = failures
 
-    print("[PIPELINE] Step 9: Preview build complete", flush=True)
+    extracted_json = correct_extracted_fields(extracted_json)
+
+    arithmetic_validation = validate_arithmetic(extracted_json)
+    extracted_json["arithmetic_validation"] = arithmetic_validation
+    extracted_json["arithmetic_status"] = arithmetic_validation.get("status", "not_checked")
+
+    recommended = arithmetic_validation.get("recommended", {}) or {}
+
+    if extracted_json["arithmetic_status"] == "mismatch":
+        # Keep raw total as extracted OCR value
+        if recommended.get("final_total_amount") is not None:
+            extracted_json["final_total_amount"] = recommended["final_total_amount"]
+
+        if recommended.get("payable_amount") is not None:
+            extracted_json["payable_amount"] = recommended["payable_amount"]
 
     return {
         "selected_ocr_version": selected_version,
         "selected_ocr_text": selected_text,
         "corrected_text": corrected_text,
-        "extracted_fields": extracted_json
+        "extracted_fields": extracted_json,
+        "ocr_scores": selection.get("scores", {}),
+        "ocr_failures": failures,
     }
 
-
-# =========================
-# FULL PIPELINE (PREVIEW ONLY)
-# =========================
 def process_uploaded_document(upload_path: str):
-    print("\n----------------------------------------", flush=True)
-    print("[PIPELINE] FULL DOCUMENT PIPELINE START", flush=True)
-    print(f"[PIPELINE] Input path: {upload_path}", flush=True)
-
     raw_file = save_uploaded_file(upload_path)
-    orig_img = standardize_to_image(raw_file)
-    versions = preprocess_image(orig_img)
-    preview = build_preview_from_versions(versions)
+    orig_images = standardize_to_images(raw_file)
+    processed_pages = preprocess_images(orig_images)
 
-    print("[PIPELINE] FULL DOCUMENT PIPELINE END", flush=True)
-    print("----------------------------------------\n", flush=True)
+    if not processed_pages:
+        raise ValueError("No processed pages were created.")
+
+    preview = build_preview_from_versions(processed_pages)
 
     return {
         "uploaded_file": str(raw_file),
-        "standard_image": str(orig_img),
-        "preprocessed_versions": versions,
+        "standard_image": processed_pages[0]["orig"],
+        "standard_images": [p["orig"] for p in processed_pages],
+        "preprocessed_versions": processed_pages,
+        "page_count": len(processed_pages),
         "selected_ocr_version": preview["selected_ocr_version"],
         "selected_ocr_text": preview["selected_ocr_text"],
         "corrected_text": preview["corrected_text"],
+        "ocr_scores": preview.get("ocr_scores", {}),
+        "ocr_failures": preview.get("ocr_failures", {}),
         "extracted_fields": preview["extracted_fields"],
     }

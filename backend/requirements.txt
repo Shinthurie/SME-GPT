@@ -13,3 +13,4 @@ python-dotenv
 fastapi
 uvicorn
 python-multipart
+symspellpy==6.7.7

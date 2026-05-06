@@ -11,6 +11,7 @@ type PreviewItem = {
   description: string;
   quantity: string | number;
   unit_price: string | number;
+  line_total: string | number;
 };
 
 type PreviewData = {
@@ -30,7 +31,7 @@ type PreviewData = {
   items: PreviewItem[];
 };
 
-const BACKEND_URL ="http://127.0.0.1:8000";
+const BACKEND_URL = "http://127.0.0.1:8000";
 
 function getAuthToken() {
   if (typeof window === "undefined") return "";
@@ -52,12 +53,55 @@ export default function UploadPage() {
   const [showDuplicateWarning, setShowDuplicateWarning] = useState(false);
   const [duplicateMessage, setDuplicateMessage] = useState("");
   const [existingDocumentId, setExistingDocumentId] = useState("");
+  const [showAmountMismatchWarning, setShowAmountMismatchWarning] = useState(false);
 
   useEffect(() => {
     setLang(getStoredLanguage());
   }, []);
 
   const t = ui[lang];
+
+  const parseAmount = (value: string | number) => {
+    const text = String(value ?? "")
+      .replace(/,/g, "")
+      .replace(/Rs\.?/gi, "")
+      .trim();
+
+    const num = Number(text);
+    return Number.isFinite(num) ? num : 0;
+  };
+
+  const recalculatePreviewTotals = (nextPreview: PreviewData): PreviewData => {
+    const updatedItems = (nextPreview.items || []).map((item) => {
+      const qty = parseAmount(item.quantity);
+      const unitPrice = parseAmount(item.unit_price);
+
+      let nextLineTotal: string | number = item.line_total;
+
+      if (qty > 0 && unitPrice > 0) {
+        nextLineTotal = Number((qty * unitPrice).toFixed(2));
+      }
+
+      return {
+        ...item,
+        line_total: nextLineTotal,
+      };
+    });
+
+    const computedTotal = updatedItems.reduce((sum, item) => {
+      return sum + parseAmount(item.line_total);
+    }, 0);
+
+    const normalizedTotal = Number(computedTotal.toFixed(2));
+
+    return {
+      ...nextPreview,
+      items: updatedItems,
+      raw_total_amount: nextPreview.raw_total_amount, // keep OCR extracted value unchanged
+      final_total_amount: normalizedTotal,
+      payable_amount: normalizedTotal,
+    };
+  };
 
   const handleOpenFilePicker = () => {
     fileInputRef.current?.click();
@@ -73,6 +117,7 @@ export default function UploadPage() {
     setShowDuplicateWarning(false);
     setDuplicateMessage("");
     setExistingDocumentId("");
+    setShowAmountMismatchWarning(false);
   };
 
   const resetAfterSuccessfulSave = () => {
@@ -82,6 +127,7 @@ export default function UploadPage() {
     setShowDuplicateWarning(false);
     setDuplicateMessage("");
     setExistingDocumentId("");
+    setShowAmountMismatchWarning(false);
     setError("");
 
     if (fileInputRef.current) {
@@ -98,6 +144,7 @@ export default function UploadPage() {
     setShowDuplicateWarning(false);
     setDuplicateMessage("");
     setExistingDocumentId("");
+    setShowAmountMismatchWarning(false);
 
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
@@ -141,6 +188,7 @@ export default function UploadPage() {
     setShowDuplicateWarning(false);
     setDuplicateMessage("");
     setExistingDocumentId("");
+    setShowAmountMismatchWarning(false);
 
     try {
       const formData = new FormData();
@@ -178,10 +226,17 @@ export default function UploadPage() {
 
   const handleFieldChange = (field: keyof PreviewData, value: string) => {
     if (!preview) return;
-    setPreview({
+
+    const nextPreview: PreviewData = {
       ...preview,
       [field]: value,
-    });
+    };
+
+    if (field === "flow_type") {
+      nextPreview.payable_amount = nextPreview.final_total_amount;
+    }
+
+    setPreview(nextPreview);
   };
 
   const handleItemChange = (
@@ -190,16 +245,22 @@ export default function UploadPage() {
     value: string
   ) => {
     if (!preview) return;
+
     const updatedItems = [...preview.items];
     updatedItems[index] = {
       ...updatedItems[index],
       [field]: value,
     };
 
-    setPreview({
+    const nextPreview: PreviewData = {
       ...preview,
       items: updatedItems,
-    });
+    };
+
+    const shouldRecalculate =
+      field === "quantity" || field === "unit_price";
+
+    setPreview(shouldRecalculate ? recalculatePreviewTotals(nextPreview) : nextPreview);
   };
 
   const handleConfirmSave = async (forceSave = false) => {
@@ -209,6 +270,14 @@ export default function UploadPage() {
     if (!token) {
       setError("Login token missing. Please log in again.");
       router.push("/login");
+      return;
+    }
+
+    const rawTotal = parseAmount(preview.raw_total_amount);
+    const finalTotal = parseAmount(preview.final_total_amount);
+
+    if (!forceSave && rawTotal !== finalTotal) {
+      setShowAmountMismatchWarning(true);
       return;
     }
 
@@ -253,6 +322,7 @@ export default function UploadPage() {
       setShowDuplicateWarning(false);
       setDuplicateMessage("");
       setExistingDocumentId("");
+      setShowAmountMismatchWarning(false);
       setSuccessMessage(`Successfully saved. Document ID: ${data.document_id}`);
       resetAfterSuccessfulSave();
     } catch (err: any) {
@@ -268,13 +338,36 @@ export default function UploadPage() {
     return t.startProcessing;
   };
 
+  const fieldRows: [string, string][] = [
+    ["document_type", "Document Type"],
+    ["order_id", "Order ID"],
+    ["flow_type", "Flow Type"],
+    ["company_name", "Company Name"],
+    ["supplier_name", "Customer / Supplier Name"],
+    ["date", "Date"],
+    ["currency", "Currency"],
+    ["raw_total_amount", "Raw Total Amount"],
+    ["final_total_amount", "Final Total Amount"],
+    [
+      "payable_amount",
+      preview?.flow_type === "receivable"
+        ? "Receivable Amount"
+        : preview?.flow_type === "payable"
+        ? "Payable Amount"
+        : "Amount",
+    ],
+    ["cash_return", "Cash Return"],
+    ["received_status", "Received Status"],
+    ["paid_status", "Paid Status"],
+  ];
+
   return (
     <MobileShell>
       <div className="min-h-screen bg-[#f6f7fb] pb-24">
         <main className="mx-auto w-full max-w-[980px] px-4 py-6 sm:px-6 lg:px-8">
           <div className="mb-4 flex items-center justify-between">
             <button
-              onClick={() => router.push("/dashboard")}
+              onClick={() => router.push("/")}
               className="text-[14px] font-medium text-[#2563ff]"
             >
               ← {t.backToDashboard}
@@ -292,7 +385,7 @@ export default function UploadPage() {
           <input
             ref={fileInputRef}
             type="file"
-            accept=".pdf,.png,.jpg,.jpeg"
+            accept=".pdf,.png,.jpg,.jpeg,.webp,application/pdf,image/png,image/jpeg,image/webp"
             className="hidden"
             onChange={handleFileChange}
           />
@@ -419,25 +512,12 @@ export default function UploadPage() {
               </p>
 
               <div className="mt-5 grid gap-4 sm:grid-cols-2">
-                {[
-                  ["document_type", "Document Type"],
-                  ["order_id", "Order ID"],
-                  ["flow_type", "Flow Type"],
-                  ["company_name", "Company Name"],
-                  ["supplier_name", "Supplier Name"],
-                  ["date", "Date"],
-                  ["currency", "Currency"],
-                  ["raw_total_amount", "Raw Total Amount"],
-                  ["final_total_amount", "Final Total Amount"],
-                  ["payable_amount", "Payable Amount"],
-                  ["cash_return", "Cash Return"],
-                  ["received_status", "Received Status"],
-                  ["paid_status", "Paid Status"],
-                ].map(([field, label]) => (
+                {fieldRows.map(([field, label]) => (
                   <div key={field}>
                     <p className="mb-2 text-[12px] font-semibold text-[#64748b]">
                       {label}
                     </p>
+
                     {field === "flow_type" ? (
                       <select
                         value={(preview as any)[field] ?? ""}
@@ -452,13 +532,67 @@ export default function UploadPage() {
                         <option value="income">income</option>
                         <option value="expense">expense</option>
                       </select>
+                    ) : field === "document_type" ? (
+                      <select
+                        value={(preview as any)[field] ?? ""}
+                        onChange={(e) =>
+                          handleFieldChange(field as keyof PreviewData, e.target.value)
+                        }
+                        className="w-full rounded-[14px] border border-slate-200 px-4 py-3 text-[14px] text-[#0f172a] outline-none focus:border-[#2563ff]"
+                      >
+                        <option value="">Select Document Type</option>
+                        <option value="invoice">invoice</option>
+                        <option value="receipt">receipt</option>
+                        <option value="po">po</option>
+                        <option value="dn">dn</option>
+                        <option value="unknown">unknown</option>
+                      </select>
+                    ) : field === "received_status" ? (
+                      <select
+                        value={(preview as any)[field] ?? ""}
+                        onChange={(e) =>
+                          handleFieldChange(field as keyof PreviewData, e.target.value)
+                        }
+                        className="w-full rounded-[14px] border border-slate-200 px-4 py-3 text-[14px] text-[#0f172a] outline-none focus:border-[#2563ff]"
+                      >
+                        <option value="">Select Received Status</option>
+                        <option value="received">received</option>
+                        <option value="not_received">not_received</option>
+                        <option value="partial">partial</option>
+                        <option value="NULL">NULL</option>
+                      </select>
+                    ) : field === "paid_status" ? (
+                      <select
+                        value={(preview as any)[field] ?? ""}
+                        onChange={(e) =>
+                          handleFieldChange(field as keyof PreviewData, e.target.value)
+                        }
+                        className="w-full rounded-[14px] border border-slate-200 px-4 py-3 text-[14px] text-[#0f172a] outline-none focus:border-[#2563ff]"
+                      >
+                        <option value="">Select Paid Status</option>
+                        <option value="paid">paid</option>
+                        <option value="not_paid">not_paid</option>
+                        <option value="partial">partial</option>
+                        <option value="NULL">NULL</option>
+                      </select>
                     ) : (
                       <input
                         value={String((preview as any)[field] ?? "")}
                         onChange={(e) =>
                           handleFieldChange(field as keyof PreviewData, e.target.value)
                         }
-                        className="w-full rounded-[14px] border border-slate-200 px-4 py-3 text-[14px] text-[#0f172a] outline-none focus:border-[#2563ff]"
+                        readOnly={
+                          field === "raw_total_amount" ||
+                          field === "final_total_amount" ||
+                          field === "payable_amount"
+                        }
+                        className={`w-full rounded-[14px] border px-4 py-3 text-[14px] text-[#0f172a] outline-none ${
+                          field === "raw_total_amount" ||
+                          field === "final_total_amount" ||
+                          field === "payable_amount"
+                            ? "border-slate-200 bg-slate-50"
+                            : "border-slate-200 focus:border-[#2563ff]"
+                        }`}
                       />
                     )}
                   </div>
@@ -508,6 +642,36 @@ export default function UploadPage() {
                   )}
                 </div>
               </div>
+
+              {showAmountMismatchWarning && (
+                <div className="mt-6 rounded-[16px] border border-amber-200 bg-amber-50 px-4 py-3 text-[14px] text-amber-800">
+                  <p className="font-semibold">
+                    Raw total and final total are different.
+                  </p>
+                  <p className="mt-1">
+                    Do you want to save using the final calculated amount?
+                  </p>
+
+                  <div className="mt-3 flex gap-3">
+                    <button
+                      onClick={() => {
+                        setShowAmountMismatchWarning(false);
+                        handleConfirmSave(true);
+                      }}
+                      disabled={isSaving}
+                      className="rounded-xl bg-amber-500 px-4 py-2 text-white"
+                    >
+                      Save Anyway
+                    </button>
+                    <button
+                      onClick={() => setShowAmountMismatchWarning(false)}
+                      className="rounded-xl border border-amber-300 bg-white px-4 py-2 text-amber-800"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {showDuplicateWarning && (
                 <div className="mt-6 rounded-[16px] border border-amber-200 bg-amber-50 px-4 py-3 text-[14px] text-amber-800">

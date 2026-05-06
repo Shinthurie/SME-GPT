@@ -9,6 +9,9 @@ DATASET_COLUMNS = [
     "user_id",
     "document_id",
     "document_type",
+    "order_id",
+    "flow_type",
+    "effective_flow_type",
     "company_name",
     "supplier_name",
     "date",
@@ -16,19 +19,23 @@ DATASET_COLUMNS = [
     "final_total_amount",
     "total_status",
     "payable_amount",
+    "cash_return",
     "currency",
+    "received_status",
+    "paid_status",
     "status",
     "language",
     "raw_text",
     "corrected_text",
+    "items_json",
     "structured_json",
-    "correction_json"
+    "correction_json",
+    "arithmetic_status",
+    "arithmetic_json",
+    "ocr_selected_version",
 ]
 
 
-# =========================
-# FILE HANDLING
-# =========================
 def ensure_dataset_exists():
     if not os.path.exists(DATASET_PATH):
         df = pd.DataFrame(columns=DATASET_COLUMNS)
@@ -79,9 +86,6 @@ def save_input_json(json_data: dict, filename: str = "last_confirmed.json"):
     return path
 
 
-# =========================
-# CLEANING HELPERS
-# =========================
 def flatten_text(text):
     if text is None:
         return "NULL"
@@ -116,6 +120,7 @@ def safe_to_float_or_null(value):
         return "NULL"
 
     text = text.replace(",", "")
+    text = text.replace("Rs.", "")
     text = text.replace("Rs", "")
     text = text.replace("LKR", "")
     text = text.replace("$", "")
@@ -146,9 +151,25 @@ def normalize_compare_number(value):
     return float(parsed)
 
 
-# =========================
-# DOCUMENT ID GENERATION
-# =========================
+def normalize_items(items):
+    if not isinstance(items, list):
+        return []
+
+    result = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+
+        result.append({
+            "description": str(item.get("description", "")).strip(),
+            "quantity": safe_to_float_or_null(item.get("quantity")),
+            "unit_price": safe_to_float_or_null(item.get("unit_price")),
+            "line_total": safe_to_float_or_null(item.get("line_total")),
+        })
+
+    return result
+
+
 def get_prefix_for_document_type(document_type: str) -> str:
     if not isinstance(document_type, str):
         return "DOC"
@@ -186,9 +207,6 @@ def generate_document_id(document_type: str) -> str:
     return f"{prefix}{next_number}"
 
 
-# =========================
-# NORMALIZATION
-# =========================
 def normalize_record(data: dict, user_id: str, force_generate_document_id: bool = True) -> dict:
     document_type = nullify_text(data.get("document_type", None))
     if document_type == "NULL":
@@ -205,11 +223,15 @@ def normalize_record(data: dict, user_id: str, force_generate_document_id: bool 
     raw_total = safe_to_float_or_null(data.get("raw_total_amount", None))
     final_total = safe_to_float_or_null(data.get("final_total_amount", None))
     payable_amount = safe_to_float_or_null(data.get("payable_amount", None))
+    cash_return = safe_to_float_or_null(data.get("cash_return", None))
 
     if raw_total == "NULL" or final_total == "NULL":
         total_status = "NULL"
     else:
         total_status = "corrected" if final_total != raw_total else "original"
+
+    items = normalize_items(data.get("items", []))
+    arithmetic_validation = data.get("arithmetic_validation", {}) or {}
 
     structured_json = json.dumps(data, ensure_ascii=False).replace("\n", " ")
     correction_json = json.dumps({
@@ -217,14 +239,21 @@ def normalize_record(data: dict, user_id: str, force_generate_document_id: bool 
             "raw_total_amount": raw_total,
             "final_total_amount": final_total,
             "status": total_status,
-            "payable_amount": payable_amount
+            "payable_amount": payable_amount,
+            "cash_return": cash_return,
         }
     }, ensure_ascii=False).replace("\n", " ")
+    arithmetic_json = json.dumps(arithmetic_validation, ensure_ascii=False).replace("\n", " ")
 
     return {
         "user_id": nullify_text(user_id),
         "document_id": document_id,
         "document_type": document_type,
+        "order_id": nullify_text(data.get("order_id", None)),
+        "flow_type": nullify_text(data.get("flow_type", None)),
+        "effective_flow_type": nullify_text(
+            data.get("effective_flow_type", data.get("flow_type", None))
+        ),
         "company_name": nullify_text(data.get("company_name", None)),
         "supplier_name": nullify_text(data.get("supplier_name", None)),
         "date": nullify_text(data.get("date", None)),
@@ -232,37 +261,47 @@ def normalize_record(data: dict, user_id: str, force_generate_document_id: bool 
         "final_total_amount": final_total,
         "total_status": total_status,
         "payable_amount": payable_amount,
+        "cash_return": cash_return,
         "currency": nullify_text(data.get("currency", None)),
+        "received_status": nullify_text(data.get("received_status", None)),
+        "paid_status": nullify_text(data.get("paid_status", None)),
         "status": nullify_text(data.get("status", None)),
         "language": nullify_text(data.get("language", None)),
         "raw_text": raw_text,
         "corrected_text": corrected_text,
+        "items_json": json.dumps(items, ensure_ascii=False).replace("\n", " "),
         "structured_json": structured_json if structured_json.strip() else "NULL",
         "correction_json": correction_json if correction_json.strip() else "NULL",
+        "arithmetic_status": nullify_text(data.get("arithmetic_status", "not_checked")),
+        "arithmetic_json": arithmetic_json if arithmetic_json.strip() else "NULL",
+        "ocr_selected_version": nullify_text(data.get("ocr_selected_version", None)),
     }
 
 
-# =========================
-# DUPLICATE CHECK
-# =========================
 def is_exact_duplicate(existing_row: dict, new_record: dict) -> bool:
     compare_text_fields = [
         "user_id",
         "document_type",
+        "order_id",
+        "flow_type",
         "company_name",
         "supplier_name",
         "date",
         "currency",
+        "received_status",
+        "paid_status",
         "status",
         "language",
         "raw_text",
         "corrected_text",
+        "items_json",
     ]
 
     compare_number_fields = [
         "raw_total_amount",
         "final_total_amount",
         "payable_amount",
+        "cash_return",
     ]
 
     for field in compare_text_fields:
@@ -291,9 +330,24 @@ def find_duplicate_record(data: dict, user_id: str):
     return None
 
 
-# =========================
-# DATA READ HELPERS
-# =========================
+def parse_record_for_output(record: dict):
+    parsed = dict(record)
+
+    try:
+        items = json.loads(parsed.get("items_json", "[]"))
+        parsed["items"] = items if isinstance(items, list) else []
+    except Exception:
+        parsed["items"] = []
+
+    try:
+        arithmetic = json.loads(parsed.get("arithmetic_json", "{}"))
+        parsed["arithmetic_validation"] = arithmetic if isinstance(arithmetic, dict) else {}
+    except Exception:
+        parsed["arithmetic_validation"] = {}
+
+    return parsed
+
+
 def load_all_records(user_id: str = None):
     df = load_main_dataset()
 
@@ -303,7 +357,7 @@ def load_all_records(user_id: str = None):
     if df.empty:
         return []
 
-    records = df.to_dict(orient="records")
+    records = [parse_record_for_output(r) for r in df.to_dict(orient="records")]
     return records
 
 
@@ -318,29 +372,81 @@ def get_record_by_id_for_user(user_id: str, document_id: str):
     if filtered.empty:
         return None
 
-    return filtered.iloc[0].to_dict()
+    record = filtered.iloc[0].to_dict()
+    return parse_record_for_output(record)
 
 
-# =========================
-# UPSERT SAVE
-# =========================
 def upsert_confirmed_record(data: dict, user_id: str):
     df = load_main_dataset()
 
     duplicate = find_duplicate_record(data, user_id=user_id)
     if duplicate:
-        return {
-            "action": "duplicate_exists",
-            "record": duplicate
-        }
+        return {"action": "duplicate_exists", "record": parse_record_for_output(duplicate)}
 
     new_record = normalize_record(data, user_id=user_id, force_generate_document_id=True)
     new_row_df = pd.DataFrame([new_record], columns=DATASET_COLUMNS)
-
     updated_df = pd.concat([df, new_row_df], ignore_index=True)
     save_main_dataset(updated_df)
 
-    return {
-        "action": "inserted",
-        "record": new_record
-    }
+    return {"action": "inserted", "record": parse_record_for_output(new_record)}
+
+
+def update_record_for_user(user_id: str, document_id: str, updates: dict):
+    df = load_main_dataset()
+
+    mask = (
+        (df["user_id"].astype(str) == str(user_id)) &
+        (df["document_id"].astype(str) == str(document_id))
+    )
+
+    if not mask.any():
+        return None
+
+    existing_row = df[mask].iloc[0].to_dict()
+
+    existing_structured = {}
+    try:
+        existing_structured = json.loads(existing_row.get("structured_json", "{}"))
+        if not isinstance(existing_structured, dict):
+            existing_structured = {}
+    except Exception:
+        existing_structured = {}
+
+    merged_structured = dict(existing_structured)
+    merged_structured.update(updates)
+
+    merged_record = dict(existing_row)
+
+    for key, value in updates.items():
+        if key == "items":
+            merged_record["items_json"] = json.dumps(normalize_items(value), ensure_ascii=False).replace("\n", " ")
+        elif key in DATASET_COLUMNS:
+            merged_record[key] = value
+
+    merged_record["structured_json"] = json.dumps(merged_structured, ensure_ascii=False).replace("\n", " ")
+
+    for col in DATASET_COLUMNS:
+        if col not in merged_record:
+            merged_record[col] = "NULL"
+
+    row_index = df[mask].index[0]
+    for col in DATASET_COLUMNS:
+        df.at[row_index, col] = merged_record.get(col, "NULL")
+
+    save_main_dataset(df)
+    return parse_record_for_output(merged_record)
+
+def delete_record_for_user(user_id: str, document_id: str):
+    df = load_main_dataset()
+
+    mask = (
+        (df["user_id"].astype(str) == str(user_id)) &
+        (df["document_id"].astype(str) == str(document_id))
+    )
+
+    if not mask.any():
+        return False
+
+    df = df[~mask].copy()
+    save_main_dataset(df)
+    return True

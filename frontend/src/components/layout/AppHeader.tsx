@@ -1,6 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 
 type AppHeaderProps = {
   title: string;
@@ -15,6 +16,28 @@ export default function AppHeader({
 }: AppHeaderProps) {
   const router = useRouter();
 
+  const [profileImage, setProfileImage] = useState("");
+
+  useEffect(() => {
+    const loadProfile = async () => {
+      try {
+        const res = await fetch("/api/profile", {
+          cache: "no-store",
+        });
+
+        const data = await res.json();
+
+        if (res.ok && data.user?.profileImage) {
+          setProfileImage(data.user.profileImage);
+        }
+      } catch (error) {
+        console.error("HEADER PROFILE LOAD ERROR:", error);
+      }
+    };
+
+    loadProfile();
+  }, []);
+
   return (
     <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/90 backdrop-blur transition-all duration-300">
       <div className="mx-auto flex w-full max-w-3xl items-center gap-3 px-4 py-4">
@@ -28,8 +51,16 @@ export default function AppHeader({
             </span>
           </button>
         ) : (
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#135bec] text-white shadow-sm">
-            <span className="text-sm font-bold">S</span>
+          <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-xl bg-[#135bec] text-white shadow-sm">
+            {profileImage ? (
+              <img
+                src={profileImage}
+                alt="Profile"
+                className="h-full w-full object-cover"
+              />
+            ) : (
+              <span className="text-sm font-bold">S</span>
+            )}
           </div>
         )}
 
@@ -37,8 +68,11 @@ export default function AppHeader({
           <h1 className="truncate text-base font-bold text-slate-900">
             {title}
           </h1>
+
           {subtitle && (
-            <p className="truncate text-sm text-slate-500">{subtitle}</p>
+            <p className="truncate text-sm text-slate-500">
+              {subtitle}
+            </p>
           )}
         </div>
 

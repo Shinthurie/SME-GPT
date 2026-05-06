@@ -12,28 +12,23 @@ model User {
   companyName        String?
   email              String              @unique
   password           String
-
   resetToken         String?
   resetTokenExpiry   DateTime?
-
   phone              String?
   jobTitle           String?
   country            String?
-
   businessUnit       String?
   department         String?
   primaryLanguage    String?             @default("en")
+  profileImage      String?              @db.Text
   autoClassify       Boolean             @default(true)
-
   twoFactorEnabled   Boolean             @default(false)
   sessionVersion     Int                 @default(1)
-
   createdAt          DateTime            @default(now())
   updatedAt          DateTime            @updatedAt
-
-  trustedDevices     TrustedDevice[]
-  loginVerifications LoginVerification[]
   activityLogs       ActivityLog[]
+  loginVerifications LoginVerification[]
+  trustedDevices     TrustedDevice[]
   uploadedFiles      UploadedFile[]
 }
 
@@ -46,7 +41,6 @@ model TrustedDevice {
   userAgent   String?
   trustedAt   DateTime @default(now())
   lastUsedAt  DateTime @default(now())
-
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
@@ -63,7 +57,6 @@ model LoginVerification {
   trusted     Boolean  @default(false)
   approved    Boolean  @default(false)
   createdAt   DateTime @default(now())
-
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
@@ -74,7 +67,6 @@ model ActivityLog {
   content   String
   response  String?
   createdAt DateTime @default(now())
-
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
@@ -84,6 +76,18 @@ model UploadedFile {
   fileName  String
   fileUrl   String
   createdAt DateTime @default(now())
-
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model query_history {
+  id           String    @id @db.Uuid
+  user_id      String
+  company_name String?
+  question     String
+  answer       String?
+  explanation  String?
+  metrics      Json?
+  evidence     Json?
+  source_file  String?
+  created_at   DateTime? @default(now()) @db.Timestamp(6)
 }
