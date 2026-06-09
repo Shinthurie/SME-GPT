@@ -7,6 +7,7 @@ import BottomNav from "@/components/layout/BottomNav";
 import LanguageSwitcher from "@/components/layout/LanguageSwitcher";
 import { getSession, logoutUser, SessionUser, getStoredToken } from "@/lib/auth";
 import { AppLanguage, getStoredLanguage, ui, setStoredLanguage } from "@/lib/i18n";
+import { useTheme } from "@/lib/theme";
 
 const BACKEND_URL = "http://127.0.0.1:8000";
 
@@ -23,165 +24,127 @@ type ProfileData = {
   country: string;
 };
 
-type QueryHistoryItem = {
-  id: string;
-  company_name: string;
-  question: string;
-  answer: string;
-  explanation: string;
-  metrics: Record<string, any>;
-  evidence: any[];
-  source_file: string;
-  created_at: string;
-};
+type QueryHistoryItem = { id: string; question: string; created_at: string };
 
-function SectionTitle({
-  children,
-  danger,
-}: {
-  children: React.ReactNode;
-  danger?: boolean;
-}) {
-  return (
-    <p
-      className={`mt-8 mb-3 text-[12px] font-bold uppercase tracking-[0.12em] ${
-        danger ? "text-red-600" : "text-[#64748b]"
-      }`}
-    >
-      {children}
-    </p>
-  );
-}
+/* ── Shared sub-components ────────────────────────────────────────── */
 
-function Toggle({
-  enabled,
-  onClick,
-  disabled,
-}: {
-  enabled: boolean;
-  onClick?: () => void;
-  disabled?: boolean;
-}) {
+function SectionHeader({ icon, title, danger }: { icon: string; title: string; danger?: boolean }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      className={`h-7 w-12 rounded-full p-[3px] transition ${
-        enabled ? "bg-[#2563ff]" : "bg-slate-300"
-      } ${disabled ? "cursor-not-allowed opacity-70" : ""}`}
-    >
-      <div
-        className={`h-5 w-5 rounded-full bg-white transition ${
-          enabled ? "translate-x-5" : ""
-        }`}
-      />
-    </button>
-  );
-}
-
-function FieldRow({
-  label,
-  value,
-}: {
-  label: string;
-  value: string;
-}) {
-  return (
-    <div className="grid gap-2 px-4 py-4 sm:grid-cols-[180px_minmax(0,1fr)] sm:items-center">
-      <p className="text-[13px] text-[#64748b]">{label}</p>
-      <p className="text-[15px] break-words font-semibold text-[#0f172a]">
-        {value || "-"}
+    <div className="mb-2 mt-7 flex items-center gap-2">
+      <span
+        className="material-symbols-outlined text-[16px]"
+        style={{ color: danger ? "#dc2626" : "var(--text-3)" }}
+      >
+        {icon}
+      </span>
+      <p
+        className="text-[11px] font-bold uppercase tracking-[0.12em]"
+        style={{ color: danger ? "#dc2626" : "var(--text-3)" }}
+      >
+        {title}
       </p>
     </div>
   );
 }
 
-function InputRow({
-  label,
-  value,
-  onChange,
-  placeholder,
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  placeholder?: string;
+function Card({ children }: { children: React.ReactNode }) {
+  return (
+    <div
+      className="overflow-hidden rounded-2xl shadow-sm"
+      style={{ background: "var(--surface)", border: "1px solid var(--border)" }}
+    >
+      {children}
+    </div>
+  );
+}
+
+function Divider() {
+  return <div style={{ borderTop: "1px solid var(--border)" }} />;
+}
+
+function Toggle({ enabled, onClick, disabled }: { enabled: boolean; onClick?: () => void; disabled?: boolean }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={`h-7 w-12 rounded-full p-[3px] transition ${disabled ? "cursor-not-allowed opacity-60" : ""}`}
+      style={{ background: enabled ? "var(--brand-mid)" : "var(--border)" }}
+    >
+      <div
+        className="h-5 w-5 rounded-full bg-white shadow-sm transition-transform"
+        style={{ transform: enabled ? "translateX(20px)" : "translateX(0)" }}
+      />
+    </button>
+  );
+}
+
+function FieldRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="grid gap-1 px-5 py-3.5 sm:grid-cols-[180px_minmax(0,1fr)] sm:items-center">
+      <p className="text-[12px] text-[var(--text-3)]">{label}</p>
+      <p className="text-[14px] font-semibold text-[var(--text-1)]">{value || "—"}</p>
+    </div>
+  );
+}
+
+function InputRow({ label, value, onChange, placeholder }: {
+  label: string; value: string; onChange: (v: string) => void; placeholder?: string;
 }) {
   return (
-    <div className="grid gap-2 px-4 py-4 sm:grid-cols-[180px_minmax(0,1fr)] sm:items-center">
-      <p className="text-[13px] text-[#64748b]">{label}</p>
+    <div className="grid gap-1 px-5 py-3 sm:grid-cols-[180px_minmax(0,1fr)] sm:items-center">
+      <p className="text-[12px] text-[var(--text-3)]">{label}</p>
       <input
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder || label}
-        className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-[14px] text-[#0f172a] outline-none focus:border-[#2563ff] focus:ring-2 focus:ring-[#2563ff]/15"
+        className="field-input h-10 w-full rounded-xl border px-3 text-[14px] transition"
       />
     </div>
   );
 }
 
-function SelectRow({
-  label,
-  value,
-  onChange,
-  options,
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
+function SelectRow({ label, value, onChange, options }: {
+  label: string; value: string; onChange: (v: string) => void;
   options: { label: string; value: string }[];
 }) {
   return (
-    <div className="grid gap-2 px-4 py-4 sm:grid-cols-[180px_minmax(0,1fr)] sm:items-center">
-      <p className="text-[13px] text-[#64748b]">{label}</p>
+    <div className="grid gap-1 px-5 py-3 sm:grid-cols-[180px_minmax(0,1fr)] sm:items-center">
+      <p className="text-[12px] text-[var(--text-3)]">{label}</p>
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-[14px] text-[#0f172a] outline-none focus:border-[#2563ff] focus:ring-2 focus:ring-[#2563ff]/15"
+        className="field-input h-10 w-full rounded-xl border px-3 text-[14px] transition"
       >
-        {options.map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.label}
-          </option>
+        {options.map((o) => (
+          <option key={o.value} value={o.value}>{o.label}</option>
         ))}
       </select>
     </div>
   );
 }
 
-function ActionRow({
-  icon,
-  title,
-  subtitle,
-  iconBg = "bg-[#eef2ff]",
-  iconColor = "text-[#2563ff]",
-  right,
-  onClick,
-}: {
-  icon: string;
-  title: string;
-  subtitle?: string;
-  iconBg?: string;
-  iconColor?: string;
-  right?: React.ReactNode;
-  onClick?: () => void;
+function ActionRow({ icon, title, subtitle, iconBg, iconColor, right, onClick }: {
+  icon: string; title: string; subtitle?: string;
+  iconBg?: string; iconColor?: string;
+  right?: React.ReactNode; onClick?: () => void;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className="flex w-full items-center justify-between px-5 py-4 text-left"
+      className="flex w-full items-center justify-between px-5 py-4 text-left transition hover:bg-[var(--surface-2)]"
     >
       <div className="flex items-center gap-4">
         <div
-          className={`flex h-11 w-11 items-center justify-center rounded-xl ${iconBg} ${iconColor}`}
+          className="flex h-10 w-10 items-center justify-center rounded-xl"
+          style={{ background: iconBg || "var(--brand-tint)", color: iconColor || "var(--brand-mid)" }}
         >
-          <span className="material-symbols-outlined text-[20px]">{icon}</span>
+          <span className="material-symbols-outlined text-[18px]">{icon}</span>
         </div>
         <div>
-          <p className="text-[14px] font-medium text-[#0f172a]">{title}</p>
-          {subtitle && <p className="text-[12px] text-[#64748b]">{subtitle}</p>}
+          <p className="text-[14px] font-medium text-[var(--text-1)]">{title}</p>
+          {subtitle && <p className="text-[12px] text-[var(--text-3)]">{subtitle}</p>}
         </div>
       </div>
       {right}
@@ -189,243 +152,120 @@ function ActionRow({
   );
 }
 
+/* ── Page ─────────────────────────────────────────────────────────── */
+
 export default function ProfilePage() {
   const router = useRouter();
+  const { theme, toggle: toggleTheme } = useTheme();
   const [lang, setLang] = useState<AppLanguage>("en");
   const [session, setSession] = useState<SessionUser | null>(null);
   const [form, setForm] = useState<ProfileData>({
-  fullName: "",
-  profileImage: "",
-  companyName: "",
-  businessUnit: "",
-  primaryLanguage: "en",
-  autoClassify: true,
-  twoFactorEnabled: false,
-  phone: "",
-  jobTitle: "",
-  country: "",
-});
+    fullName: "", profileImage: "", companyName: "", businessUnit: "",
+    primaryLanguage: "en", autoClassify: true, twoFactorEnabled: false,
+    phone: "", jobTitle: "", country: "",
+  });
   const [initialForm, setInitialForm] = useState<ProfileData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [historyLoading, setHistoryLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
-  const [historyError, setHistoryError] = useState("");
   const [isEditing, setIsEditing] = useState(false);
-  const [queryHistory, setQueryHistory] = useState<QueryHistoryItem[]>([]);
+  const [queryCount, setQueryCount] = useState<number | null>(null);
 
   useEffect(() => {
     const load = async () => {
       setLang(getStoredLanguage());
-
-      const currentSession = await getSession();
-      if (!currentSession) {
-        router.push("/login");
-        return;
-      }
-      setSession(currentSession);
+      const s = await getSession();
+      if (!s) { router.push("/login"); return; }
+      setSession(s);
 
       try {
-        const res = await fetch("/api/profile", {
-          cache: "no-store",
-        });
+        const res = await fetch("/api/profile", { cache: "no-store" });
         const data = await res.json();
-
         if (res.ok && data.user) {
-          const loadedData: ProfileData = {
-  fullName: data.user.fullName || currentSession.fullName || "",
-  profileImage: data.user.profileImage || "",
-  companyName: data.user.companyName || "",
-  businessUnit: data.user.businessUnit || "",
-  primaryLanguage: data.user.primaryLanguage || "en",
-  autoClassify: data.user.autoClassify ?? true,
-  twoFactorEnabled: data.user.twoFactorEnabled ?? false,
-  phone: data.user.phone || "",
-  jobTitle: data.user.jobTitle || "",
-  country: data.user.country || "",
-};
-
-          // If the app language was changed using the header switcher, prefer showing
-          // the stored app language in the UI so the Primary Language select matches
-          // the rest of the app. Do not overwrite if the user is actively editing.
-          try {
-            if (!isEditing) {
-              loadedData.primaryLanguage = getStoredLanguage();
-            }
-          } catch (e) {
-            // ignore
-          }
-
-          setForm(loadedData);
-          setInitialForm(loadedData);
+          const d: ProfileData = {
+            fullName: data.user.fullName || s.fullName || "",
+            profileImage: data.user.profileImage || "",
+            companyName: data.user.companyName || "",
+            businessUnit: data.user.businessUnit || "",
+            primaryLanguage: getStoredLanguage(),
+            autoClassify: data.user.autoClassify ?? true,
+            twoFactorEnabled: data.user.twoFactorEnabled ?? false,
+            phone: data.user.phone || "",
+            jobTitle: data.user.jobTitle || "",
+            country: data.user.country || "",
+          };
+          setForm(d);
+          setInitialForm(d);
         }
-      } catch (error) {
-        console.error("PROFILE LOAD ERROR:", error);
+      } catch (err) {
+        console.error("PROFILE LOAD ERROR:", err);
       } finally {
         setLoading(false);
       }
     };
-
     load();
   }, [router]);
 
-  // Listen for app-wide language changes (dispatched by LanguageSwitcher)
   useEffect(() => {
-    const onAppLangChanged = (e: Event) => {
-      const next = (e as CustomEvent<AppLanguage>).detail as AppLanguage;
-      if (!next) return;
-
-      // update local UI language
-      setLang(next);
-
-      // if user is not editing profile, reflect the change in the primaryLanguage field
-      setForm((prev) => (isEditing ? prev : { ...prev, primaryLanguage: next }));
+    const onLangChanged = (e: Event) => {
+      const next = (e as CustomEvent<AppLanguage>).detail;
+      if (next) { setLang(next); setForm((p) => (isEditing ? p : { ...p, primaryLanguage: next })); }
     };
-
-    const onStorage = (e: StorageEvent) => {
-      if (e.key === "app-language" && e.newValue) {
-        const next = (e.newValue as AppLanguage) || getStoredLanguage();
-        setLang(next);
-        setForm((prev) => (isEditing ? prev : { ...prev, primaryLanguage: next }));
-      }
-    };
-
-    window.addEventListener("app-language-changed", onAppLangChanged as EventListener);
-    window.addEventListener("storage", onStorage);
-
-    return () => {
-      window.removeEventListener("app-language-changed", onAppLangChanged as EventListener);
-      window.removeEventListener("storage", onStorage);
-    };
+    window.addEventListener("app-language-changed", onLangChanged as EventListener);
+    return () => window.removeEventListener("app-language-changed", onLangChanged as EventListener);
   }, [isEditing]);
 
   useEffect(() => {
-    const loadQueryHistory = async () => {
-      const token = getStoredToken();
+    const token = getStoredToken();
+    if (!token) return;
+    fetch(`${BACKEND_URL}/query-history`, {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: "no-store",
+    })
+      .then((r) => r.json())
+      .then((d) => { if (d.success) setQueryCount((d.history || []).length); })
+      .catch(() => {});
+  }, []);
 
-      if (!token) {
-        setHistoryLoading(false);
-        return;
-      }
-
-      try {
-        setHistoryError("");
-
-        const res = await fetch(`${BACKEND_URL}/query-history`, {
-          method: "GET",
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-          cache: "no-store",
-        });
-
-        if (res.status === 401) {
-          localStorage.removeItem("token");
-          sessionStorage.removeItem("token");
-          router.push("/login");
-          return;
-        }
-
-        const data = await res.json();
-
-        if (!res.ok || !data.success) {
-          throw new Error(data.message || "Failed to load query history.");
-        }
-
-        setQueryHistory(data.history || []);
-      } catch (error: any) {
-        console.error("QUERY HISTORY LOAD ERROR:", error);
-        setHistoryError(error.message || "Failed to load query history.");
-      } finally {
-        setHistoryLoading(false);
-      }
-    };
-
-    loadQueryHistory();
-  }, [router]);
-
-  const updateField = (key: keyof ProfileData, value: string | boolean) => {
-    setForm((prev) => ({
-      ...prev,
-      [key]: value,
-    }));
-  };
-  const handleProfileImageChange = (file: File | null) => {
-  if (!file) return;
-
-  const reader = new FileReader();
-
-  reader.onloadend = () => {
-    updateField("profileImage", reader.result as string);
-  };
-
-  reader.readAsDataURL(file);
-};
-
-  const handleEdit = () => {
-    setMessage("");
-    setIsEditing(true);
-  };
-
-  const handleCancel = () => {
-    if (initialForm) {
-      setForm(initialForm);
-    }
-    setMessage("");
-    setIsEditing(false);
-  };
+  const update = (key: keyof ProfileData, val: string | boolean) =>
+    setForm((p) => ({ ...p, [key]: val }));
 
   const handleSave = async () => {
+    setSaving(true);
+    setMessage("");
     try {
-      setSaving(true);
-      setMessage("");
-
       const res = await fetch("/api/profile", {
         method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-        },
-       body: JSON.stringify({
-  fullName: form.fullName,
-  profileImage: form.profileImage,
-  companyName: form.companyName,
-  businessUnit: form.businessUnit,
-  primaryLanguage: form.primaryLanguage,
-  autoClassify: form.autoClassify,
-  phone: form.phone,
-  jobTitle: form.jobTitle,
-  country: form.country,
-}),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          fullName: form.fullName, profileImage: form.profileImage,
+          companyName: form.companyName, businessUnit: form.businessUnit,
+          primaryLanguage: form.primaryLanguage, autoClassify: form.autoClassify,
+          phone: form.phone, jobTitle: form.jobTitle, country: form.country,
+        }),
       });
-
       const data = await res.json();
+      if (!res.ok) { setMessage(data.error || "Failed to save"); return; }
 
-      if (!res.ok) {
-        setMessage(data.error || "Failed to save profile");
-        return;
-      }
-
-      const updatedData: ProfileData = {
-  fullName: data.user.fullName || form.fullName,
-  profileImage: data.user.profileImage || form.profileImage,
-  companyName: data.user.companyName || "",
-  businessUnit: data.user.businessUnit || "",
-  primaryLanguage: data.user.primaryLanguage || "en",
-  autoClassify: data.user.autoClassify ?? true,
-  twoFactorEnabled: form.twoFactorEnabled,
-  phone: data.user.phone || "",
-  jobTitle: data.user.jobTitle || "",
-  country: data.user.country || "",
-};
-
-      setForm(updatedData);
-      setInitialForm(updatedData);
-      setStoredLanguage(updatedData.primaryLanguage as AppLanguage);
-      setLang(updatedData.primaryLanguage as AppLanguage);
-      setMessage("Profile updated successfully");
+      const updated: ProfileData = {
+        fullName: data.user.fullName || form.fullName,
+        profileImage: data.user.profileImage || form.profileImage,
+        companyName: data.user.companyName || "",
+        businessUnit: data.user.businessUnit || "",
+        primaryLanguage: data.user.primaryLanguage || "en",
+        autoClassify: data.user.autoClassify ?? true,
+        twoFactorEnabled: form.twoFactorEnabled,
+        phone: data.user.phone || "",
+        jobTitle: data.user.jobTitle || "",
+        country: data.user.country || "",
+      };
+      setForm(updated);
+      setInitialForm(updated);
+      setStoredLanguage(updated.primaryLanguage as AppLanguage);
+      setLang(updated.primaryLanguage as AppLanguage);
+      setMessage("Profile saved successfully");
       setIsEditing(false);
-    } catch (error) {
-      console.error("PROFILE SAVE ERROR:", error);
+    } catch {
       setMessage("Something went wrong");
     } finally {
       setSaving(false);
@@ -433,50 +273,28 @@ export default function ProfilePage() {
   };
 
   const handleToggle2FA = async () => {
-    const nextValue = !form.twoFactorEnabled;
-
+    const next = !form.twoFactorEnabled;
     try {
       const res = await fetch("/api/profile/two-factor", {
         method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ enabled: nextValue }),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: next }),
       });
-
       const data = await res.json();
-
-      if (!res.ok) {
-        setMessage(data.error || "Failed to update 2FA");
-        return;
-      }
-
-      updateField("twoFactorEnabled", data.twoFactorEnabled);
-      setInitialForm((prev) =>
-        prev ? { ...prev, twoFactorEnabled: data.twoFactorEnabled } : prev
-      );
-
-      setMessage(
-        data.twoFactorEnabled
-          ? "Two-factor authentication enabled"
-          : "Two-factor authentication disabled"
-      );
-    } catch (error) {
-      console.error("2FA TOGGLE ERROR:", error);
-      setMessage("Failed to update two-factor authentication");
+      if (!res.ok) { setMessage(data.error || "Failed to update 2FA"); return; }
+      update("twoFactorEnabled", data.twoFactorEnabled);
+      setInitialForm((p) => p ? { ...p, twoFactorEnabled: data.twoFactorEnabled } : p);
+      setMessage(data.twoFactorEnabled ? "Two-factor authentication enabled" : "Two-factor authentication disabled");
+    } catch {
+      setMessage("Failed to update 2FA");
     }
   };
 
   const handleLogout = async () => {
-    try {
-      await logoutUser();
-      sessionStorage.removeItem("query_result");
-      sessionStorage.removeItem("selected_query_history");
-      router.push("/login");
-    } catch (error) {
-      console.error("LOGOUT ERROR:", error);
-      router.push("/login");
-    }
+    try { await logoutUser(); } catch {}
+    sessionStorage.removeItem("query_result");
+    sessionStorage.removeItem("selected_query_history");
+    router.push("/login");
   };
 
   if (!session || loading) return null;
@@ -485,288 +303,254 @@ export default function ProfilePage() {
 
   return (
     <MobileShell>
-      <div className="min-h-screen bg-[#f6f7fb] pb-24">
-        <main className="mx-auto w-full max-w-[980px] px-4 py-6 sm:px-6 lg:px-8">
-          <div className="mb-4 flex items-center justify-between gap-3">
-            <h1 className="text-[24px] font-extrabold tracking-tight text-[#0f172a] sm:text-[28px]">
+      <div className="min-h-screen pb-28" style={{ background: "var(--bg)" }}>
+        <main className="mx-auto w-full max-w-[680px] px-4 py-6 sm:px-6">
+
+          {/* Page title */}
+          <div className="mb-5 flex items-center justify-between gap-3">
+            <h1 className="text-[22px] font-extrabold tracking-tight text-[var(--text-1)] sm:text-[26px]">
               {t.profileTitle}
             </h1>
             <LanguageSwitcher />
           </div>
 
-          <div className="rounded-[20px] border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="flex flex-wrap items-center justify-between gap-4">
+          {/* ── Profile card ─────────────────────────────────── */}
+          <Card>
+            <div className="flex flex-wrap items-center justify-between gap-4 p-5">
               <div className="flex items-center gap-4">
-                <div className="relative">
-  <label className="group relative flex h-16 w-16 cursor-pointer items-center justify-center overflow-hidden rounded-full bg-[#f7b092] text-white">
-    {form.profileImage ? (
-      <img
-        src={form.profileImage}
-        alt="Profile"
-        className="h-full w-full object-cover"
-      />
-    ) : (
-      <span className="material-symbols-outlined text-[28px]">
-        person
-      </span>
-    )}
+                {/* Avatar */}
+                <label className={`group relative flex h-16 w-16 cursor-pointer items-center justify-center overflow-hidden rounded-full text-white ${isEditing ? "cursor-pointer" : "cursor-default"}`}
+                  style={{ background: "#c97b5a" }}>
+                  {form.profileImage ? (
+                    <img src={form.profileImage} alt="Profile" className="h-full w-full object-cover" />
+                  ) : (
+                    <span className="material-symbols-outlined text-[28px]">person</span>
+                  )}
+                  {isEditing && (
+                    <>
+                      <div className="absolute inset-0 flex items-center justify-center bg-black/35 opacity-0 transition group-hover:opacity-100">
+                        <span className="material-symbols-outlined text-[18px] text-white">photo_camera</span>
+                      </div>
+                      <input
+                        type="file" accept="image/*" className="hidden"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          const reader = new FileReader();
+                          reader.onloadend = () => update("profileImage", reader.result as string);
+                          reader.readAsDataURL(file);
+                        }}
+                      />
+                    </>
+                  )}
+                </label>
 
-    {isEditing && (
-      <div className="absolute inset-0 flex items-center justify-center bg-black/35 opacity-0 transition group-hover:opacity-100">
-        <span className="material-symbols-outlined text-[20px] text-white">
-          photo_camera
-        </span>
-      </div>
-    )}
-
-    {isEditing && (
-      <input
-        type="file"
-        accept="image/*"
-        className="hidden"
-        onChange={(e) =>
-          handleProfileImageChange(e.target.files?.[0] || null)
-        }
-      />
-    )}
-  </label>
-</div>
-
-<div className="min-w-0">
-  {isEditing ? (
-  <div className="flex flex-col gap-2">
-    <label className="text-[12px] font-medium text-[#64748b]">
-      User Name
-    </label>
-
-    <input
-      value={form.fullName}
-      onChange={(e) => updateField("fullName", e.target.value)}
-      placeholder="User name"
-      className="h-10 w-full max-w-[260px] rounded-xl border border-slate-200 bg-white px-3 text-[15px] font-bold text-[#0f172a] outline-none focus:border-[#2563ff] focus:ring-2 focus:ring-[#2563ff]/15"
-    />
-  </div>
-) : (
-    <h2 className="truncate text-[18px] font-bold text-[#0f172a]">
-      {form.fullName || session.fullName}
-    </h2>
-  )}
-
-  <p className="mt-1 truncate text-[13px] text-[#64748b]">
-    {session.email}
-  </p>
-</div>
+                <div className="min-w-0">
+                  {isEditing ? (
+                    <input
+                      value={form.fullName}
+                      onChange={(e) => update("fullName", e.target.value)}
+                      placeholder="Full name"
+                      className="field-input h-9 w-full max-w-[220px] rounded-xl border px-3 text-[15px] font-bold transition"
+                    />
+                  ) : (
+                    <h2 className="text-[17px] font-bold text-[var(--text-1)]">
+                      {form.fullName || session.fullName}
+                    </h2>
+                  )}
+                  <p className="mt-0.5 text-[13px] text-[var(--text-2)]">{session.email}</p>
+                </div>
               </div>
 
               {!isEditing ? (
                 <button
-                  type="button"
-                  onClick={handleEdit}
-                  className="rounded-xl bg-[#07122f] px-4 py-2 text-[13px] font-bold text-white"
+                  onClick={() => { setMessage(""); setIsEditing(true); }}
+                  className="rounded-xl px-4 py-2 text-[13px] font-bold text-white transition hover:opacity-90"
+                  style={{ background: "var(--brand)" }}
                 >
                   Edit Profile
                 </button>
               ) : (
                 <div className="flex gap-2">
                   <button
-                    type="button"
-                    onClick={handleCancel}
-                    className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-[13px] font-bold text-[#64748b]"
+                    onClick={() => { if (initialForm) setForm(initialForm); setIsEditing(false); setMessage(""); }}
+                    className="rounded-xl px-4 py-2 text-[13px] font-semibold transition hover:bg-[var(--surface-2)]"
+                    style={{ border: "1px solid var(--border)", color: "var(--text-2)" }}
                   >
                     Cancel
                   </button>
                   <button
-                    type="button"
                     onClick={handleSave}
                     disabled={saving}
-                    className="rounded-xl bg-[#07122f] px-4 py-2 text-[13px] font-bold text-white"
+                    className="rounded-xl px-4 py-2 text-[13px] font-bold text-white transition hover:opacity-90 disabled:opacity-60"
+                    style={{ background: "var(--brand)" }}
                   >
-                    {saving ? "Saving..." : "Save Changes"}
+                    {saving ? "Saving…" : "Save"}
                   </button>
                 </div>
               )}
             </div>
-          </div>
+          </Card>
 
-          <SectionTitle>{t.businessStructure}</SectionTitle>
-          <div className="overflow-hidden rounded-[20px] border border-slate-200 bg-white shadow-sm">
+          {/* ── Business info ─────────────────────────────────── */}
+          <SectionHeader icon="business" title={t.businessStructure} />
+          <Card>
             {isEditing ? (
               <>
-                <InputRow
-                  label={t.organization}
-                  value={form.companyName}
-                  onChange={(value) => updateField("companyName", value)}
-                  placeholder="Organization"
-                />
-                <div className="border-t" />
-                <InputRow
-                  label={t.businessUnit}
-                  value={form.businessUnit}
-                  onChange={(value) => updateField("businessUnit", value)}
-                  placeholder="Business Unit"
-                />
-            
-                <div className="border-t" />
-                <InputRow
-                  label="Phone"
-                  value={form.phone}
-                  onChange={(value) => updateField("phone", value)}
-                  placeholder="Phone"
-                />
-                <div className="border-t" />
-                <InputRow
-                  label="Job Title"
-                  value={form.jobTitle}
-                  onChange={(value) => updateField("jobTitle", value)}
-                  placeholder="Job Title"
-                />
-                <div className="border-t" />
-                <InputRow
-                  label="Country"
-                  value={form.country}
-                  onChange={(value) => updateField("country", value)}
-                  placeholder="Country"
-                />
+                <InputRow label={t.organization} value={form.companyName} onChange={(v) => update("companyName", v)} />
+                <Divider />
+                <InputRow label={t.businessUnit} value={form.businessUnit} onChange={(v) => update("businessUnit", v)} />
+                <Divider />
+                <InputRow label="Job Title" value={form.jobTitle} onChange={(v) => update("jobTitle", v)} />
+                <Divider />
+                <InputRow label="Country" value={form.country} onChange={(v) => update("country", v)} />
+                <Divider />
+                <InputRow label="Phone" value={form.phone} onChange={(v) => update("phone", v)} />
               </>
             ) : (
               <>
                 <FieldRow label={t.organization} value={form.companyName} />
-                <div className="border-t" />
+                <Divider />
                 <FieldRow label={t.businessUnit} value={form.businessUnit} />
-
-                <div className="border-t" />
-                <FieldRow label="Phone" value={form.phone} />
-                <div className="border-t" />
+                <Divider />
                 <FieldRow label="Job Title" value={form.jobTitle} />
-                <div className="border-t" />
+                <Divider />
                 <FieldRow label="Country" value={form.country} />
+                <Divider />
+                <FieldRow label="Phone" value={form.phone} />
               </>
             )}
-          </div>
+          </Card>
 
-          <SectionTitle>{t.documentProcessing}</SectionTitle>
-          <div className="overflow-hidden rounded-[20px] border border-slate-200 bg-white shadow-sm">
+          {/* ── Preferences ───────────────────────────────────── */}
+          <SectionHeader icon="tune" title={t.documentProcessing} />
+          <Card>
             <SelectRow
               label={t.primaryLanguage}
               value={form.primaryLanguage}
-              onChange={(value) => {
-                const nextLang: AppLanguage = value === "si" ? "si" : "en";
-                updateField("primaryLanguage", nextLang);
-                setLang(nextLang);
-                setStoredLanguage(nextLang);
-                setForm((prev) => ({
-                  ...prev,
-                  primaryLanguage: nextLang,
-                }));
+              onChange={(v) => {
+                const next = v === "si" ? "si" : "en";
+                update("primaryLanguage", next);
+                setLang(next);
+                setStoredLanguage(next);
               }}
-              options={[
-                { label: "English", value: "en" },
-                { label: "සිංහල", value: "si" },
-              ]}
+              options={[{ label: "English", value: "en" }, { label: "සිංහල", value: "si" }]}
             />
-            <div className="border-t" />
+            <Divider />
             <div className="flex items-center justify-between px-5 py-4">
               <div>
-                <p className="text-[13px] text-[#64748b]">{t.autoClassify}</p>
-                <p className="text-[15px] font-semibold text-[#0f172a]">
-                  Invoice / PO / DN
-                </p>
+                <p className="text-[13px] font-medium text-[var(--text-1)]">{t.autoClassify}</p>
+                <p className="text-[12px] text-[var(--text-3)]">Invoice / PO / DN</p>
               </div>
-              <Toggle
-                enabled={form.autoClassify}
-                onClick={() => updateField("autoClassify", !form.autoClassify)}
-              />
+              <Toggle enabled={form.autoClassify} onClick={() => update("autoClassify", !form.autoClassify)} />
             </div>
-          </div>
+          </Card>
 
-          {message && (
-            <p className="mt-4 text-center text-[13px] text-[#2563ff]">
-              {message}
-            </p>
-          )}
-
-          <SectionTitle>Query History</SectionTitle>
-          <div className="overflow-hidden rounded-[20px] border border-slate-200 bg-white shadow-sm">
-            <ActionRow
-              icon="history"
-              title="Query History"
-              subtitle={
-                historyLoading
-                  ? "Loading query history..."
-                  : historyError
-                  ? historyError
-                  : `${queryHistory.length} saved queries`
-              }
-              onClick={() => router.push("/profile/query-history")}
-              right={
-                <span className="material-symbols-outlined text-[#94a3b8]">
-                  chevron_right
-                </span>
-              }
-            />
-          </div>
-
-          <SectionTitle danger>{t.corporateSecurity}</SectionTitle>
-          <div className="overflow-hidden rounded-[20px] border border-slate-200 bg-white shadow-sm">
-            <ActionRow
-              icon="key"
-              title={t.changePassword}
-              subtitle="Reset password by email"
-              onClick={() => router.push("/forgot-password")}
-              right={
-                <span className="material-symbols-outlined text-[#94a3b8]">
-                  chevron_right
-                </span>
-              }
-              iconBg="bg-[#fee2e2]"
-              iconColor="text-red-500"
-            />
-            <div className="border-t" />
+          {/* ── Appearance ────────────────────────────────────── */}
+          <SectionHeader icon="palette" title="Appearance" />
+          <Card>
             <div className="flex items-center justify-between px-5 py-4">
               <div className="flex items-center gap-4">
-                <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-[#eef2ff] text-[#2563ff]">
-                  <span className="material-symbols-outlined text-[20px]">
-                    shield
+                <div
+                  className="flex h-10 w-10 items-center justify-center rounded-xl"
+                  style={{ background: "var(--brand-tint)", color: "var(--brand-mid)" }}
+                >
+                  <span className="material-symbols-outlined text-[18px]">
+                    {theme === "dark" ? "dark_mode" : "light_mode"}
                   </span>
                 </div>
                 <div>
-                  <p className="text-[14px] font-medium text-[#0f172a]">
-                    {t.twoFactor}
+                  <p className="text-[14px] font-medium text-[var(--text-1)]">Night Mode</p>
+                  <p className="text-[12px] text-[var(--text-3)]">
+                    {theme === "dark" ? "Dark theme active" : "Light theme active"}
                   </p>
-                  <p className="text-[12px] text-[#64748b]">
-                    Require email confirmation on new devices
-                  </p>
+                </div>
+              </div>
+              <Toggle enabled={theme === "dark"} onClick={toggleTheme} />
+            </div>
+          </Card>
+
+          {/* ── Query history ─────────────────────────────────── */}
+          <SectionHeader icon="history" title="Activity" />
+          <Card>
+            <ActionRow
+              icon="query_stats"
+              title="Query History"
+              subtitle={queryCount !== null ? `${queryCount} saved queries` : "Loading…"}
+              onClick={() => router.push("/profile/query-history")}
+              right={<span className="material-symbols-outlined text-[var(--text-3)]">chevron_right</span>}
+            />
+          </Card>
+
+          {/* ── Security ──────────────────────────────────────── */}
+          <SectionHeader icon="security" title={t.corporateSecurity} danger />
+          <Card>
+            <ActionRow
+              icon="key"
+              title={t.changePassword}
+              subtitle="Reset password via email"
+              iconBg="rgba(220,38,38,0.1)"
+              iconColor="#dc2626"
+              onClick={() => router.push("/forgot-password")}
+              right={<span className="material-symbols-outlined text-[var(--text-3)]">chevron_right</span>}
+            />
+            <Divider />
+            <div className="flex items-center justify-between px-5 py-4">
+              <div className="flex items-center gap-4">
+                <div
+                  className="flex h-10 w-10 items-center justify-center rounded-xl"
+                  style={{ background: "var(--brand-tint)", color: "var(--brand-mid)" }}
+                >
+                  <span className="material-symbols-outlined text-[18px]">shield</span>
+                </div>
+                <div>
+                  <p className="text-[14px] font-medium text-[var(--text-1)]">{t.twoFactor}</p>
+                  <p className="text-[12px] text-[var(--text-3)]">Email confirmation on new devices</p>
                 </div>
               </div>
               <Toggle enabled={form.twoFactorEnabled} onClick={handleToggle2FA} />
             </div>
-            <div className="border-t" />
+            <Divider />
             <ActionRow
               icon="admin_panel_settings"
               title={t.sessionManagement}
-              subtitle="Manage trusted devices and login sessions"
+              subtitle="Trusted devices and active sessions"
+              iconBg="rgba(217,119,6,0.1)"
+              iconColor="#d97706"
               onClick={() => router.push("/session-management")}
-              right={
-                <span className="material-symbols-outlined text-[#94a3b8]">
-                  chevron_right
-                </span>
-              }
-              iconBg="bg-[#fef3c7]"
-              iconColor="text-[#d97706]"
+              right={<span className="material-symbols-outlined text-[var(--text-3)]">chevron_right</span>}
             />
-          </div>
+          </Card>
 
+          {message && (
+            <p
+              className="mt-4 rounded-xl px-4 py-2.5 text-center text-[13px] font-medium"
+              style={
+                message.includes("Failed") || message.includes("wrong")
+                  ? { background: "rgba(220,38,38,0.08)", color: "#dc2626" }
+                  : { background: "rgba(22,163,74,0.08)", color: "#16a34a" }
+              }
+            >
+              {message}
+            </p>
+          )}
+
+          {/* Logout */}
           <button
             onClick={handleLogout}
-            className="mt-8 w-full rounded-[20px] border border-red-300 bg-[#fff5f5] py-4 text-[15px] font-bold text-red-600 sm:text-[16px]"
+            className="mt-6 w-full rounded-2xl py-4 text-[15px] font-bold transition hover:opacity-90"
+            style={{
+              border: "1px solid rgba(220,38,38,0.3)",
+              background: "rgba(220,38,38,0.06)",
+              color: "#dc2626",
+            }}
           >
             {t.signOut}
           </button>
 
-          <div className="mt-6 text-center text-[11px] text-[#94a3b8]">
-            <p>SME-GPT v3.1.0 Enterprise</p>
-            <p className="mt-1">{t.auditFooter}</p>
-          </div>
+          <p className="mt-6 text-center text-[11px] text-[var(--text-3)]">
+            SME-GPT v3.1.0 · {t.auditFooter}
+          </p>
         </main>
 
         <BottomNav />
