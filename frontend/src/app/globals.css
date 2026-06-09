@@ -1,5 +1,39 @@
 @import "tailwindcss";
 
+/* ─── Design tokens ─────────────────────────────────────────── */
+:root {
+  --bg:           #f0f4f8;
+  --surface:      #ffffff;
+  --surface-2:    #f4f7fb;
+  --border:       #dce3ef;
+  --text-1:       #0f172a;
+  --text-2:       #4a5568;
+  --text-3:       #94a3b8;
+  --brand:        #1a3560;
+  --brand-mid:    #2252b5;
+  --brand-tint:   #eef3fd;
+  --brand-ring:   rgba(26, 53, 96, 0.15);
+  --input-bg:     #ffffff;
+  --input-bg-ro:  #f4f7fb;
+}
+
+[data-theme="dark"] {
+  --bg:           #0c1220;
+  --surface:      #111927;
+  --surface-2:    #19203a;
+  --border:       #1d2c44;
+  --text-1:       #e2e8f0;
+  --text-2:       #8b949e;
+  --text-3:       #4a5568;
+  --brand:        #2d5bdd;
+  --brand-mid:    #4a7de8;
+  --brand-tint:   #162040;
+  --brand-ring:   rgba(45, 91, 221, 0.2);
+  --input-bg:     #19203a;
+  --input-bg-ro:  #111927;
+}
+
+/* ─── Base ───────────────────────────────────────────────────── */
 html,
 body {
   margin: 0;
@@ -9,8 +43,8 @@ body {
 
 body {
   min-height: 100dvh;
-  background: #f6f7fb;
-  color: #0f172a;
+  background: var(--bg);
+  color: var(--text-1);
   -webkit-tap-highlight-color: transparent;
 }
 
@@ -24,4 +58,34 @@ body {
     "wght" 400,
     "GRAD" 0,
     "opsz" 24;
+}
+
+/* ─── Shared form inputs ─────────────────────────────────────── */
+.field-input {
+  background: var(--input-bg);
+  border-color: var(--border);
+  color: var(--text-1);
+}
+
+.field-input:focus {
+  border-color: var(--brand-mid);
+  outline: none;
+  box-shadow: 0 0 0 3px var(--brand-ring);
+}
+
+.field-input::placeholder {
+  color: var(--text-3);
+}
+
+/* ─── Scrollbar (dark mode) ──────────────────────────────────── */
+[data-theme="dark"] ::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+[data-theme="dark"] ::-webkit-scrollbar-track {
+  background: var(--surface);
+}
+[data-theme="dark"] ::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 4px;
 }
