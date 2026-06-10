@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import MobileShell from "@/components/layout/MobileShell";
 import BottomNav from "@/components/layout/BottomNav";
 import LanguageSwitcher from "@/components/layout/LanguageSwitcher";
+import ThemeToggle from "@/components/layout/ThemeToggle";
 import { AppLanguage, getStoredLanguage, ui } from "@/lib/i18n";
 
 type PreviewItem = {
@@ -15,20 +16,12 @@ type PreviewItem = {
 };
 
 type PreviewData = {
-  document_type: string;
-  order_id: string;
-  flow_type: string;
-  company_name: string;
-  supplier_name: string;
-  date: string;
-  currency: string;
-  raw_total_amount: string | number;
-  final_total_amount: string | number;
-  payable_amount: string | number;
-  cash_return: string | number;
-  received_status: string;
-  paid_status: string;
-  items: PreviewItem[];
+  document_type: string; order_id: string; flow_type: string;
+  company_name: string; supplier_name: string; date: string;
+  currency: string; raw_total_amount: string | number;
+  final_total_amount: string | number; payable_amount: string | number;
+  cash_return: string | number; received_status: string;
+  paid_status: string; items: PreviewItem[];
 };
 
 const BACKEND_URL = "http://127.0.0.1:8000";
@@ -38,14 +31,51 @@ function getAuthToken() {
   return localStorage.getItem("token") || sessionStorage.getItem("token") || "";
 }
 
+const FIELD_ROWS: [string, string][] = [
+  ["document_type", "Document Type"], ["order_id", "Order ID"],
+  ["flow_type", "Flow Type"], ["company_name", "Company Name"],
+  ["supplier_name", "Customer / Supplier"], ["date", "Date"],
+  ["currency", "Currency"], ["raw_total_amount", "Raw Total (OCR)"],
+  ["final_total_amount", "Final Total"], ["payable_amount", "Payable / Receivable"],
+  ["cash_return", "Cash Return"], ["received_status", "Received Status"],
+  ["paid_status", "Paid Status"],
+];
+
+const SELECT_OPTS: Record<string, { label: string; value: string }[]> = {
+  flow_type: [
+    { label: "Select…", value: "" },
+    { label: "Payable", value: "payable" }, { label: "Receivable", value: "receivable" },
+    { label: "Income", value: "income" }, { label: "Expense", value: "expense" },
+  ],
+  document_type: [
+    { label: "Select…", value: "" },
+    { label: "Invoice", value: "invoice" }, { label: "Receipt", value: "receipt" },
+    { label: "PO", value: "po" }, { label: "DN", value: "dn" },
+    { label: "Unknown", value: "unknown" },
+  ],
+  received_status: [
+    { label: "Select…", value: "" },
+    { label: "Received", value: "received" }, { label: "Not Received", value: "not_received" },
+    { label: "Partial", value: "partial" }, { label: "NULL", value: "NULL" },
+  ],
+  paid_status: [
+    { label: "Select…", value: "" },
+    { label: "Paid", value: "paid" }, { label: "Not Paid", value: "not_paid" },
+    { label: "Partial", value: "partial" }, { label: "NULL", value: "NULL" },
+  ],
+};
+
+const READONLY_FIELDS = new Set(["raw_total_amount", "final_total_amount", "payable_amount"]);
+
 export default function UploadPage() {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-
   const [lang, setLang] = useState<AppLanguage>("en");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [activeStep, setActiveStep] = useState(0);
+  const [stageMessage, setStageMessage] = useState("");
   const [preview, setPreview] = useState<PreviewData | null>(null);
   const [error, setError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
@@ -53,278 +83,119 @@ export default function UploadPage() {
   const [showDuplicateWarning, setShowDuplicateWarning] = useState(false);
   const [duplicateMessage, setDuplicateMessage] = useState("");
   const [existingDocumentId, setExistingDocumentId] = useState("");
-  const [showAmountMismatchWarning, setShowAmountMismatchWarning] = useState(false);
+  const [showAmountMismatch, setShowAmountMismatch] = useState(false);
 
-  useEffect(() => {
-    setLang(getStoredLanguage());
-  }, []);
+  useEffect(() => { setLang(getStoredLanguage()); }, []);
 
   const t = ui[lang];
 
-  const parseAmount = (value: string | number) => {
-    const text = String(value ?? "")
-      .replace(/,/g, "")
-      .replace(/Rs\.?/gi, "")
-      .trim();
-
-    const num = Number(text);
-    return Number.isFinite(num) ? num : 0;
+  const parseAmt = (v: string | number) => {
+    const n = Number(String(v ?? "").replace(/,/g, "").replace(/Rs\.?/gi, "").trim());
+    return Number.isFinite(n) ? n : 0;
   };
 
-  const recalculatePreviewTotals = (nextPreview: PreviewData): PreviewData => {
-    const updatedItems = (nextPreview.items || []).map((item) => {
-      const qty = parseAmount(item.quantity);
-      const unitPrice = parseAmount(item.unit_price);
-
-      let nextLineTotal: string | number = item.line_total;
-
-      if (qty > 0 && unitPrice > 0) {
-        nextLineTotal = Number((qty * unitPrice).toFixed(2));
-      }
-
-      return {
-        ...item,
-        line_total: nextLineTotal,
-      };
+  const recalculate = (p: PreviewData): PreviewData => {
+    const items = (p.items || []).map((item) => {
+      const q = parseAmt(item.quantity), u = parseAmt(item.unit_price);
+      return { ...item, line_total: q > 0 && u > 0 ? +(q * u).toFixed(2) : item.line_total };
     });
-
-    const computedTotal = updatedItems.reduce((sum, item) => {
-      return sum + parseAmount(item.line_total);
-    }, 0);
-
-    const normalizedTotal = Number(computedTotal.toFixed(2));
-
-    return {
-      ...nextPreview,
-      items: updatedItems,
-      raw_total_amount: nextPreview.raw_total_amount, // keep OCR extracted value unchanged
-      final_total_amount: normalizedTotal,
-      payable_amount: normalizedTotal,
-    };
+    const total = +(items.reduce((s, i) => s + parseAmt(i.line_total), 0)).toFixed(2);
+    return { ...p, items, final_total_amount: total, payable_amount: total };
   };
 
-  const handleOpenFilePicker = () => {
-    fileInputRef.current?.click();
+  const resetForm = () => {
+    setPreview(null); setSelectedFile(null); setSessionId("");
+    setShowDuplicateWarning(false); setDuplicateMessage(""); setExistingDocumentId("");
+    setShowAmountMismatch(false); setError(""); setActiveStep(0); setStageMessage("");
+    if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0] || null;
-    setSelectedFile(file);
-    setPreview(null);
-    setError("");
-    setSuccessMessage("");
-    setSessionId("");
-    setShowDuplicateWarning(false);
-    setDuplicateMessage("");
-    setExistingDocumentId("");
-    setShowAmountMismatchWarning(false);
-  };
-
-  const resetAfterSuccessfulSave = () => {
-    setPreview(null);
-    setSelectedFile(null);
-    setSessionId("");
-    setShowDuplicateWarning(false);
-    setDuplicateMessage("");
-    setExistingDocumentId("");
-    setShowAmountMismatchWarning(false);
-    setError("");
-
-    if (fileInputRef.current) {
-      fileInputRef.current.value = "";
-    }
-  };
-
-  const handleRemoveFile = () => {
-    setSelectedFile(null);
-    setPreview(null);
-    setError("");
-    setSuccessMessage("");
-    setSessionId("");
-    setShowDuplicateWarning(false);
-    setDuplicateMessage("");
-    setExistingDocumentId("");
-    setShowAmountMismatchWarning(false);
-
-    if (fileInputRef.current) {
-      fileInputRef.current.value = "";
-    }
-  };
-
-  const formatFileSize = (size: number) => {
-    if (size < 1024 * 1024) {
-      return `${(size / 1024).toFixed(1)} KB`;
-    }
-    return `${(size / (1024 * 1024)).toFixed(1)} MB`;
-  };
-
-  const getFileIcon = () => {
-    if (!selectedFile) return "upload_file";
-    if (selectedFile.type.includes("pdf")) return "picture_as_pdf";
-    return "image";
-  };
-
-  const getFileIconBg = () => {
-    if (!selectedFile) return "bg-[#eaf0ff] text-[#2563ff]";
-    if (selectedFile.type.includes("pdf")) return "bg-[#fff1f1] text-[#ef4444]";
-    return "bg-[#ecfeff] text-[#0891b2]";
-  };
-
-  const handleStartProcessing = async () => {
+  const handleProcess = async () => {
     if (!selectedFile) return;
-
     const token = getAuthToken();
-    if (!token) {
-      setError("Login token missing. Please log in again.");
-      router.push("/login");
-      return;
-    }
+    if (!token) { router.push("/login"); return; }
 
-    setIsProcessing(true);
-    setError("");
-    setSuccessMessage("");
-    setPreview(null);
-    setSessionId("");
-    setShowDuplicateWarning(false);
-    setDuplicateMessage("");
-    setExistingDocumentId("");
-    setShowAmountMismatchWarning(false);
+    setIsProcessing(true); setError(""); setPreview(null);
+    setActiveStep(1); setStageMessage("Preparing document…");
 
     try {
-      const formData = new FormData();
-      formData.append("file", selectedFile);
-
-      const res = await fetch(`${BACKEND_URL}/process-document`, {
+      const fd = new FormData();
+      fd.append("file", selectedFile);
+      const res = await fetch(`${BACKEND_URL}/process-document-stream`, {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-        body: formData,
+        headers: { Authorization: `Bearer ${token}` },
+        body: fd,
       });
 
-      if (res.status === 401) {
-        localStorage.removeItem("token");
-        sessionStorage.removeItem("token");
-        router.push("/login");
-        return;
+      if (res.status === 401) { localStorage.removeItem("token"); router.push("/login"); return; }
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({})) as any;
+        throw new Error(err.message || `Server error ${res.status}`);
       }
 
-      const data = await res.json();
+      const reader = res.body!.getReader();
+      const decoder = new TextDecoder();
+      let buf = "";
 
-      if (!res.ok || !data.success) {
-        throw new Error(data.message || "Processing failed");
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const lines = buf.split("\n");
+        buf = lines.pop() ?? "";
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          let event: any;
+          try { event = JSON.parse(line.slice(6)); } catch { continue; }
+
+          if (event.stage === "error") throw new Error(event.message || "Processing failed.");
+          if (typeof event.step === "number") setActiveStep(event.step);
+          if (event.message) setStageMessage(event.message);
+          if (event.stage === "done") {
+            setPreview(event.preview);
+            setSessionId(event.session_id);
+          }
+        }
       }
-
-      setPreview(data.preview);
-      setSessionId(data.session_id);
     } catch (err: any) {
       setError(err.message || "Something went wrong during processing.");
+      setActiveStep(0);
     } finally {
       setIsProcessing(false);
     }
   };
 
-  const handleFieldChange = (field: keyof PreviewData, value: string) => {
-    if (!preview) return;
-
-    const nextPreview: PreviewData = {
-      ...preview,
-      [field]: value,
-    };
-
-    if (field === "flow_type") {
-      nextPreview.payable_amount = nextPreview.final_total_amount;
-    }
-
-    setPreview(nextPreview);
-  };
-
-  const handleItemChange = (
-    index: number,
-    field: keyof PreviewItem,
-    value: string
-  ) => {
-    if (!preview) return;
-
-    const updatedItems = [...preview.items];
-    updatedItems[index] = {
-      ...updatedItems[index],
-      [field]: value,
-    };
-
-    const nextPreview: PreviewData = {
-      ...preview,
-      items: updatedItems,
-    };
-
-    const shouldRecalculate =
-      field === "quantity" || field === "unit_price";
-
-    setPreview(shouldRecalculate ? recalculatePreviewTotals(nextPreview) : nextPreview);
-  };
-
-  const handleConfirmSave = async (forceSave = false) => {
+  const handleSave = async (force = false) => {
     if (!preview || !sessionId) return;
-
     const token = getAuthToken();
-    if (!token) {
-      setError("Login token missing. Please log in again.");
-      router.push("/login");
-      return;
+    if (!token) { router.push("/login"); return; }
+
+    if (!force && parseAmt(preview.raw_total_amount) !== parseAmt(preview.final_total_amount)) {
+      setShowAmountMismatch(true); return;
     }
 
-    const rawTotal = parseAmount(preview.raw_total_amount);
-    const finalTotal = parseAmount(preview.final_total_amount);
-
-    if (!forceSave && rawTotal !== finalTotal) {
-      setShowAmountMismatchWarning(true);
-      return;
-    }
-
-    setIsSaving(true);
-    setError("");
-    setSuccessMessage("");
-
+    setIsSaving(true); setError("");
     try {
       const res = await fetch(`${BACKEND_URL}/confirm-save`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          session_id: sessionId,
-          edited_preview: preview,
-          force_save: forceSave,
-        }),
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ session_id: sessionId, edited_preview: preview, force_save: force }),
       });
-
-      if (res.status === 401) {
-        localStorage.removeItem("token");
-        sessionStorage.removeItem("token");
-        router.push("/login");
-        return;
-      }
-
+      if (res.status === 401) { localStorage.removeItem("token"); router.push("/login"); return; }
       const data = await res.json();
 
       if (data.duplicate_found && !data.success) {
         setShowDuplicateWarning(true);
-        setDuplicateMessage(data.message || "Already we have this document.");
+        setDuplicateMessage(data.message || "Document already exists.");
         setExistingDocumentId(data.existing_document_id || "NULL");
         return;
       }
 
-      if (!res.ok || !data.success) {
-        throw new Error(data.message || "Save failed.");
-      }
+      if (!res.ok || !data.success) throw new Error(data.message || "Save failed.");
 
-      setShowDuplicateWarning(false);
-      setDuplicateMessage("");
-      setExistingDocumentId("");
-      setShowAmountMismatchWarning(false);
-      setSuccessMessage(`Successfully saved. Document ID: ${data.document_id}`);
-      resetAfterSuccessfulSave();
+      setSuccessMessage(`Saved successfully. Document ID: ${data.document_id}`);
+      resetForm();
     } catch (err: any) {
       setError(err.message || "Something went wrong while saving.");
     } finally {
@@ -332,385 +203,292 @@ export default function UploadPage() {
     }
   };
 
-  const renderProcessButtonText = () => {
-    if (isProcessing) return "Processing...";
-    if (preview) return "Processing Done";
-    return t.startProcessing;
-  };
-
-  const fieldRows: [string, string][] = [
-    ["document_type", "Document Type"],
-    ["order_id", "Order ID"],
-    ["flow_type", "Flow Type"],
-    ["company_name", "Company Name"],
-    ["supplier_name", "Customer / Supplier Name"],
-    ["date", "Date"],
-    ["currency", "Currency"],
-    ["raw_total_amount", "Raw Total Amount"],
-    ["final_total_amount", "Final Total Amount"],
-    [
-      "payable_amount",
-      preview?.flow_type === "receivable"
-        ? "Receivable Amount"
-        : preview?.flow_type === "payable"
-        ? "Payable Amount"
-        : "Amount",
-    ],
-    ["cash_return", "Cash Return"],
-    ["received_status", "Received Status"],
-    ["paid_status", "Paid Status"],
-  ];
+  const pipelineSteps = [
+    { title: t.pdfToPages,    desc: t.pdfToPagesDesc,                    step: 1 },
+    { title: t.ocrExtraction, desc: t.ocrExtractionDesc,                 step: 2 },
+    { title: t.textChunking,  desc: t.textChunkingDesc ?? "LLM correction & structuring", step: 3 },
+    { title: t.vectorIndexing,desc: t.vectorIndexingDesc ?? "Field extraction & validation", step: 4 },
+  ].map((s) => ({
+    ...s,
+    done:    activeStep > s.step || !!preview,
+    current: isProcessing && activeStep === s.step,
+    liveMsg: isProcessing && activeStep === s.step ? stageMessage : "",
+  }));
 
   return (
     <MobileShell>
-      <div className="min-h-screen bg-[#f6f7fb] pb-24">
+      <div className="min-h-screen pb-24" style={{ background: "var(--bg)" }}>
         <main className="mx-auto w-full max-w-[980px] px-4 py-6 sm:px-6 lg:px-8">
-          <div className="mb-4 flex items-center justify-between">
+
+          {/* Top bar */}
+          <div className="mb-5 flex items-center justify-between">
             <button
-              onClick={() => router.push("/")}
-              className="text-[14px] font-medium text-[#2563ff]"
+              onClick={() => router.push("/dashboard")}
+              className="flex items-center gap-1.5 text-[13px] font-semibold transition hover:opacity-75"
+              style={{ color: "var(--brand-mid)" }}
             >
-              ← {t.backToDashboard}
+              <span className="material-symbols-outlined text-[16px]">arrow_back</span>
+              {t.backToDashboard}
             </button>
-            <LanguageSwitcher />
+            <div className="flex items-center gap-2">
+              <ThemeToggle />
+              <LanguageSwitcher />
+            </div>
           </div>
 
-          <h1 className="text-[24px] font-extrabold tracking-tight text-[#0f172a] sm:text-[28px]">
+          <h1 className="text-[22px] font-extrabold tracking-tight text-[var(--text-1)] sm:text-[26px]">
             {t.uploadTitle}
           </h1>
-          <p className="mt-2 max-w-3xl text-[13px] leading-7 text-[#64748b] sm:text-[14px]">
-            {t.uploadSubtitle}
-          </p>
+          <p className="mt-1.5 text-[13px] leading-6 text-[var(--text-2)]">{t.uploadSubtitle}</p>
 
           <input
-            ref={fileInputRef}
-            type="file"
-            accept=".pdf,.png,.jpg,.jpeg,.webp,application/pdf,image/png,image/jpeg,image/webp"
+            ref={fileInputRef} type="file"
+            accept=".pdf,.png,.jpg,.jpeg,.webp"
             className="hidden"
-            onChange={handleFileChange}
+            onChange={(e) => {
+              const f = e.target.files?.[0] || null;
+              setSelectedFile(f); setPreview(null); setError("");
+              setSuccessMessage(""); setSessionId(""); setShowDuplicateWarning(false);
+              setShowAmountMismatch(false);
+            }}
           />
 
-          <div className="mt-8 rounded-[22px] border-2 border-dashed border-[#a9c1ff] bg-white p-8 text-center">
-            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-[#eaf0ff]">
-              <span className="material-symbols-outlined text-[30px] text-[#2563ff]">
-                {selectedFile ? getFileIcon() : "upload_file"}
+          {/* Drop zone */}
+          <div
+            className="mt-6 rounded-2xl p-8 text-center"
+            style={{
+              border: "2px dashed var(--brand-mid)",
+              background: "var(--surface)",
+              opacity: selectedFile ? 0.85 : 1,
+            }}
+          >
+            <div
+              className="mx-auto flex h-14 w-14 items-center justify-center rounded-full"
+              style={{ background: "var(--brand-tint)" }}
+            >
+              <span className="material-symbols-outlined text-[28px]" style={{ color: "var(--brand-mid)" }}>
+                {selectedFile
+                  ? selectedFile.type.includes("pdf") ? "picture_as_pdf" : "image"
+                  : "upload_file"}
               </span>
             </div>
-
-            <h2 className="mt-5 text-[18px] font-bold text-[#0f172a]">
+            <h2 className="mt-4 text-[17px] font-bold text-[var(--text-1)]">
               {selectedFile ? selectedFile.name : t.dragDrop}
             </h2>
-
-            <p className="mt-2 text-[13px] text-[#64748b]">
+            <p className="mt-1 text-[13px] text-[var(--text-2)]">
               {selectedFile
-                ? `${formatFileSize(selectedFile.size)} • Ready for OCR extraction`
+                ? `${(selectedFile.size / 1024).toFixed(0)} KB · Ready for OCR`
                 : t.maxFileSize}
             </p>
-
             <button
-              onClick={handleOpenFilePicker}
-              className="mt-5 rounded-2xl bg-[#dfe7fb] px-6 py-3 text-[14px] font-semibold text-[#2563ff]"
+              onClick={() => fileInputRef.current?.click()}
+              className="mt-5 rounded-xl px-6 py-2.5 text-[13px] font-semibold transition hover:opacity-80"
+              style={{ background: "var(--brand-tint)", color: "var(--brand-mid)" }}
             >
               {selectedFile ? "Choose Another File" : t.selectDevice}
             </button>
           </div>
 
           {selectedFile && (
-            <div className="mt-5 rounded-[18px] border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="mt-4 rounded-2xl p-4" style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
               <div className="flex items-center gap-4">
-                <div
-                  className={`flex h-12 w-12 items-center justify-center rounded-xl ${getFileIconBg()}`}
-                >
-                  <span className="material-symbols-outlined text-[24px]">
-                    {getFileIcon()}
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl"
+                  style={{ background: "var(--brand-tint)", color: "var(--brand-mid)" }}>
+                  <span className="material-symbols-outlined text-[22px]">
+                    {selectedFile.type.includes("pdf") ? "picture_as_pdf" : "image"}
                   </span>
                 </div>
-
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-[16px] font-semibold text-[#0f172a]">
-                    {selectedFile.name}
-                  </p>
-                  <p className="text-[12px] text-[#94a3b8]">
-                    {formatFileSize(selectedFile.size)} • Ready for OCR extraction
+                  <p className="truncate text-[15px] font-semibold text-[var(--text-1)]">{selectedFile.name}</p>
+                  <p className="text-[12px] text-[var(--text-3)]">
+                    {(selectedFile.size / 1024).toFixed(0)} KB · OCR ready
                   </p>
                 </div>
-
-                <button onClick={handleRemoveFile} className="text-[#94a3b8]">
-                  <span className="material-symbols-outlined text-[24px]">
-                    close
-                  </span>
+                <button onClick={resetForm} className="text-[var(--text-3)] transition hover:text-red-500">
+                  <span className="material-symbols-outlined text-[22px]">close</span>
                 </button>
               </div>
             </div>
           )}
 
-          <div className="mt-8 flex items-center justify-between">
-            <p className="text-[12px] font-bold uppercase tracking-[0.12em] text-[#94a3b8]">
+          {/* Pipeline steps */}
+          <div className="mt-8">
+            <p className="mb-4 text-[11px] font-bold uppercase tracking-[0.1em] text-[var(--text-3)]">
               {t.processingPipeline}
             </p>
-            <p className="text-[13px] text-[#2563ff]">{t.explainableAI}</p>
-          </div>
-
-          <div className="mt-5 space-y-6">
-            {[
-              [t.pdfToPages, t.pdfToPagesDesc, !!selectedFile],
-              [t.ocrExtraction, t.ocrExtractionDesc, isProcessing || !!preview],
-              [t.textChunking, t.textChunkingDesc ?? "Text structuring", !!preview],
-              [t.vectorIndexing, t.vectorIndexingDesc, false],
-            ].map(([title, desc, active], i) => (
-              <div key={i} className="flex gap-4">
-                <div className="flex w-8 flex-col items-center">
-                  <div
-                    className={`flex h-7 w-7 items-center justify-center rounded-full border-2 text-[10px] ${
-                      active
-                        ? "border-[#2563ff] bg-[#2563ff] text-white"
-                        : "border-slate-300 bg-white text-slate-400"
-                    }`}
-                  >
-                    {i + 1}
+            <div className="space-y-4">
+              {pipelineSteps.map((step, i) => (
+                <div key={i} className="flex gap-4">
+                  <div className="flex w-7 flex-col items-center">
+                    <div
+                      className="flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-bold transition-all"
+                      style={
+                        step.done
+                          ? { background: "var(--brand)", color: "#fff" }
+                          : step.current
+                          ? { background: "var(--brand-mid)", color: "#fff", boxShadow: "0 0 0 3px var(--brand-tint)" }
+                          : { border: "2px solid var(--border)", color: "var(--text-3)" }
+                      }
+                    >
+                      {step.done ? "✓" : step.current ? (
+                        <span style={{ fontSize: 13, lineHeight: 1 }}>⟳</span>
+                      ) : i + 1}
+                    </div>
+                    {i < 3 && <div className="mt-1 h-full w-px" style={{ background: "var(--border)" }} />}
                   </div>
-                  {i !== 3 && <div className="mt-1 h-full w-px bg-slate-200" />}
+                  <div
+                    className="flex-1 rounded-2xl p-4 transition-all"
+                    style={{
+                      background: "var(--surface)",
+                      border: step.current
+                        ? "1px solid var(--brand-mid)"
+                        : "1px solid var(--border)",
+                    }}
+                  >
+                    <p className="text-[14px] font-bold text-[var(--text-1)]">{step.title}</p>
+                    <p className="mt-0.5 text-[12px] text-[var(--text-2)]">
+                      {step.liveMsg || step.desc}
+                    </p>
+                  </div>
                 </div>
-
-                <div className="flex-1 rounded-[18px] border border-slate-200 bg-white p-4 shadow-sm">
-                  <p className="text-[15px] font-bold text-[#0f172a]">{title as string}</p>
-                  <p className="mt-1 text-[13px] text-[#64748b]">{desc as string}</p>
-                </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
 
           {error && (
-            <div className="mt-5 rounded-[16px] border border-red-200 bg-red-50 px-4 py-3 text-[14px] text-red-700">
+            <div className="mt-5 rounded-xl px-4 py-3 text-[13px] text-red-600"
+              style={{ background: "rgba(220,38,38,0.08)", border: "1px solid rgba(220,38,38,0.2)" }}>
               {error}
             </div>
           )}
 
           {successMessage && (
-            <div className="mt-5 rounded-[16px] border border-green-200 bg-green-50 px-4 py-3 text-[14px] text-green-700">
+            <div className="mt-5 rounded-xl px-4 py-3 text-[13px] text-emerald-700"
+              style={{ background: "rgba(22,163,74,0.08)", border: "1px solid rgba(22,163,74,0.2)" }}>
               {successMessage}
             </div>
           )}
 
-          <div className="mt-6">
-            <button
-              onClick={handleStartProcessing}
-              disabled={!selectedFile || isProcessing}
-              className="w-full rounded-[18px] bg-[#2563ff] py-4 text-[15px] font-bold text-white shadow-[0_10px_24px_rgba(37,99,255,0.22)] disabled:opacity-60"
-            >
-              {renderProcessButtonText()}
-            </button>
-          </div>
+          <button
+            onClick={handleProcess}
+            disabled={!selectedFile || isProcessing}
+            className="mt-6 w-full rounded-2xl py-4 text-[15px] font-bold text-white transition hover:opacity-90 disabled:opacity-50"
+            style={{ background: "var(--brand)" }}
+          >
+            {isProcessing
+              ? stageMessage || "Processing…"
+              : preview
+              ? "Processing Done ✓"
+              : t.startProcessing}
+          </button>
 
+          {/* Preview */}
           {preview && (
-            <div className="mt-8 rounded-[22px] border border-slate-200 bg-white p-5 shadow-sm">
-              <h2 className="text-[20px] font-extrabold text-[#0f172a]">
-                Extracted Preview
-              </h2>
-              <p className="mt-2 text-[13px] text-[#64748b]">
-                Review and edit the extracted fields before saving.
-              </p>
+            <div className="mt-8 rounded-2xl p-5" style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
+              <h2 className="text-[19px] font-extrabold text-[var(--text-1)]">Extracted Preview</h2>
+              <p className="mt-1 text-[13px] text-[var(--text-2)]">Review and edit before saving.</p>
 
               <div className="mt-5 grid gap-4 sm:grid-cols-2">
-                {fieldRows.map(([field, label]) => (
-                  <div key={field}>
-                    <p className="mb-2 text-[12px] font-semibold text-[#64748b]">
-                      {label}
-                    </p>
-
-                    {field === "flow_type" ? (
-                      <select
-                        value={(preview as any)[field] ?? ""}
-                        onChange={(e) =>
-                          handleFieldChange(field as keyof PreviewData, e.target.value)
-                        }
-                        className="w-full rounded-[14px] border border-slate-200 px-4 py-3 text-[14px] text-[#0f172a] outline-none focus:border-[#2563ff]"
-                      >
-                        <option value="">Select Flow Type</option>
-                        <option value="payable">payable</option>
-                        <option value="receivable">receivable</option>
-                        <option value="income">income</option>
-                        <option value="expense">expense</option>
-                      </select>
-                    ) : field === "document_type" ? (
-                      <select
-                        value={(preview as any)[field] ?? ""}
-                        onChange={(e) =>
-                          handleFieldChange(field as keyof PreviewData, e.target.value)
-                        }
-                        className="w-full rounded-[14px] border border-slate-200 px-4 py-3 text-[14px] text-[#0f172a] outline-none focus:border-[#2563ff]"
-                      >
-                        <option value="">Select Document Type</option>
-                        <option value="invoice">invoice</option>
-                        <option value="receipt">receipt</option>
-                        <option value="po">po</option>
-                        <option value="dn">dn</option>
-                        <option value="unknown">unknown</option>
-                      </select>
-                    ) : field === "received_status" ? (
-                      <select
-                        value={(preview as any)[field] ?? ""}
-                        onChange={(e) =>
-                          handleFieldChange(field as keyof PreviewData, e.target.value)
-                        }
-                        className="w-full rounded-[14px] border border-slate-200 px-4 py-3 text-[14px] text-[#0f172a] outline-none focus:border-[#2563ff]"
-                      >
-                        <option value="">Select Received Status</option>
-                        <option value="received">received</option>
-                        <option value="not_received">not_received</option>
-                        <option value="partial">partial</option>
-                        <option value="NULL">NULL</option>
-                      </select>
-                    ) : field === "paid_status" ? (
-                      <select
-                        value={(preview as any)[field] ?? ""}
-                        onChange={(e) =>
-                          handleFieldChange(field as keyof PreviewData, e.target.value)
-                        }
-                        className="w-full rounded-[14px] border border-slate-200 px-4 py-3 text-[14px] text-[#0f172a] outline-none focus:border-[#2563ff]"
-                      >
-                        <option value="">Select Paid Status</option>
-                        <option value="paid">paid</option>
-                        <option value="not_paid">not_paid</option>
-                        <option value="partial">partial</option>
-                        <option value="NULL">NULL</option>
-                      </select>
-                    ) : (
-                      <input
-                        value={String((preview as any)[field] ?? "")}
-                        onChange={(e) =>
-                          handleFieldChange(field as keyof PreviewData, e.target.value)
-                        }
-                        readOnly={
-                          field === "raw_total_amount" ||
-                          field === "final_total_amount" ||
-                          field === "payable_amount"
-                        }
-                        className={`w-full rounded-[14px] border px-4 py-3 text-[14px] text-[#0f172a] outline-none ${
-                          field === "raw_total_amount" ||
-                          field === "final_total_amount" ||
-                          field === "payable_amount"
-                            ? "border-slate-200 bg-slate-50"
-                            : "border-slate-200 focus:border-[#2563ff]"
-                        }`}
-                      />
-                    )}
-                  </div>
-                ))}
+                {FIELD_ROWS.map(([field, label]) => {
+                  const opts = SELECT_OPTS[field];
+                  const isReadonly = READONLY_FIELDS.has(field);
+                  return (
+                    <div key={field}>
+                      <p className="mb-1.5 text-[12px] font-semibold text-[var(--text-2)]">{label}</p>
+                      {opts ? (
+                        <select
+                          value={String((preview as any)[field] ?? "")}
+                          onChange={(e) => setPreview({ ...preview, [field]: e.target.value })}
+                          className="field-input w-full rounded-xl border px-4 py-2.5 text-[14px] transition"
+                        >
+                          {opts.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                        </select>
+                      ) : (
+                        <input
+                          value={String((preview as any)[field] ?? "")}
+                          onChange={(e) => !isReadonly && setPreview({ ...preview, [field]: e.target.value })}
+                          readOnly={isReadonly}
+                          className="field-input w-full rounded-xl border px-4 py-2.5 text-[14px] transition"
+                          style={isReadonly ? { background: "var(--input-bg-ro)", cursor: "not-allowed" } : {}}
+                        />
+                      )}
+                    </div>
+                  );
+                })}
               </div>
 
-              <div className="mt-6">
-                <p className="text-[12px] font-bold uppercase tracking-[0.08em] text-[#64748b]">
-                  Items
-                </p>
-
-                <div className="mt-3 space-y-3">
-                  {preview.items && preview.items.length > 0 ? (
-                    preview.items.map((item, index) => (
-                      <div
-                        key={index}
-                        className="grid gap-3 rounded-[16px] border border-slate-200 p-4 sm:grid-cols-3"
-                      >
-                        <input
-                          value={String(item.description ?? "")}
-                          onChange={(e) =>
-                            handleItemChange(index, "description", e.target.value)
-                          }
-                          placeholder="Description"
-                          className="rounded-[12px] border border-slate-200 px-3 py-2 text-[14px] outline-none focus:border-[#2563ff]"
-                        />
-                        <input
-                          value={String(item.quantity ?? "")}
-                          onChange={(e) =>
-                            handleItemChange(index, "quantity", e.target.value)
-                          }
-                          placeholder="Quantity"
-                          className="rounded-[12px] border border-slate-200 px-3 py-2 text-[14px] outline-none focus:border-[#2563ff]"
-                        />
-                        <input
-                          value={String(item.unit_price ?? "")}
-                          onChange={(e) =>
-                            handleItemChange(index, "unit_price", e.target.value)
-                          }
-                          placeholder="Unit Price"
-                          className="rounded-[12px] border border-slate-200 px-3 py-2 text-[14px] outline-none focus:border-[#2563ff]"
-                        />
+              {/* Items */}
+              {preview.items && preview.items.length > 0 && (
+                <div className="mt-6">
+                  <p className="mb-3 text-[11px] font-bold uppercase tracking-[0.08em] text-[var(--text-3)]">Items</p>
+                  <div className="space-y-3">
+                    {preview.items.map((item, idx) => (
+                      <div key={idx} className="grid gap-3 rounded-xl p-4 sm:grid-cols-3"
+                        style={{ border: "1px solid var(--border)", background: "var(--surface-2)" }}>
+                        {(["description", "quantity", "unit_price"] as (keyof PreviewItem)[]).map((f) => (
+                          <input
+                            key={f}
+                            value={String(item[f] ?? "")}
+                            onChange={(e) => {
+                              const items = [...preview.items];
+                              items[idx] = { ...items[idx], [f]: e.target.value };
+                              const next = { ...preview, items };
+                              setPreview(f === "quantity" || f === "unit_price" ? recalculate(next) : next);
+                            }}
+                            placeholder={f.replace("_", " ")}
+                            className="field-input rounded-xl border px-3 py-2 text-[13px] transition"
+                          />
+                        ))}
                       </div>
-                    ))
-                  ) : (
-                    <p className="text-[14px] text-[#64748b]">No items extracted.</p>
-                  )}
-                </div>
-              </div>
-
-              {showAmountMismatchWarning && (
-                <div className="mt-6 rounded-[16px] border border-amber-200 bg-amber-50 px-4 py-3 text-[14px] text-amber-800">
-                  <p className="font-semibold">
-                    Raw total and final total are different.
-                  </p>
-                  <p className="mt-1">
-                    Do you want to save using the final calculated amount?
-                  </p>
-
-                  <div className="mt-3 flex gap-3">
-                    <button
-                      onClick={() => {
-                        setShowAmountMismatchWarning(false);
-                        handleConfirmSave(true);
-                      }}
-                      disabled={isSaving}
-                      className="rounded-xl bg-amber-500 px-4 py-2 text-white"
-                    >
-                      Save Anyway
-                    </button>
-                    <button
-                      onClick={() => setShowAmountMismatchWarning(false)}
-                      className="rounded-xl border border-amber-300 bg-white px-4 py-2 text-amber-800"
-                    >
-                      Cancel
-                    </button>
+                    ))}
                   </div>
                 </div>
               )}
 
+              {/* Amount mismatch warning */}
+              {showAmountMismatch && (
+                <div className="mt-6 rounded-xl p-4 text-[13px]"
+                  style={{ background: "rgba(217,119,6,0.08)", border: "1px solid rgba(217,119,6,0.3)", color: "#92400e" }}>
+                  <p className="font-semibold">Raw and final totals differ.</p>
+                  <p className="mt-1">Save using the recalculated final amount?</p>
+                  <div className="mt-3 flex gap-3">
+                    <button onClick={() => { setShowAmountMismatch(false); handleSave(true); }}
+                      disabled={isSaving}
+                      className="rounded-xl px-4 py-2 text-[13px] font-bold text-white"
+                      style={{ background: "#d97706" }}>Save Anyway</button>
+                    <button onClick={() => setShowAmountMismatch(false)}
+                      className="rounded-xl px-4 py-2 text-[13px] font-semibold"
+                      style={{ border: "1px solid rgba(217,119,6,0.4)", color: "#92400e" }}>Cancel</button>
+                  </div>
+                </div>
+              )}
+
+              {/* Duplicate warning */}
               {showDuplicateWarning && (
-                <div className="mt-6 rounded-[16px] border border-amber-200 bg-amber-50 px-4 py-3 text-[14px] text-amber-800">
+                <div className="mt-6 rounded-xl p-4 text-[13px]"
+                  style={{ background: "rgba(217,119,6,0.08)", border: "1px solid rgba(217,119,6,0.3)", color: "#92400e" }}>
                   <p className="font-semibold">{duplicateMessage}</p>
-                  <p className="mt-1">
-                    Existing Document ID: {existingDocumentId}
-                  </p>
-
+                  <p className="mt-1">Existing ID: {existingDocumentId}</p>
                   <div className="mt-3 flex gap-3">
-                    <button
-                      onClick={() => handleConfirmSave(true)}
-                      disabled={isSaving}
-                      className="rounded-xl bg-amber-500 px-4 py-2 text-white"
-                    >
+                    <button onClick={() => handleSave(true)} disabled={isSaving}
+                      className="rounded-xl px-4 py-2 text-[13px] font-bold text-white" style={{ background: "#d97706" }}>
                       Save Anyway
                     </button>
-                    <button
-                      onClick={() => {
-                        setShowDuplicateWarning(false);
-                        setDuplicateMessage("");
-                        setExistingDocumentId("");
-                      }}
-                      className="rounded-xl border border-amber-300 bg-white px-4 py-2 text-amber-800"
-                    >
-                      Cancel
-                    </button>
+                    <button onClick={() => { setShowDuplicateWarning(false); setDuplicateMessage(""); }}
+                      className="rounded-xl px-4 py-2 text-[13px] font-semibold"
+                      style={{ border: "1px solid rgba(217,119,6,0.4)", color: "#92400e" }}>Cancel</button>
                   </div>
                 </div>
               )}
 
-              <div className="mt-6">
-                <button
-                  onClick={() => handleConfirmSave(false)}
-                  disabled={isSaving}
-                  className="w-full rounded-[18px] bg-[#16a34a] py-4 text-[15px] font-bold text-white shadow-[0_10px_24px_rgba(22,163,74,0.22)] disabled:opacity-60"
-                >
-                  {isSaving ? "Saving..." : "Confirm and Save"}
-                </button>
-              </div>
+              <button
+                onClick={() => handleSave(false)}
+                disabled={isSaving}
+                className="mt-6 w-full rounded-2xl py-4 text-[15px] font-bold text-white transition hover:opacity-90 disabled:opacity-60"
+                style={{ background: "#16a34a" }}
+              >
+                {isSaving ? "Saving…" : "Confirm and Save"}
+              </button>
             </div>
           )}
         </main>

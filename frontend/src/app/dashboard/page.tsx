@@ -5,11 +5,12 @@ import { useRouter } from "next/navigation";
 import MobileShell from "@/components/layout/MobileShell";
 import LanguageSwitcher from "@/components/layout/LanguageSwitcher";
 import BottomNav from "@/components/layout/BottomNav";
+import ThemeToggle from "@/components/layout/ThemeToggle";
 import { getSession, logoutUser, SessionUser, getStoredToken } from "@/lib/auth";
 import { AppLanguage, getStoredLanguage, ui } from "@/lib/i18n";
 import { hasUnreadNotifications } from "@/lib/notifications";
 
-const BACKEND_URL ="http://127.0.0.1:8000";
+const BACKEND_URL = "http://127.0.0.1:8000";
 
 type SummaryData = {
   total: number;
@@ -33,72 +34,40 @@ type RecentDocument = {
 type DocIconType = "po" | "invoice" | "dn" | "receipt" | "unknown";
 
 function DocIcon({ type }: { type: DocIconType }) {
-  if (type === "po") {
-    return (
-      <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[#f5efdc]">
-        <span className="material-symbols-outlined text-[20px] text-[#d97706]">
-          receipt_long
-        </span>
-      </div>
-    );
-  }
+  const map: Record<DocIconType, { bg: string; color: string; icon: string }> = {
+    invoice: { bg: "rgba(34,82,181,0.12)", color: "#2252b5", icon: "description" },
+    po:      { bg: "rgba(124,58,237,0.10)", color: "#7c3aed", icon: "shopping_cart" },
+    dn:      { bg: "rgba(249,115,22,0.10)", color: "#ea6c0a", icon: "local_shipping" },
+    receipt: { bg: "rgba(22,163,74,0.10)",  color: "#16a34a", icon: "receipt" },
+    unknown: { bg: "rgba(100,116,139,0.1)", color: "#64748b", icon: "draft" },
+  };
 
-  if (type === "invoice") {
-    return (
-      <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[#eaf0ff]">
-        <span className="material-symbols-outlined text-[20px] text-[#2563ff]">
-          description
-        </span>
-      </div>
-    );
-  }
-
-  if (type === "dn") {
-    return (
-      <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[#fff7ed]">
-        <span className="material-symbols-outlined text-[20px] text-[#f97316]">
-          local_shipping
-        </span>
-      </div>
-    );
-  }
-
-  if (type === "receipt") {
-    return (
-      <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[#e7f4ea]">
-        <span className="material-symbols-outlined text-[20px] text-[#16a34a]">
-          receipt
-        </span>
-      </div>
-    );
-  }
+  const item = map[type] ?? map.unknown;
 
   return (
-    <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-slate-100">
-      <span className="material-symbols-outlined text-[20px] text-slate-500">
-        draft
+    <div
+      className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl"
+      style={{ background: item.bg }}
+    >
+      <span className="material-symbols-outlined text-[20px]" style={{ color: item.color }}>
+        {item.icon}
       </span>
     </div>
   );
 }
 
-function StatCard({
-  label,
-  value,
-  valueColor,
-}: {
-  label: string;
-  value: string;
-  valueColor?: string;
-}) {
+function StatCard({ label, value, color }: { label: string; value: string; color?: string }) {
   return (
-    <div className="rounded-[18px] border border-slate-200 bg-white px-4 py-4 shadow-[0_2px_10px_rgba(15,23,42,0.05)]">
-      <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#94a3b8]">
+    <div
+      className="rounded-2xl px-4 py-4 shadow-sm"
+      style={{ background: "var(--surface)", border: "1px solid var(--border)" }}
+    >
+      <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[var(--text-3)]">
         {label}
       </p>
       <p
-        className="mt-2 text-[20px] font-extrabold leading-none"
-        style={{ color: valueColor || "#0f172a" }}
+        className="mt-2 text-[22px] font-extrabold leading-none"
+        style={{ color: color || "var(--text-1)" }}
       >
         {value}
       </p>
@@ -113,143 +82,114 @@ export default function DashboardPage() {
   const [summary, setSummary] = useState<SummaryData | null>(null);
   const [error, setError] = useState("");
   const [hasUnread, setHasUnread] = useState(false);
+
   useEffect(() => {
     const load = async () => {
       setLang(getStoredLanguage());
-
-      const currentSession = await getSession();
-
-      if (!currentSession) {
-        router.push("/login");
-        return;
-      }
-
-      setSession(currentSession);
+      const s = await getSession();
+      if (!s) { router.push("/login"); return; }
+      setSession(s);
 
       try {
         const token = getStoredToken();
-
-        if (!token) {
-          setError("Missing login token. Please log in again.");
-          return;
-        }
+        if (!token) { setError("Missing login token. Please log in again."); return; }
 
         const res = await fetch(`${BACKEND_URL}/dashboard-summary`, {
-          method: "GET",
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
+          headers: { Authorization: `Bearer ${token}` },
           cache: "no-store",
         });
 
         if (res.status === 401) {
           localStorage.removeItem("token");
-          sessionStorage.removeItem("token");
           router.push("/login");
           return;
         }
 
         const data = await res.json();
-
-        if (!res.ok || !data.success) {
-          throw new Error(data.message || "Failed to fetch dashboard summary.");
-        }
-
+        if (!res.ok || !data.success) throw new Error(data.message || "Failed to fetch summary.");
         setSummary(data);
-      } catch (fetchError: any) {
-        console.error("Failed to fetch dashboard summary:", fetchError);
-        setError(fetchError.message || "Failed to fetch dashboard summary.");
+      } catch (err: any) {
+        setError(err.message || "Failed to fetch dashboard summary.");
       }
     };
 
     load();
   }, [router]);
-  
 
   useEffect(() => {
-  const updateUnread = () => {
-    setHasUnread(hasUnreadNotifications());
-  };
+    const update = () => setHasUnread(hasUnreadNotifications());
+    update();
+    window.addEventListener("notifications-updated", update);
+    window.addEventListener("storage", update);
+    return () => {
+      window.removeEventListener("notifications-updated", update);
+      window.removeEventListener("storage", update);
+    };
+  }, []);
 
-  updateUnread();
-
-  window.addEventListener("notifications-updated", updateUnread);
-  window.addEventListener("storage", updateUnread);
-
-  return () => {
-    window.removeEventListener("notifications-updated", updateUnread);
-    window.removeEventListener("storage", updateUnread);
-  };
-}, []);
   if (!session) return null;
 
   const t = ui[lang];
-  const recentDocuments = summary?.recent_documents || [];
+  const recentDocs = summary?.recent_documents || [];
 
   const getRecentMeta = (doc: RecentDocument) => {
-    const amount =
+    const amt =
       doc.final_total_amount && doc.final_total_amount !== "NULL"
         ? `${doc.currency !== "NULL" ? doc.currency : "LKR"} ${doc.final_total_amount}`
         : "No Amount";
-
-    const docDate = doc.date && doc.date !== "NULL" ? doc.date : "No Date";
-
-    return `${docDate} • ${amount}`;
+    const dt = doc.date && doc.date !== "NULL" ? doc.date : "No Date";
+    return `${dt} • ${amt}`;
   };
 
   return (
     <MobileShell>
-      <div className="min-h-screen bg-[#f6f7fb] pb-24">
-        <header className="border-b border-slate-200 bg-white">
-          <div className="mx-auto flex w-full max-w-[1180px] flex-col gap-4 px-4 py-4 sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:px-8">
+      <div className="min-h-screen pb-24" style={{ background: "var(--bg)" }}>
+        {/* Header */}
+        <header style={{ background: "var(--surface)", borderBottom: "1px solid var(--border)" }}>
+          <div className="mx-auto flex w-full max-w-[1180px] flex-col gap-3 px-4 py-4 sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:px-8">
             <div className="flex items-center gap-3">
-              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#2563ff] text-white shadow-sm">
-                <span className="material-symbols-outlined text-[20px]">
-                  receipt_long
-                </span>
+              <div
+                className="flex h-10 w-10 items-center justify-center rounded-xl shadow-sm"
+                style={{ background: "var(--brand)" }}
+              >
+                <span className="material-symbols-outlined text-[18px] text-white">receipt_long</span>
               </div>
-
               <div>
-                <h1 className="text-[20px] font-extrabold tracking-tight text-[#0f172a]">
+                <h1 className="text-[19px] font-extrabold tracking-tight text-[var(--text-1)]">
                   SME-GPT
                 </h1>
-                <p className="text-[12px] text-[#64748b]">
-                  {session.companyName}
-                </p>
+                <p className="text-[12px] text-[var(--text-2)]">{session.companyName}</p>
               </div>
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
+              <ThemeToggle />
               <LanguageSwitcher />
 
               <button
-  onClick={() => router.push("/notifications")}
-  className="relative flex h-10 w-10 items-center justify-center rounded-full transition hover:bg-slate-100"
->
-  <span className="material-symbols-outlined text-slate-700">
-    notifications
-  </span>
-
-  {hasUnread && (
-    <span className="absolute right-2 top-2 h-2.5 w-2.5 rounded-full bg-red-500" />
-  )}
-</button>
-
-              <button
-  onClick={() => router.push("/profile")}
-  className="flex h-12 w-12 items-center justify-center rounded-full bg-[#f7b092] text-white transition hover:scale-[1.03] hover:shadow-md"
->
-  <span className="material-symbols-outlined text-[24px]">
-    person
-  </span>
-</button>
+                onClick={() => router.push("/notifications")}
+                className="relative flex h-9 w-9 items-center justify-center rounded-full transition hover:bg-[var(--surface-2)]"
+              >
+                <span className="material-symbols-outlined text-[20px] text-[var(--text-2)]">
+                  notifications
+                </span>
+                {hasUnread && (
+                  <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-red-500" />
+                )}
+              </button>
 
               <button
-                onClick={async () => {
-                  await logoutUser();
-                  router.push("/login");
-                }}
-                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[12px] font-semibold text-[#64748b] transition hover:bg-slate-50"
+                onClick={() => router.push("/profile")}
+                className="flex h-9 w-9 items-center justify-center rounded-full text-white transition hover:opacity-90"
+                style={{ background: "#c97b5a" }}
+              >
+                <span className="material-symbols-outlined text-[20px]">person</span>
+              </button>
+
+              <button
+                onClick={async () => { await logoutUser(); router.push("/login"); }}
+                className="rounded-xl px-3 py-1.5 text-[12px] font-semibold transition hover:bg-[var(--surface-2)]"
+                style={{ border: "1px solid var(--border)", color: "var(--text-2)" }}
               >
                 Logout
               </button>
@@ -259,105 +199,97 @@ export default function DashboardPage() {
 
         <main className="mx-auto w-full max-w-[1180px] px-4 py-6 sm:px-6 lg:px-8">
           <section>
-            <h2 className="text-[24px] font-extrabold tracking-tight text-[#0f172a] sm:text-[28px]">
+            <h2 className="text-[24px] font-extrabold tracking-tight text-[var(--text-1)] sm:text-[26px]">
               {t.welcomeTitle}
             </h2>
-            <p className="mt-2 text-[13px] leading-7 text-[#64748b] sm:text-[14px]">
+            <p className="mt-1.5 text-[13px] leading-6 text-[var(--text-2)]">
               {t.welcomeSubtitle}
             </p>
           </section>
 
-          {error ? (
-            <div className="mt-4 rounded-[16px] border border-red-200 bg-red-50 px-4 py-3 text-[14px] text-red-700">
+          {error && (
+            <div
+              className="mt-4 rounded-2xl px-4 py-3 text-[13px] text-red-600"
+              style={{ background: "rgba(220,38,38,0.08)", border: "1px solid rgba(220,38,38,0.2)" }}
+            >
               {error}
             </div>
-          ) : null}
+          )}
 
+          {/* Upload CTA */}
           <section className="mt-6">
             <button
               onClick={() => router.push("/upload")}
-              className="flex w-full items-center gap-4 rounded-[18px] bg-[#2563ff] px-5 py-5 text-left text-white shadow-[0_10px_24px_rgba(37,99,255,0.22)] transition hover:translate-y-[1px] hover:opacity-95"
+              className="flex w-full items-center gap-4 rounded-2xl px-5 py-5 text-left text-white shadow-md transition hover:opacity-90 active:scale-[0.99]"
+              style={{ background: "var(--brand)" }}
             >
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/15">
-                <span className="material-symbols-outlined text-[22px]">
-                  upload_file
-                </span>
+                <span className="material-symbols-outlined text-[22px]">upload_file</span>
               </div>
-              <span className="text-[15px] font-bold leading-7">
-                {t.uploadCTA}
-              </span>
+              <div>
+                <p className="text-[15px] font-bold">{t.uploadCTA}</p>
+                <p className="text-[12px] text-white/65">PDF, PNG, JPG supported</p>
+              </div>
+              <span className="material-symbols-outlined ml-auto text-white/50">chevron_right</span>
             </button>
           </section>
 
-          <section className="mt-8 grid gap-3 sm:grid-cols-3">
+          {/* Stats */}
+          <section className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
             <StatCard label={t.totalDocs} value={String(summary?.total ?? 0)} />
-            <StatCard
-              label="Invoices"
-              value={String(summary?.invoice ?? 0)}
-              valueColor="#2563ff"
-            />
-            <StatCard
-              label="Receipts"
-              value={String(summary?.receipt ?? 0)}
-              valueColor="#16a34a"
-            />
+            <StatCard label="Invoices" value={String(summary?.invoice ?? 0)} color="var(--brand-mid)" />
+            <StatCard label="Receipts" value={String(summary?.receipt ?? 0)} color="#16a34a" />
+            <StatCard label="PO" value={String(summary?.po ?? 0)} color="#7c3aed" />
+            <StatCard label="DN" value={String(summary?.dn ?? 0)} color="#ea6c0a" />
           </section>
 
-          <section className="mt-3 grid gap-3 sm:grid-cols-2">
-            <StatCard
-              label="PO"
-              value={String(summary?.po ?? 0)}
-              valueColor="#9333ea"
-            />
-            <StatCard
-              label="DN"
-              value={String(summary?.dn ?? 0)}
-              valueColor="#f97316"
-            />
-          </section>
-
+          {/* Recent docs */}
           <section className="mt-8">
             <div className="mb-4 flex items-center justify-between">
-              <h3 className="text-[18px] font-extrabold tracking-tight text-[#0f172a]">
+              <h3 className="text-[17px] font-extrabold tracking-tight text-[var(--text-1)]">
                 {t.recentDocuments}
               </h3>
               <button
                 onClick={() => router.push("/repository")}
-                className="text-[13px] font-bold text-[#2563ff] transition hover:opacity-80"
+                className="text-[13px] font-bold transition hover:opacity-75"
+                style={{ color: "var(--brand-mid)" }}
               >
                 {t.viewAll}
               </button>
             </div>
 
-            <div className="space-y-4">
-              {recentDocuments.length === 0 ? (
-                <div className="rounded-[20px] border border-slate-200 bg-white px-4 py-6 text-center text-[14px] text-[#64748b] shadow-[0_2px_10px_rgba(15,23,42,0.05)]">
+            <div className="space-y-3">
+              {recentDocs.length === 0 ? (
+                <div
+                  className="rounded-2xl px-4 py-8 text-center text-[14px] text-[var(--text-2)]"
+                  style={{ background: "var(--surface)", border: "1px solid var(--border)" }}
+                >
                   No saved documents yet.
                 </div>
               ) : (
-                recentDocuments.map((doc) => (
+                recentDocs.map((doc) => (
                   <button
                     key={doc.document_id}
                     onClick={() => router.push(`/analysis/${doc.document_id}`)}
-                    className="w-full rounded-[20px] border border-slate-200 bg-white px-4 py-4 text-left shadow-[0_2px_10px_rgba(15,23,42,0.05)] transition hover:-translate-y-[1px] hover:shadow-md"
+                    className="w-full rounded-2xl p-4 text-left transition hover:-translate-y-px hover:shadow-md"
+                    style={{ background: "var(--surface)", border: "1px solid var(--border)" }}
                   >
-                    <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+                    <div className="flex items-center gap-4">
                       <DocIcon type={doc.document_type} />
-
                       <div className="min-w-0 flex-1">
-                        <p className="truncate text-[15px] font-bold tracking-tight text-[#0f172a] sm:text-[16px]">
+                        <p className="truncate text-[15px] font-bold text-[var(--text-1)]">
                           {doc.document_id}
                         </p>
-                        <p className="mt-1 text-[12px] text-[#64748b] sm:text-[13px]">
+                        <p className="mt-0.5 text-[12px] text-[var(--text-2)]">
                           {getRecentMeta(doc)}
                         </p>
                       </div>
-
-                      <div className="text-left sm:text-right">
-                        <span className="inline-flex rounded-xl bg-[#dcfce7] px-3 py-1.5 text-[10px] font-bold uppercase text-[#16a34a]">
-                          ready
-                        </span>
-                      </div>
+                      <span
+                        className="shrink-0 rounded-lg px-2.5 py-1 text-[10px] font-bold uppercase"
+                        style={{ background: "rgba(22,163,74,0.1)", color: "#16a34a" }}
+                      >
+                        ready
+                      </span>
                     </div>
                   </button>
                 ))
