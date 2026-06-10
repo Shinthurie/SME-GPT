@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import MobileShell from "@/components/layout/MobileShell";
 import BottomNav from "@/components/layout/BottomNav";
 import LanguageSwitcher from "@/components/layout/LanguageSwitcher";
+import ThemeToggle from "@/components/layout/ThemeToggle";
 import { AppLanguage, getStoredLanguage, ui } from "@/lib/i18n";
 
 const BACKEND_URL = "http://127.0.0.1:8000";
@@ -17,7 +18,6 @@ function getAuthToken() {
 export default function QueryPage() {
   const router = useRouter();
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
-
   const [lang, setLang] = useState<AppLanguage>("en");
   const [companyName, setCompanyName] = useState("");
   const [question, setQuestion] = useState("");
@@ -26,40 +26,25 @@ export default function QueryPage() {
 
   useEffect(() => {
     setLang(getStoredLanguage());
-    const savedCompany = localStorage.getItem("query_company_name") || "";
-    setCompanyName(savedCompany);
+    setCompanyName(localStorage.getItem("query_company_name") || "");
   }, []);
 
   useEffect(() => {
-    const textarea = textareaRef.current;
-    if (!textarea) return;
-
-    textarea.style.height = "auto";
-    const nextHeight = Math.min(Math.max(textarea.scrollHeight, 120), 320);
-    textarea.style.height = `${nextHeight}px`;
+    const ta = textareaRef.current;
+    if (!ta) return;
+    ta.style.height = "auto";
+    ta.style.height = `${Math.min(Math.max(ta.scrollHeight, 120), 320)}px`;
   }, [question]);
 
   const t = ui[lang];
 
   const handleAsk = async () => {
     setError("");
-
-    if (!companyName.trim()) {
-      setError("Please enter your company name first.");
-      return;
-    }
-
-    if (!question.trim()) {
-      setError("Please enter a question.");
-      return;
-    }
+    if (!companyName.trim()) { setError("Please enter your company name first."); return; }
+    if (!question.trim()) { setError("Please enter a question."); return; }
 
     const token = getAuthToken();
-    if (!token) {
-      setError("Login token missing. Please log in again.");
-      router.push("/login");
-      return;
-    }
+    if (!token) { router.push("/login"); return; }
 
     localStorage.setItem("query_company_name", companyName.trim());
     setLoading(true);
@@ -67,34 +52,20 @@ export default function QueryPage() {
     try {
       const res = await fetch(`${BACKEND_URL}/ask-query`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          company_name: companyName.trim(),
-          question: question.trim(),
-        }),
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ company_name: companyName.trim(), question: question.trim() }),
       });
 
-      if (res.status === 401) {
-        localStorage.removeItem("token");
-        sessionStorage.removeItem("token");
-        router.push("/login");
-        return;
-      }
+      if (res.status === 401) { localStorage.removeItem("token"); router.push("/login"); return; }
 
       const data = await res.json();
-
-      if (!res.ok || !data.success) {
-        throw new Error(data.message || data.explanation || "Failed to answer query.");
-      }
+      if (!res.ok || !data.success) throw new Error(data.message || "Failed to answer query.");
 
       sessionStorage.setItem("query_result", JSON.stringify(data));
       sessionStorage.removeItem("selected_query_history");
       router.push("/answer");
     } catch (err: any) {
-      setError(err.message || "Something went wrong while asking the question.");
+      setError(err.message || "Something went wrong.");
     } finally {
       setLoading(false);
     }
@@ -102,73 +73,100 @@ export default function QueryPage() {
 
   return (
     <MobileShell>
-      <div className="min-h-screen bg-[#f6f7fb] pb-24">
-        <main className="mx-auto w-full max-w-[980px] px-4 py-6 sm:px-6 lg:px-8">
-          <div className="mb-4 flex items-center justify-between">
+      <div className="min-h-screen pb-24" style={{ background: "var(--bg)" }}>
+        <main className="mx-auto w-full max-w-[780px] px-4 py-6 sm:px-6 lg:px-8">
+
+          {/* Top bar */}
+          <div className="mb-5 flex items-center justify-between">
             <button
-              onClick={() => router.push("/")}
-              className="text-[14px] font-medium text-[#2563ff]"
+              onClick={() => router.push("/dashboard")}
+              className="flex items-center gap-1.5 text-[13px] font-semibold transition hover:opacity-75"
+              style={{ color: "var(--brand-mid)" }}
             >
-              ← Back
+              <span className="material-symbols-outlined text-[16px]">arrow_back</span>
+              Back
             </button>
             <div className="flex items-center gap-2">
+              <ThemeToggle />
               <LanguageSwitcher />
             </div>
           </div>
 
-          <h1 className="text-[24px] font-extrabold tracking-tight text-[#0f172a] sm:text-[28px]">
+          <h1 className="text-[22px] font-extrabold tracking-tight text-[var(--text-1)] sm:text-[26px]">
             {t.askQuestion}
           </h1>
-
-          <p className="mt-4 max-w-4xl text-[14px] leading-8 text-[#64748b]">
+          <p className="mt-1.5 text-[13px] leading-6 text-[var(--text-2)]">
             Ask questions using only data from your saved financial documents.
           </p>
 
-          <div className="mt-6 rounded-[20px] border border-slate-200 bg-white p-5 shadow-sm">
-            <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#64748b]">
+          {/* Company context */}
+          <div
+            className="mt-6 rounded-2xl p-5"
+            style={{ background: "var(--surface)", border: "1px solid var(--border)" }}
+          >
+            <p className="mb-2 text-[11px] font-bold uppercase tracking-[0.1em] text-[var(--text-3)]">
               Company Context
             </p>
             <input
               value={companyName}
               onChange={(e) => setCompanyName(e.target.value)}
-              placeholder="Enter your company name (example: AIESEC)"
-              className="mt-3 w-full rounded-[14px] border border-slate-200 px-4 py-3 text-[15px] text-[#0f172a] outline-none focus:border-[#2563ff]"
+              placeholder="Enter your company name (e.g. AIESEC)"
+              className="field-input w-full rounded-xl border px-4 py-3 text-[15px] transition"
             />
-            <p className="mt-2 text-[12px] text-[#94a3b8]">
-              This company name will be used as the main context before answering your question.
+            <p className="mt-2 text-[12px] text-[var(--text-3)]">
+              Used as context scope when searching your documents.
             </p>
           </div>
 
-          <div className="mt-6 rounded-[20px] border border-slate-200 bg-white shadow-sm">
+          {/* Question input */}
+          <div
+            className="mt-4 rounded-2xl overflow-hidden"
+            style={{ background: "var(--surface)", border: "1px solid var(--border)" }}
+          >
             <textarea
               ref={textareaRef}
               value={question}
               onChange={(e) => setQuestion(e.target.value)}
-              placeholder="Example: What is the receivable amount we have?"
+              placeholder="Example: What is the total receivable amount?"
               rows={1}
-              className="min-h-[120px] w-full resize-none overflow-y-auto rounded-t-[20px] border-0 bg-transparent px-5 py-5 text-[18px] text-[#0f172a] outline-none"
+              className="min-h-[120px] w-full resize-none overflow-y-auto bg-transparent px-5 py-5 text-[17px] text-[var(--text-1)] outline-none placeholder:text-[var(--text-3)]"
             />
-            <div className="flex items-center justify-between rounded-b-[20px] border-t border-slate-100 px-5 py-3 text-[#94a3b8]">
-              <div className="text-[12px]">Source: your saved documents only</div>
-              <span className="text-[12px]">Explainable answer enabled</span>
+            <div
+              className="flex items-center justify-between px-5 py-3 text-[12px] text-[var(--text-3)]"
+              style={{ borderTop: "1px solid var(--border)" }}
+            >
+              <span>Source: your saved documents only</span>
+              <span>Explainable AI enabled</span>
             </div>
           </div>
 
           {error && (
-            <div className="mt-4 rounded-[16px] border border-red-200 bg-red-50 px-4 py-3 text-[14px] text-red-700">
+            <div
+              className="mt-4 rounded-xl px-4 py-3 text-[13px] text-red-600"
+              style={{ background: "rgba(220,38,38,0.08)", border: "1px solid rgba(220,38,38,0.2)" }}
+            >
               {error}
             </div>
           )}
 
-          <div className="mt-6">
-            <button
-              onClick={handleAsk}
-              disabled={loading}
-              className="w-full rounded-[18px] bg-[#2563ff] py-4 text-[15px] font-bold text-white shadow-[0_10px_24px_rgba(37,99,255,0.22)] disabled:opacity-60"
-            >
-              {loading ? "Analyzing..." : "Ask Question"}
-            </button>
-          </div>
+          <button
+            onClick={handleAsk}
+            disabled={loading}
+            className="mt-5 flex h-13 w-full items-center justify-center gap-2 rounded-2xl py-4 text-[15px] font-bold text-white transition hover:opacity-90 disabled:opacity-60"
+            style={{ background: "var(--brand)" }}
+          >
+            {loading ? (
+              <>
+                <span className="material-symbols-outlined animate-spin text-[20px]">progress_activity</span>
+                Analysing…
+              </>
+            ) : (
+              <>
+                <span className="material-symbols-outlined text-[20px]">psychology</span>
+                Ask Question
+              </>
+            )}
+          </button>
         </main>
 
         <BottomNav />

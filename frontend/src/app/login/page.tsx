@@ -2,30 +2,45 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import MobileShell from "@/components/layout/MobileShell";
 import LanguageSwitcher from "@/components/layout/LanguageSwitcher";
+import ThemeToggle from "@/components/layout/ThemeToggle";
 import { getSession, loginUser } from "@/lib/auth";
 import { AppLanguage, getStoredLanguage, ui } from "@/lib/i18n";
 
+const features = [
+  {
+    icon: "document_scanner",
+    title: "OCR Extraction",
+    desc: "Extract structured data from invoices, POs and delivery notes.",
+  },
+  {
+    icon: "translate",
+    title: "Bilingual Support",
+    desc: "English and Sinhala UI with seamless switching.",
+  },
+  {
+    icon: "psychology",
+    title: "Explainable AI",
+    desc: "Every answer includes evidence and reasoning.",
+  },
+  {
+    icon: "verified_user",
+    title: "Secure Workspace",
+    desc: "Per-user isolation, 2FA, and trusted-device management.",
+  },
+];
+
 export default function LoginPage() {
   const router = useRouter();
-
   const [lang, setLang] = useState<AppLanguage>("en");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    const checkSession = async () => {
-      setLang(getStoredLanguage());
-      const session = await getSession();
-
-      if (session) {
-        router.push("/dashboard");
-      }
-    };
-
-    checkSession();
+    setLang(getStoredLanguage());
+    getSession().then((s) => { if (s) router.push("/dashboard"); });
   }, [router]);
 
   const t = ui[lang];
@@ -33,8 +48,10 @@ export default function LoginPage() {
   const handleLogin = async (e: FormEvent) => {
     e.preventDefault();
     setError("");
+    setLoading(true);
 
     const result = await loginUser(email, password);
+    setLoading(false);
 
     if (!result.ok) {
       setError(result.data?.error || t.invalidLogin);
@@ -49,12 +66,10 @@ export default function LoginPage() {
     if (result.data?.success) {
       if (result.data.token) {
         localStorage.setItem("token", result.data.token);
+        router.push("/dashboard");
       } else {
         setError("Login token not received. Please try again.");
-        return;
       }
-
-      router.push("/dashboard");
       return;
     }
 
@@ -62,190 +77,200 @@ export default function LoginPage() {
   };
 
   return (
-    <MobileShell>
-      <div className="min-h-screen bg-[#f7f8fb] px-4 py-6 sm:px-6 sm:py-8 lg:px-8 lg:py-10">
-        <div className="mx-auto flex min-h-[calc(100vh-3rem)] max-w-[1280px] items-center">
-          <div className="grid w-full items-center gap-8 lg:grid-cols-[520px_minmax(0,1fr)] xl:grid-cols-[560px_minmax(0,1fr)]">
-            <div
-              className="w-full rounded-[30px] border border-[#d9dff0] bg-[#f7f8fb] px-5 py-8 shadow-[0_0_0_2px_rgba(88,114,255,0.08)] sm:px-8 sm:py-10"
-              style={{
-                backgroundImage: `
-                  linear-gradient(rgba(30,41,59,0.05) 1px, transparent 1px),
-                  linear-gradient(90deg, rgba(30,41,59,0.05) 1px, transparent 1px)
-                `,
-                backgroundSize: "56px 56px",
-                backgroundPosition: "center center",
-              }}
-            >
-              <div className="mb-4 flex justify-end">
-                <LanguageSwitcher />
-              </div>
+    <div className="flex min-h-screen">
+      {/* ── Left brand panel (desktop only) ──────────────────── */}
+      <div
+        className="relative hidden flex-col justify-between overflow-hidden px-12 py-10 lg:flex lg:w-5/12 xl:w-[42%]"
+        style={{ background: "#1a2e4a" }}
+      >
+        {/* Subtle dot grid */}
+        <div
+          className="pointer-events-none absolute inset-0"
+          style={{
+            backgroundImage:
+              "radial-gradient(circle, rgba(255,255,255,0.07) 1px, transparent 1px)",
+            backgroundSize: "28px 28px",
+          }}
+        />
 
-              <div className="mx-auto flex max-w-[390px] flex-col">
-                <div className="mx-auto mb-5 flex h-[54px] w-[54px] items-center justify-center rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
-                  <span className="material-symbols-outlined text-[24px] text-[#4d7cff]">
-                    account_tree
+        <div className="relative z-10">
+          {/* Logo */}
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/10 ring-1 ring-white/20">
+              <span className="material-symbols-outlined text-[20px] text-white">
+                account_tree
+              </span>
+            </div>
+            <span className="text-xl font-extrabold tracking-tight text-white">
+              SME-GPT
+            </span>
+          </div>
+
+          <h2 className="mt-16 text-[34px] font-extrabold leading-tight tracking-tight text-white">
+            Enterprise Document Intelligence
+          </h2>
+          <p className="mt-4 max-w-sm text-[14px] leading-7 text-white/60">
+            OCR, bilingual extraction, discrepancy detection, and explainable AI — in one workspace.
+          </p>
+
+          <div className="mt-12 space-y-5">
+            {features.map((f) => (
+              <div key={f.title} className="flex items-start gap-3">
+                <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-white/10">
+                  <span className="material-symbols-outlined text-[16px] text-white/80">
+                    {f.icon}
                   </span>
                 </div>
+                <div>
+                  <p className="text-[13px] font-semibold text-white">{f.title}</p>
+                  <p className="text-[12px] leading-5 text-white/50">{f.desc}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
 
-                <h1 className="text-center text-[28px] font-extrabold tracking-tight text-[#0f172a] sm:text-[32px]">
-                  {t.appName}
-                </h1>
+        <p className="relative z-10 text-[10px] font-bold uppercase tracking-[0.18em] text-white/25">
+          Secure AI Workspace · v3.1
+        </p>
+      </div>
 
-                <p className="mt-2 text-center text-[11px] font-bold uppercase tracking-[0.18em] text-[#8a96ab]">
-                  Secure AI Workspace
-                </p>
+      {/* ── Right form panel ─────────────────────────────────── */}
+      <div
+        className="flex w-full flex-col lg:w-7/12 xl:w-[58%]"
+        style={{ background: "var(--bg)" }}
+      >
+        {/* Top bar */}
+        <div className="flex items-center justify-end gap-2 px-6 py-4">
+          <ThemeToggle />
+          <LanguageSwitcher />
+        </div>
 
-                <form onSubmit={handleLogin} className="mt-10 space-y-5">
-                  <div>
-                    <label className="mb-2 block text-[10px] font-bold uppercase tracking-[0.12em] text-[#7e8aa2]">
-                      {t.businessEmail}
-                    </label>
-                    <div className="relative">
-                      <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-[18px] text-[#93a0b5]">
-                        business_center
-                      </span>
-                      <input
-                        type="email"
-                        placeholder="name@company.com"
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        className="h-12 w-full rounded-2xl border border-[#e3e7f2] bg-white pl-12 pr-4 text-[15px] text-slate-900 shadow-[0_4px_14px_rgba(15,23,42,0.04)] outline-none transition focus:border-[#4d7cff] focus:ring-2 focus:ring-[#4d7cff]/15"
-                        required
-                      />
-                    </div>
-                  </div>
+        {/* Centered form */}
+        <div className="flex flex-1 items-center justify-center px-6 pb-12 pt-2">
+          <div className="w-full max-w-[400px]">
+            {/* Mobile-only logo */}
+            <div className="mb-8 flex items-center gap-3 lg:hidden">
+              <div
+                className="flex h-9 w-9 items-center justify-center rounded-xl"
+                style={{ background: "var(--brand)" }}
+              >
+                <span className="material-symbols-outlined text-[18px] text-white">
+                  account_tree
+                </span>
+              </div>
+              <span className="text-lg font-extrabold text-[var(--text-1)]">SME-GPT</span>
+            </div>
 
-                  <div>
-                    <label className="mb-2 block text-[10px] font-bold uppercase tracking-[0.12em] text-[#7e8aa2]">
-                      {t.password}
-                    </label>
-                    <div className="relative">
-                      <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-[18px] text-[#93a0b5]">
-                        shield_lock
-                      </span>
-                      <input
-                        type="password"
-                        placeholder="••••••••"
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                        className="h-12 w-full rounded-2xl border border-[#e3e7f2] bg-white pl-12 pr-4 text-[15px] text-slate-900 shadow-[0_4px_14px_rgba(15,23,42,0.04)] outline-none transition focus:border-[#4d7cff] focus:ring-2 focus:ring-[#4d7cff]/15"
-                        required
-                      />
-                    </div>
+            <h1 className="text-[28px] font-extrabold tracking-tight text-[var(--text-1)]">
+              {t.signIn}
+            </h1>
+            <p className="mt-1.5 text-[14px] text-[var(--text-2)]">
+              Welcome back — sign in to your workspace.
+            </p>
 
-                    <div className="mt-2 flex justify-end">
-                      <button
-                        type="button"
-                        onClick={() => router.push("/forgot-password")}
-                        className="text-[11px] font-semibold text-[#4d7cff] transition hover:opacity-80"
-                      >
-                        {t.forgotAccess}
-                      </button>
-                    </div>
-                  </div>
-
-                  {error && (
-                    <p className="text-[12px] font-medium text-red-600">
-                      {error}
-                    </p>
-                  )}
-
-                  <button
-                    type="submit"
-                    className="flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-[#07122f] text-[16px] font-bold text-white shadow-[0_10px_25px_rgba(7,18,47,0.22)] transition hover:translate-y-[1px] hover:opacity-95"
+            <form onSubmit={handleLogin} className="mt-8 space-y-5">
+              {/* Email */}
+              <div>
+                <label
+                  className="mb-1.5 block text-[11px] font-bold uppercase tracking-[0.1em]"
+                  style={{ color: "var(--text-2)" }}
+                >
+                  {t.businessEmail}
+                </label>
+                <div className="relative">
+                  <span
+                    className="material-symbols-outlined absolute left-3.5 top-1/2 -translate-y-1/2 text-[18px]"
+                    style={{ color: "var(--text-3)" }}
                   >
-                    <span>{t.signIn}</span>
-                    <span className="material-symbols-outlined text-[18px]">
-                      login
-                    </span>
+                    business_center
+                  </span>
+                  <input
+                    type="email"
+                    placeholder="name@company.com"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    required
+                    className="field-input h-12 w-full rounded-xl border pl-11 pr-4 text-[15px] transition"
+                  />
+                </div>
+              </div>
+
+              {/* Password */}
+              <div>
+                <label
+                  className="mb-1.5 block text-[11px] font-bold uppercase tracking-[0.1em]"
+                  style={{ color: "var(--text-2)" }}
+                >
+                  {t.password}
+                </label>
+                <div className="relative">
+                  <span
+                    className="material-symbols-outlined absolute left-3.5 top-1/2 -translate-y-1/2 text-[18px]"
+                    style={{ color: "var(--text-3)" }}
+                  >
+                    shield_lock
+                  </span>
+                  <input
+                    type="password"
+                    placeholder="••••••••"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                    className="field-input h-12 w-full rounded-xl border pl-11 pr-4 text-[15px] transition"
+                  />
+                </div>
+                <div className="mt-2 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => router.push("/forgot-password")}
+                    className="text-[12px] font-semibold transition hover:opacity-75"
+                    style={{ color: "var(--brand-mid)" }}
+                  >
+                    {t.forgotAccess}
                   </button>
-                </form>
-
-                <div className="mt-8 grid grid-cols-2 gap-3">
-                  <div className="rounded-2xl border border-[#e1e6f2] bg-white px-3 py-4 text-center shadow-[0_4px_14px_rgba(15,23,42,0.04)]">
-                    <div className="mx-auto flex h-8 w-8 items-center justify-center rounded-xl bg-[#edf3ff]">
-                      <span className="material-symbols-outlined text-[18px] text-[#4d7cff]">
-                        description
-                      </span>
-                    </div>
-                    <p className="mt-3 text-[10px] font-bold uppercase tracking-[0.08em] text-[#556277]">
-                      {t.uploadFeature}
-                    </p>
-                  </div>
-
-                  <div className="rounded-2xl border border-[#e1e6f2] bg-white px-3 py-4 text-center shadow-[0_4px_14px_rgba(15,23,42,0.04)]">
-                    <div className="mx-auto flex h-8 w-8 items-center justify-center rounded-xl bg-[#edf3ff]">
-                      <span className="material-symbols-outlined text-[18px] text-[#4d7cff]">
-                        translate
-                      </span>
-                    </div>
-                    <p className="mt-3 text-[10px] font-bold uppercase tracking-[0.08em] text-[#556277]">
-                      {t.languageFeature}
-                    </p>
-                  </div>
-                </div>
-
-                <p className="mt-5 text-center text-[11px] italic leading-5 text-[#9aa5b6]">
-                  {t.authCaption}
-                </p>
-
-                <div className="mt-6 text-center">
-                  <p className="text-[12px] text-[#7e8aa2]">
-                    {t.noAccount}{" "}
-                    <a href="/signup" className="font-bold text-[#4d7cff]">
-                      {t.signUp}
-                    </a>
-                  </p>
                 </div>
               </div>
-            </div>
 
-            <div className="hidden h-full lg:flex lg:items-center">
-              <div className="w-full rounded-[30px] border border-[#d9dff0] bg-white p-8 xl:p-10 shadow-sm">
-                <h2 className="text-4xl font-extrabold tracking-tight text-[#0f172a]">
-                  SME-GPT
-                </h2>
-                <p className="mt-4 max-w-2xl text-lg leading-8 text-[#64748b]">
-                  Intelligent OCR, bilingual extraction, financial document analysis,
-                  discrepancy detection, and explainable AI for invoices, POs, and related records.
+              {error && (
+                <p className="rounded-lg px-3 py-2 text-[13px] font-medium text-red-600"
+                   style={{ background: "rgba(220,38,38,0.08)" }}>
+                  {error}
                 </p>
+              )}
 
-                <div className="mt-10 grid gap-4 xl:grid-cols-2">
-                  <div className="rounded-3xl bg-[#eef4ff] p-6">
-                    <p className="text-sm font-bold uppercase tracking-[0.12em] text-[#2563ff]">
-                      OCR + NLP
-                    </p>
-                    <p className="mt-3 text-[#475569]">
-                      Extract, structure, validate, and query financial documents in one workspace.
-                    </p>
-                  </div>
+              <button
+                type="submit"
+                disabled={loading}
+                className="flex h-12 w-full items-center justify-center gap-2 rounded-xl text-[15px] font-bold text-white transition hover:opacity-90 disabled:opacity-60"
+                style={{ background: "var(--brand)" }}
+              >
+                {loading ? (
+                  <span className="material-symbols-outlined animate-spin text-[20px]">
+                    progress_activity
+                  </span>
+                ) : (
+                  <>
+                    <span>{t.signIn}</span>
+                    <span className="material-symbols-outlined text-[18px]">login</span>
+                  </>
+                )}
+              </button>
+            </form>
 
-                  <div className="rounded-3xl bg-[#f8fafc] p-6">
-                    <p className="text-sm font-bold uppercase tracking-[0.12em] text-[#2563ff]">
-                      Bilingual Ready
-                    </p>
-                    <p className="mt-3 text-[#475569]">
-                      English and Sinhala UI switching is prepared from the start.
-                    </p>
-                  </div>
-                </div>
-
-                <div className="mt-8 rounded-3xl border border-[#e6ecfb] bg-[#fbfcff] p-6">
-                  <p className="text-sm font-bold uppercase tracking-[0.12em] text-[#94a3b8]">
-                    Why SME-GPT
-                  </p>
-                  <ul className="mt-4 space-y-3 text-[#475569]">
-                    <li>• Upload invoices, purchase orders, and delivery notes</li>
-                    <li>• Compare values and detect discrepancies instantly</li>
-                    <li>• Support bilingual workflows with explainable outputs</li>
-                  </ul>
-                </div>
-              </div>
-            </div>
+            <p className="mt-8 text-center text-[13px]" style={{ color: "var(--text-2)" }}>
+              {t.noAccount}{" "}
+              <a
+                href="/signup"
+                className="font-bold transition hover:opacity-75"
+                style={{ color: "var(--brand-mid)" }}
+              >
+                {t.signUp}
+              </a>
+            </p>
           </div>
         </div>
       </div>
-    </MobileShell>
+    </div>
   );
 }

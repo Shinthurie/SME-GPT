@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import ThemeToggle from "./ThemeToggle";
 
 type AppHeaderProps = {
   title: string;
@@ -9,55 +10,44 @@ type AppHeaderProps = {
   showBack?: boolean;
 };
 
-export default function AppHeader({
-  title,
-  subtitle,
-  showBack = false,
-}: AppHeaderProps) {
+export default function AppHeader({ title, subtitle, showBack = false }: AppHeaderProps) {
   const router = useRouter();
-
   const [profileImage, setProfileImage] = useState("");
 
   useEffect(() => {
-    const loadProfile = async () => {
+    const load = async () => {
       try {
-        const res = await fetch("/api/profile", {
-          cache: "no-store",
-        });
-
+        const res = await fetch("/api/profile", { cache: "no-store" });
         const data = await res.json();
-
-        if (res.ok && data.user?.profileImage) {
-          setProfileImage(data.user.profileImage);
-        }
-      } catch (error) {
-        console.error("HEADER PROFILE LOAD ERROR:", error);
-      }
+        if (res.ok && data.user?.profileImage) setProfileImage(data.user.profileImage);
+      } catch {}
     };
-
-    loadProfile();
+    load();
   }, []);
 
   return (
-    <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/90 backdrop-blur transition-all duration-300">
-      <div className="mx-auto flex w-full max-w-3xl items-center gap-3 px-4 py-4">
+    <header
+      className="sticky top-0 z-30 backdrop-blur transition-all duration-300"
+      style={{
+        background: "rgba(var(--surface), 0.92)",
+        borderBottom: "1px solid var(--border)",
+        backgroundColor: "var(--surface)",
+      }}
+    >
+      <div className="mx-auto flex w-full max-w-3xl items-center gap-3 px-4 py-3">
         {showBack ? (
           <button
             onClick={() => router.back()}
-            className="flex h-10 w-10 items-center justify-center rounded-full transition hover:bg-slate-100"
+            className="flex h-9 w-9 items-center justify-center rounded-full transition hover:bg-[var(--surface-2)]"
           >
-            <span className="material-symbols-outlined text-slate-700">
+            <span className="material-symbols-outlined text-[20px] text-[var(--text-2)]">
               arrow_back
             </span>
           </button>
         ) : (
-          <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-xl bg-[#135bec] text-white shadow-sm">
+          <div className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-xl bg-[var(--brand)] text-white shadow-sm">
             {profileImage ? (
-              <img
-                src={profileImage}
-                alt="Profile"
-                className="h-full w-full object-cover"
-              />
+              <img src={profileImage} alt="Profile" className="h-full w-full object-cover" />
             ) : (
               <span className="text-sm font-bold">S</span>
             )}
@@ -65,22 +55,19 @@ export default function AppHeader({
         )}
 
         <div className="min-w-0 flex-1">
-          <h1 className="truncate text-base font-bold text-slate-900">
-            {title}
-          </h1>
-
+          <h1 className="truncate text-base font-bold text-[var(--text-1)]">{title}</h1>
           {subtitle && (
-            <p className="truncate text-sm text-slate-500">
-              {subtitle}
-            </p>
+            <p className="truncate text-sm text-[var(--text-2)]">{subtitle}</p>
           )}
         </div>
 
+        <ThemeToggle />
+
         <button
-          onClick={() => alert("Notifications panel can be added next.")}
-          className="flex h-10 w-10 items-center justify-center rounded-full transition hover:bg-slate-100"
+          onClick={() => router.push("/notifications")}
+          className="flex h-9 w-9 items-center justify-center rounded-full transition hover:bg-[var(--surface-2)]"
         >
-          <span className="material-symbols-outlined text-slate-700">
+          <span className="material-symbols-outlined text-[20px] text-[var(--text-2)]">
             notifications
           </span>
         </button>
