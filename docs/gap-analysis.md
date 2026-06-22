@@ -15,11 +15,11 @@ Update this file as iterations land. Status: ❌ none · 🟡 partial · ✅ don
 | FR-06 | Bounding boxes for every text segment | 🟡 | canonical box schema + safeguard in `ocr_correction.py` (Iter 2); not yet wired into live pipeline/DB |
 | FR-07 | Store OCR confidence levels | 🟡 | carried in canonical box schema (Iter 2); not yet persisted to DB |
 | FR-08 | Pluggable OCR engines | 🟡 | `OCRService` interface + `MockSuryaOCRService` (Iter 2, `backend/ocr_service.py`); real Surya v2 engine blocked on vllm/llama.cpp backend; v1 colab/local still serves live app |
-| FR-09 | Detect document structure (tables/headers/blocks) | ❌ | C2 (Iter 3) |
-| FR-10 | Extract key fields (vendor, invoice no, dates, totals) | 🟡 | `ocr_to_json_extractor.py`; align to canonical fields Iter 3/5 |
-| FR-11 | Extract line-item tables (rows/cols) | 🟡 | extractor; spatial rows in C2 Iter 3 |
-| FR-12 | Multi-page extraction | 🟡 | pipeline handles pages; verify Iter 3 |
-| FR-13 | Store page + bbox per extracted field | ❌ | C2 provenance (Iter 3) + DB (Iter 1) |
+| FR-09 | Detect document structure (tables/headers/blocks) | 🟡 | `backend/spatial_serialization.py` row clustering + header detection (Iter 3); not yet wired into live pipeline |
+| FR-10 | Extract key fields (vendor, invoice no, dates, totals) | 🟡 | `ocr_to_json_extractor.py` (live); C2 KeyValue chunks + canonical-field mapping built standalone (Iter 3), align/replace in Iter 5 |
+| FR-11 | Extract line-item tables (rows/cols) | 🟡 | extractor (live); C2 `line_item_row`/`line_item_block` templates built standalone (Iter 3) |
+| FR-12 | Multi-page extraction | 🟡 | pipeline handles pages; `build_spatial_chunks` iterates pages (Iter 3); multi-table-per-page clustering is a follow-up |
+| FR-13 | Store page + bbox per extracted field | 🟡 | C2 provenance (`page`, `bbox`, `token_bboxes`) built in `spatial_chunks.json` (Iter 3); not yet persisted to DB |
 | FR-14 | Convert extracted content to embeddings | ❌ | Iter 4 (pgvector) |
 | FR-15 | Store embeddings in a vector DB | ❌ | Iter 4 (pgvector) |
 | FR-16 | Semantic retrieval for queries | ❌ | Iter 4 |
@@ -66,6 +66,6 @@ Update this file as iterations land. Status: ❌ none · 🟡 partial · ✅ don
 | Component | Status | Iteration |
 |---|---|---|
 | C1 — Semantic OCR Post-Correction | 🟡 (box-level + numeric safeguard built & tested against a mock v2 fixture; not wired into the live pipeline; real OCR engine pending vllm/llama.cpp) | Iter 2 |
-| C2 — Layout-Aware Spatial Serialization | ❌ | Iter 3 |
+| C2 — Layout-Aware Spatial Serialization | 🟡 (row clustering, header detection, x-axis binding, template serialization, `spatial_chunks.json` built & tested against the same mock fixture; not wired into the live pipeline) | Iter 3 |
 | C3 — Neuro-Symbolic PAL Arithmetic QA | 🟡 (ad-hoc) | Iter 5 |
 | C4 — Multi-Tenant Relationship Index | ❌ | Iter 6 (tables Iter 1) |

@@ -87,3 +87,32 @@ Map Sinhala/English headers to C3 canonical keys where possible:
 ## Metrics
 
 Cell-extraction accuracy, 100% schema validity, association accuracy (number ↔ correct header).
+
+## Implementation notes (Iter 3)
+
+- `backend/spatial_serialization.py`: `cluster_rows` (step 2), `detect_header_row` (step 3),
+  `bind_row_to_headers` (step 4), and the `serialize_*` template functions + `build_spatial_chunks`
+  (step 5, top-level entry point) — consumes the same `final_safe_boxes.json` shape C1
+  (`ocr_correction.write_final_safe_boxes`) produces.
+- **Table-cell expansion moved into `ocr_service.py`.** Surya v2 gives one block (one bbox) per
+  detected table — the algorithm above assumes per-token geometry, which a single table-wide bbox
+  can't supply. `boxes_from_surya_v2_page` now expands `Table` blocks into one canonical box per
+  cell (`table_block_to_cell_boxes`), with a synthetic bbox from a uniform grid over the block's
+  bbox (an approximation — Surya v2 doesn't expose real per-cell coordinates) and `table_id` /
+  `row_index` / `col_index` carried on each cell box. This is a shared C1/C2 change: C1 now
+  corrects at cell granularity for tables too, and C2 gets real per-cell geometry to cluster.
+- **Header keyword matching uses word boundaries**, not bare substring containment — a naive
+  substring check on a short keyword like `"no."` false-positives inside unrelated words (e.g.
+  `"now"`). `_match_header_keyword` anchors with `(?<!\w)...(?!\w)`.
+- **Unmapped headers keep their original text as the field key** rather than failing — e.g. the
+  mock fixture's Sinhala header `සේවාව` ("service") isn't in the canonical-field keyword list
+  (component-2.md's Sinhala list only covers `විස්තරය/ප්‍රමාණය/ඒකක මිල/මුළු/බදු/වැට්`), so
+  `bind_row_to_headers` falls back to the header's own text as the dict key instead of
+  `unknown_column`. This still satisfies "never drop tokens" with better provenance than a bare
+  positional fallback.
+- Row clustering currently runs once across all boxes on a page, not per `table_id`. Two tables
+  sharing a y-range on the same page would need per-table clustering first — tracked as an
+  Iteration 3 follow-up in `docs/ROADMAP.md` (not hit by the single-table mock fixture).
+- **Not yet wired into `document_pipeline.py`** — same status as C1 (Iter 2): both are standalone,
+  tested modules pending a real OCR engine and the decision to replace the live whole-text-blob
+  extraction flow.

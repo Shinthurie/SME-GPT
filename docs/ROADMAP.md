@@ -57,12 +57,22 @@ Goal: box-level correction with numeric immutability (DeepSeek instead of fine-t
 
 Goal: deterministic `spatial_chunks.json` with provenance.
 
-- [ ] Row clustering (y-axis, dynamic threshold)
-- [ ] Header detection (English + Sinhala keywords)
-- [ ] Header→row binding (x-axis nearest-center)
-- [ ] Template-based serialization (LineItem / KeyValue / Header) — no free text
-- [ ] Emit `spatial_chunks.json` exact schema (research §9) with page+bbox+token_ids
-- [ ] **Tests:** clustering/binding unit tests, schema validation, cell-extraction accuracy on samples
+- [x] Row clustering (y-axis, dynamic threshold) — `backend/spatial_serialization.py::cluster_rows`
+- [x] Header detection (English + Sinhala keywords) — `detect_header_row`
+- [x] Header→row binding (x-axis nearest-center) — `bind_row_to_headers`
+- [x] Template-based serialization (LineItem / KeyValue / Header / section_text) — no free text
+- [x] Emit `spatial_chunks.json` exact schema (research §9) with page+bbox+token_ids —
+      `build_spatial_chunks`
+- [x] **Tests:** 21 unit/end-to-end tests — clustering, header detection, x-axis binding,
+      KeyValue classification, chunking-strategy thresholds, schema validation, never-drop-tokens,
+      cell-extraction accuracy against `backend/sample_docs/invoice_mock_surya_v2.json`
+- [x] _Side change:_ `ocr_service.py`'s `Table` blocks now expand to per-cell canonical boxes
+      (`table_block_to_cell_boxes`) instead of one flattened text blob — C2's row-clustering
+      algorithm needs per-cell geometry, which Surya v2's block-level bbox alone doesn't provide
+- [ ] _Follow-up:_ multi-table-per-page handling — row clustering currently spans the whole page;
+      two tables sharing the same y-range would need per-`table_id` clustering first
+- [ ] _Follow-up:_ wire C1+C2 into `document_pipeline.py` once a real OCR engine is available
+      (still mock-fixture-only; see Iteration 2's follow-ups)
 
 ## Iteration 4 — Indexing & Vector Retrieval (RAG)
 
