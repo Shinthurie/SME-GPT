@@ -111,7 +111,7 @@ tenant-filtered, returns provenance (`page`/`bbox`/`chunk_type`) per result.
 | Correction | `llm_correction.py`, text blobs, token masking | C1 box-level + `safe_correct()` |
 | Layout/serialization | none | C2 spatial chunks |
 | Retrieval | `vector_index.py` built + tested (pgvector, Iter 4); not yet wired to a live document or endpoint | vector RAG over chunks |
-| Q&A | `ai_helper.py` freeform + `data_tools.py` | C3 PAL plan→validate→execute |
+| Q&A | `pal_qa.py` (C3 PAL: plan→validate→execute→answer, live on `/ask-query`, Iter 5); falls back to `ai_helper.py`/`data_tools.py` when PAL can't confidently answer | C3 PAL plan→validate→execute |
 | Cross-doc linking | none | C4 relationship index |
 | Provenance in UI | partial | bbox overlays + derivation trace |
 | Tenancy / RBAC | user_id only, no roles | tenant_id everywhere + RBAC |

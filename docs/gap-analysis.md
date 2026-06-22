@@ -24,14 +24,14 @@ Update this file as iterations land. Status: ❌ none · 🟡 partial · ✅ don
 | FR-15 | Store embeddings in a vector DB | 🟡 | `ChunkEmbedding` table (pgvector, `docs/design/iter-4-schema.md`, migration applied to Supabase, Iter 4); `backend/vector_index.py::upsert_chunk_embeddings` |
 | FR-16 | Semantic retrieval for queries | 🟡 | `backend/vector_index.py::retrieve_top_k` (pgvector cosine distance, tenant-filtered, Iter 4); not yet exposed via a FastAPI endpoint or wired into C3 |
 | FR-17 | Return provenance metadata with results | 🟡 | `retrieve_top_k` returns `page`/`bbox`/`chunk_type` per result (Iter 4) |
-| FR-18 | Natural-language questions (si/en) | 🟡 | `ai_helper.py`; PAL in Iter 5 |
-| FR-19 | RAG pipeline to retrieve context before answering | 🟡 | retrieval built standalone (Iter 4); not yet wired into an answer-generation flow (Iter 5) |
-| FR-20 | Calculator/deterministic arithmetic | 🟡 | `arithmetic_validator.py`; PAL executor Iter 5 |
-| FR-21 | Multi-document reasoning (sum across invoices) | 🟡 | `data_tools.py` over CSV; PAL + C4 Iter 5–6 |
-| FR-22 | Only answer when provenance available | ❌ | Iter 5 (citations) |
+| FR-18 | Natural-language questions (si/en) | ✅ | `/ask-query` → `pal_qa.py` (Iter 5, live); language auto-detected (Sinhala/English) for the answer generator |
+| FR-19 | RAG pipeline to retrieve context before answering | 🟡 | PAL's scope resolver (`pal_scope.py`) retrieves from live `FinancialDocument`+`LineItem` (Iter 5, live); vector retrieval (Iter 4) built but not yet swapped in — needs C1/C2 wired in first |
+| FR-20 | Calculator/deterministic arithmetic | ✅ | `pal_executor.py` (Iter 5, live) — pandas only, no `exec`/`eval`; `arithmetic_validator.py` still serves its own, different purpose (ingestion-time total-vs-line-items check in `document_pipeline.py`, unrelated to query-time PAL) |
+| FR-21 | Multi-document reasoning (sum across invoices) | ✅ | `pal_executor.py` aggregate/group-by tasks over all of a company's scoped documents (Iter 5, live); C4 cross-document linking (Iter 6) will widen scope further |
+| FR-22 | Only answer when provenance available | 🟡 | PAL's evidence is built only from the documents actually used by the executed plan (Iter 5); full bbox-level provenance still pending C1/C2 wiring |
 | FR-23 | Store full provenance (bbox, page, raw text, model version) | ❌ | Iter 1 (schema) + Iter 2–3 |
 | FR-24 | Highlight exact source text in UI | ❌ | Iter 7 |
-| FR-25 | Show derivation steps for aggregated answers | ❌ | Iter 5 (audit) + Iter 7 (UI) |
+| FR-25 | Show derivation steps for aggregated answers | 🟡 | `audit` block (`plan`, `validation`, `attempts`) in `pal_qa.py`'s response (Iter 5, not yet surfaced in the UI — Iter 7) |
 | FR-26 | Click values to see origin | ❌ | Iter 7 |
 | FR-27 | Document viewer with overlays | ❌ | Iter 7 |
 | FR-28 | Bilingual UI (si/en) | ✅ | i18n in `frontend/src/lib` |
@@ -67,5 +67,5 @@ Update this file as iterations land. Status: ❌ none · 🟡 partial · ✅ don
 |---|---|---|
 | C1 — Semantic OCR Post-Correction | 🟡 (box-level + numeric safeguard built & tested against a mock v2 fixture; not wired into the live pipeline; real OCR engine pending vllm/llama.cpp) | Iter 2 |
 | C2 — Layout-Aware Spatial Serialization | 🟡 (row clustering, header detection, x-axis binding, template serialization, `spatial_chunks.json` built & tested against the same mock fixture; not wired into the live pipeline) | Iter 3 |
-| C3 — Neuro-Symbolic PAL Arithmetic QA | 🟡 (ad-hoc) | Iter 5 |
+| C3 — Neuro-Symbolic PAL Arithmetic QA | ✅ (planner→validator→executor→answer built, tested, and wired live into `/ask-query`; degrades to the pre-PAL ad-hoc logic when DeepSeek can't produce a valid plan or it matches no rows) | Iter 5 |
 | C4 — Multi-Tenant Relationship Index | ❌ | Iter 6 (tables Iter 1) |
