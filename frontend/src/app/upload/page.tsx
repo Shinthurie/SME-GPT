@@ -24,6 +24,14 @@ type PreviewData = {
   paid_status: string; items: PreviewItem[];
 };
 
+type StreamEvent = {
+  stage?: string;
+  message?: string;
+  step?: number;
+  preview?: PreviewData;
+  session_id?: string;
+};
+
 const BACKEND_URL = "http://127.0.0.1:8000";
 
 function getAuthToken() {
@@ -129,7 +137,7 @@ export default function UploadPage() {
 
       if (res.status === 401) { localStorage.removeItem("token"); router.push("/login"); return; }
       if (!res.ok) {
-        const err = await res.json().catch(() => ({})) as any;
+        const err = (await res.json().catch(() => ({}))) as { message?: string };
         throw new Error(err.message || `Server error ${res.status}`);
       }
 
@@ -146,20 +154,20 @@ export default function UploadPage() {
 
         for (const line of lines) {
           if (!line.startsWith("data: ")) continue;
-          let event: any;
+          let event: StreamEvent;
           try { event = JSON.parse(line.slice(6)); } catch { continue; }
 
           if (event.stage === "error") throw new Error(event.message || "Processing failed.");
           if (typeof event.step === "number") setActiveStep(event.step);
           if (event.message) setStageMessage(event.message);
           if (event.stage === "done") {
-            setPreview(event.preview);
-            setSessionId(event.session_id);
+            setPreview(event.preview ?? null);
+            setSessionId(event.session_id ?? "");
           }
         }
       }
-    } catch (err: any) {
-      setError(err.message || "Something went wrong during processing.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong during processing.");
       setActiveStep(0);
     } finally {
       setIsProcessing(false);
@@ -196,8 +204,8 @@ export default function UploadPage() {
 
       setSuccessMessage(`Saved successfully. Document ID: ${data.document_id}`);
       resetForm();
-    } catch (err: any) {
-      setError(err.message || "Something went wrong while saving.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong while saving.");
     } finally {
       setIsSaving(false);
     }
@@ -397,7 +405,7 @@ export default function UploadPage() {
                       <p className="mb-1.5 text-[12px] font-semibold text-[var(--text-2)]">{label}</p>
                       {opts ? (
                         <select
-                          value={String((preview as any)[field] ?? "")}
+                          value={String((preview as Record<string, unknown>)[field] ?? "")}
                           onChange={(e) => setPreview({ ...preview, [field]: e.target.value })}
                           className="field-input w-full rounded-xl border px-4 py-2.5 text-[14px] transition"
                         >
@@ -405,7 +413,7 @@ export default function UploadPage() {
                         </select>
                       ) : (
                         <input
-                          value={String((preview as any)[field] ?? "")}
+                          value={String((preview as Record<string, unknown>)[field] ?? "")}
                           onChange={(e) => !isReadonly && setPreview({ ...preview, [field]: e.target.value })}
                           readOnly={isReadonly}
                           className="field-input w-full rounded-xl border px-4 py-2.5 text-[14px] transition"

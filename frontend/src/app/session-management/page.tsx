@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import MobileShell from "@/components/layout/MobileShell";
 import BottomNav from "@/components/layout/BottomNav";
@@ -34,7 +34,7 @@ export default function SessionManagementPage() {
   const [actionLoading, setActionLoading] = useState(false);
   const [message, setMessage] = useState("");
 
-  const loadSessions = async () => {
+  const loadSessions = useCallback(async () => {
     try {
       setLoading(true);
       setMessage("");
@@ -61,11 +61,11 @@ export default function SessionManagementPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [router]);
 
   useEffect(() => {
     loadSessions();
-  }, []);
+  }, [loadSessions]);
 
   const handleRemoveDevice = async (deviceId: string) => {
     try {
