@@ -1,16 +1,17 @@
-import os
 import json
 import re
 import pandas as pd
 
-DATASET_PATH = "financial_documents_clean.csv"
+from dataset_manager import load_main_dataset
+
+# Label used in query results' "source_file" field (no longer a file path).
+DATASET_PATH = "financial_documents (postgres)"
 
 
-def load_dataset():
-    if not os.path.exists(DATASET_PATH):
-        raise FileNotFoundError(f"{DATASET_PATH} not found.")
-
-    df = pd.read_csv(DATASET_PATH, keep_default_na=False)
+def load_dataset(user_id: str = None):
+    # Reads from Postgres (Supabase) via the data-access layer; tenant-scoped
+    # when user_id is provided.
+    df = load_main_dataset(user_id=user_id)
     return enrich_dataset(df)
 
 
@@ -334,7 +335,7 @@ def build_direct_answer(records: pd.DataFrame, question_type: str, company_name:
     return "\n".join(lines)
 
 def analyze_financial_query(question: str, company_name: str, user_id: str):
-    df = load_dataset()
+    df = load_dataset(user_id=user_id)
     user_df = filter_user_context(df, user_id=user_id)
 
     if user_df.empty:

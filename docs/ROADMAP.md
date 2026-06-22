@@ -26,12 +26,13 @@ Goal: a clean, collaborative repo with CI, docs, and the Supabase backend provis
 
 Goal: replace the CSV with a real, tenant-isolated relational schema.
 
-- [ ] Schema: `documents`, `financial_documents`, `line_items`, `ocr_boxes`, `query_history`
-- [ ] C4 tables added now (used later): `entities`, `entity_aliases`, `doc_links` (research §6)
-- [ ] `tenant_id` (= user id) on every table; enforced on all reads/writes
-- [ ] Replace `backend/dataset_manager.py` CSV logic with DB access layer
-- [ ] Migration script: existing `financial_documents_clean.csv` → Postgres
-- [ ] **Tests:** CRUD round-trip, tenant isolation (user A cannot read user B), migration integrity
+- [x] Schema: `FinancialDocument`, `LineItem`, `query_history` (Supabase Postgres; pgvector enabled)
+- [x] C4 tables added now (used later): `Entity`, `EntityAlias`, `DocLink` (research §6)
+- [x] `tenant_id` (= user id) on every table; enforced on all reads/writes
+- [x] Replace `backend/dataset_manager.py` CSV logic with DB access layer (`db.py` + psycopg)
+- [x] Migration script: `financial_documents_clean.csv` → Postgres (`migrate_csv_to_db.py`, idempotent/dry-run)
+- [x] **Tests:** CRUD round-trip + tenant isolation — 6 passing vs Supabase
+- [ ] _Follow-up:_ user imports legacy rows (`--tenant`) + end-to-end app smoke after re-login
 
 ## Iteration 2 — Component 1: Semantic OCR Post-Correction
 

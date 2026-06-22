@@ -108,7 +108,7 @@ model FinancialDocument {
   effectiveFlowType  String?
   companyName        String?
   supplierName       String?
-  docDate            DateTime?
+  docDate            String?
   rawTotalAmount     Decimal?   @db.Decimal(14, 2)
   finalTotalAmount   Decimal?   @db.Decimal(14, 2)
   totalStatus        String?
