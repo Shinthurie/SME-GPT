@@ -9,7 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import llm_correction
 
 
-def test_call_ollama_reports_missing_requests(monkeypatch):
+def test_call_ollama_raises_on_missing_requests(monkeypatch):
     real_import = builtins.__import__
 
     def fake_import(name, *args, **kwargs):

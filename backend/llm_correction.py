@@ -305,7 +305,7 @@ def call_ollama(prompt: str) -> str:
     try:
         import requests
     except ModuleNotFoundError as e:
-        raise Exception("DeepSeek correction requires the 'requests' package.") from e
+        raise ImportError("DeepSeek correction requires the 'requests' package.") from e
 
     url = f"{DEEPSEEK_HOST}/chat/completions"
     headers = {
