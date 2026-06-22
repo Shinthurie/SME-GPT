@@ -1,5 +1,6 @@
 import builtins
 import sys
+import types
 from pathlib import Path
 
 import pytest
@@ -21,3 +22,29 @@ def test_call_ollama_raises_on_missing_requests(monkeypatch):
 
     with pytest.raises(ImportError, match="requires the 'requests' package"):
         llm_correction.call_ollama("hello")
+
+
+def test_call_ollama_uses_requests_when_available(monkeypatch):
+    class DummyResponse:
+        text = "ok"
+
+        @staticmethod
+        def raise_for_status():
+            return None
+
+        @staticmethod
+        def json():
+            return {"choices": [{"message": {"content": " refined output "}}]}
+
+    fake_requests = types.SimpleNamespace(
+        post=lambda *args, **kwargs: DummyResponse(),
+        exceptions=types.SimpleNamespace(
+            ConnectionError=Exception,
+            HTTPError=Exception,
+            Timeout=Exception,
+        ),
+    )
+
+    monkeypatch.setitem(sys.modules, "requests", fake_requests)
+    result = llm_correction.call_ollama("hello")
+    assert result == "refined output"
