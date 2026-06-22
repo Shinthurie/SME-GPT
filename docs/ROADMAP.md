@@ -78,9 +78,22 @@ Goal: deterministic `spatial_chunks.json` with provenance.
 
 Goal: semantic retrieval over chunks with provenance.
 
-- [ ] Embed `SpatialChunk.text` into pgvector; metadata = tenant/doc/chunk/bbox
-- [ ] Retrieval API (top-k + provenance) (FR-14…17)
-- [ ] **Tests:** retrieval hit-rate harness on labelled queries
+- [x] Embed `SpatialChunk.text` into pgvector; metadata = tenant/doc/chunk/bbox —
+      `backend/vector_index.py` + `ChunkEmbedding` table (`docs/design/iter-4-schema.md`, applied)
+- [x] Retrieval API (top-k + provenance) (FR-14…17) — `vector_index.retrieve_top_k()`
+      (pgvector cosine distance, tenant-filtered, optional document scope)
+- [x] **Tests:** 12 tests — hashing-embedding determinism, chunk flattening, in-memory ranking,
+      a 5-query retrieval-hit-rate harness (100% on the mock fixture) vs. a naive whole-document
+      baseline, and a live Supabase round-trip with tenant isolation
+- [x] _Decision:_ DeepSeek has no embeddings endpoint, so embeddings use a separate
+      `EmbeddingService` (mirrors `OCRService`): `intfloat/multilingual-e5-small` (local,
+      CPU-friendly, mC4-trained so it covers Sinhala) is the real default; tests use a
+      deterministic hashing embedding so the suite stays hermetic — same reasoning as
+      monkeypatching DeepSeek in the C1 tests
+- [ ] _Follow-up:_ `LocalMultilingualEmbeddingService` is untested in CI (model download/network) —
+      same status as C1's real Surya v2 engine; verify it manually once dependencies are installed
+- [ ] _Follow-up:_ wire retrieval into a FastAPI endpoint / C3 once C1+C2 are wired into
+      `document_pipeline.py` and there's a real document to retrieve from
 
 ## Iteration 5 — Component 3: Neuro-Symbolic PAL Arithmetic QA
 

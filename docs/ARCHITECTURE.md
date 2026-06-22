@@ -92,6 +92,14 @@ Canonical fields: `item, description, qty, unit_price, total, tax, discount, cur
 ### Relationship index (C4, persisted in Postgres)
 `entities`, `entity_aliases`, `doc_links` (with `evidence JSONB`). Schema: [components/component-4.md](components/component-4.md).
 
+### Vector embeddings (`spatial_chunks.json` → pgvector, Iteration 4)
+One `ChunkEmbedding` row per `SpatialChunk`: `tenantId, documentId, chunkId, page, bbox, chunkType,
+text, embedding (vector(384))`. Schema: [design/iter-4-schema.md](design/iter-4-schema.md).
+Embeddings come from a pluggable `EmbeddingService` (`backend/embedding_service.py`) since DeepSeek
+has no embeddings endpoint — real default is `intfloat/multilingual-e5-small` (local, CPU-friendly,
+Sinhala-capable). Retrieval: `backend/vector_index.py::retrieve_top_k()`, pgvector cosine distance,
+tenant-filtered, returns provenance (`page`/`bbox`/`chunk_type`) per result.
+
 ---
 
 ## 5. Current state vs target (summary)
@@ -102,7 +110,7 @@ Canonical fields: `item, description, qty, unit_price, total, tax, discount, cur
 | OCR | Surya colab/local, text-level | same engines, box-aligned via `OCRService` |
 | Correction | `llm_correction.py`, text blobs, token masking | C1 box-level + `safe_correct()` |
 | Layout/serialization | none | C2 spatial chunks |
-| Retrieval | none (heuristic SQL-ish over CSV) | vector RAG over chunks |
+| Retrieval | `vector_index.py` built + tested (pgvector, Iter 4); not yet wired to a live document or endpoint | vector RAG over chunks |
 | Q&A | `ai_helper.py` freeform + `data_tools.py` | C3 PAL plan→validate→execute |
 | Cross-doc linking | none | C4 relationship index |
 | Provenance in UI | partial | bbox overlays + derivation trace |
