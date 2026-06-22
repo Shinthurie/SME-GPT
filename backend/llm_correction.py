@@ -257,15 +257,15 @@ def correct_english_token_with_symspell(word: str) -> str:
         corrected = lower_word
     elif lower_word in ENGLISH_CORRECTIONS:
         corrected = ENGLISH_CORRECTIONS[lower_word]
-    elif not sym_spell:
-        corrected = lower_word
-    else:
+    elif sym_spell:
         suggestions = sym_spell.lookup(
             lower_word,
             Verbosity.CLOSEST,
             max_edit_distance=2
         )
         corrected = suggestions[0].term if suggestions else lower_word
+    else:
+        corrected = lower_word
 
     if original.istitle():
         corrected = corrected.title()

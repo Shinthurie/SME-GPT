@@ -48,3 +48,28 @@ def test_call_ollama_uses_requests_when_available(monkeypatch):
     monkeypatch.setitem(sys.modules, "requests", fake_requests)
     result = llm_correction.call_ollama("hello")
     assert result == "refined output"
+
+
+def test_call_ollama_handles_timeout(monkeypatch):
+    class ConnectionErrorForTest(Exception):
+        pass
+
+    class HttpErrorForTest(Exception):
+        pass
+
+    class TimeoutErrorForTest(Exception):
+        pass
+
+    fake_requests = types.SimpleNamespace(
+        post=lambda *args, **kwargs: (_ for _ in ()).throw(TimeoutErrorForTest()),
+        exceptions=types.SimpleNamespace(
+            ConnectionError=ConnectionErrorForTest,
+            HTTPError=HttpErrorForTest,
+            Timeout=TimeoutErrorForTest,
+        ),
+    )
+
+    monkeypatch.setitem(sys.modules, "requests", fake_requests)
+
+    with pytest.raises(Exception, match="timed out"):
+        llm_correction.call_ollama("hello")
