@@ -3,6 +3,9 @@ import time
 import shutil
 from pathlib import Path
 
+from dotenv import load_dotenv
+load_dotenv()
+
 import cv2
 from pdf2image import convert_from_path
 
@@ -14,11 +17,8 @@ from arithmetic_validator import validate_arithmetic
 from correction_engine import correct_extracted_fields
 from local_surya_ocr_client import run_local_surya_ocr
 
-COLAB_OCR_URL = os.getenv("COLAB_OCR_URL", "https://catechizable-uncongruously-armani.ngrok-free.dev/").strip()
-POPPLER_PATH = os.getenv(
-    "POPPLER_PATH",
-    r"C:\Users\ASUS\Downloads\Release-25.12.0-0\poppler-25.12.0\Library\bin"
-)
+COLAB_OCR_URL = os.getenv("COLAB_OCR_URL", "").strip()
+POPPLER_PATH = os.getenv("POPPLER_PATH", "")
 
 TEMP_BASE = Path("temp_processing")
 RAW_DIR = TEMP_BASE / "raw"
@@ -205,25 +205,22 @@ def _normalize_multi_page_ocr_result(ocr_result: dict) -> dict:
 def build_preview_from_versions(version_paths: list[dict]) -> dict:
     final_colab_url = COLAB_OCR_URL or os.getenv("COLAB_OCR_URL", "").strip()
 
-    if not final_colab_url:
-        raise ValueError("COLAB_OCR_URL is not set. Please set it before running the backend.")
-
-    try:
-        print("[PIPELINE] Trying Colab OCR...", flush=True)
-
-        ocr_result = send_images_to_colab_ocr(
-            processed_pages=version_paths,
-            colab_url=final_colab_url,
-        )
-
-        print("[PIPELINE] Colab OCR completed", flush=True)
-
-    except Exception as e:
-        print(f"[PIPELINE] Colab OCR failed: {e}", flush=True)
-        print("[PIPELINE] Falling back to local Surya OCR...", flush=True)
-
+    if final_colab_url:
+        try:
+            print("[PIPELINE] Trying Colab OCR...", flush=True)
+            ocr_result = send_images_to_colab_ocr(
+                processed_pages=version_paths,
+                colab_url=final_colab_url,
+            )
+            print("[PIPELINE] Colab OCR completed", flush=True)
+        except Exception as e:
+            print(f"[PIPELINE] Colab OCR failed: {e}", flush=True)
+            print("[PIPELINE] Falling back to local Surya OCR...", flush=True)
+            ocr_result = run_local_surya_ocr(version_paths)
+            print("[PIPELINE] Local Surya OCR completed", flush=True)
+    else:
+        print("[PIPELINE] No COLAB_OCR_URL set — using local Surya OCR...", flush=True)
         ocr_result = run_local_surya_ocr(version_paths)
-
         print("[PIPELINE] Local Surya OCR completed", flush=True)
 
     normalized_ocr = _normalize_multi_page_ocr_result(ocr_result)
