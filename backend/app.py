@@ -31,8 +31,7 @@ from dataset_manager import (
     update_record_for_user,
     delete_record_for_user,
 )
-from ai_helper import generate_explainable_answer
-from data_tools import analyze_financial_query
+from pal_qa import answer_financial_question
 
 JWT_SECRET = os.getenv("JWT_SECRET", "your_super_secret_key_123")
 JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
@@ -1044,16 +1043,10 @@ def ask_query(payload: QueryRequest, authorization: str = Header(default=None)):
                 content={"success": False, "message": "Question is required."}
             )
 
-        analysis_result = analyze_financial_query(
+        result = answer_financial_question(
             question=payload.question.strip(),
             company_name=payload.company_name.strip(),
             user_id=user_id,
-        )
-
-        answer_bundle = generate_explainable_answer(
-            question=payload.question.strip(),
-            company_name=payload.company_name.strip(),
-            result=analysis_result,
         )
 
         history_saved = True
@@ -1065,25 +1058,25 @@ def ask_query(payload: QueryRequest, authorization: str = Header(default=None)):
                 user_id=user_id,
                 company_name=payload.company_name.strip(),
                 question=payload.question.strip(),
-                answer=analysis_result.get("direct_answer") or answer_bundle.get("short_answer", ""),
-                explanation=analysis_result.get("explanation", ""),
-                metrics=analysis_result.get("metrics", {}),
-                evidence=analysis_result.get("evidence", []),
-                source_file=analysis_result.get("source_file", ""),
+                answer=result.get("direct_answer", ""),
+                explanation=result.get("explanation", ""),
+                metrics=result.get("metrics", {}),
+                evidence=result.get("evidence", []),
+                source_file=result.get("source_file", ""),
             )
         except Exception as save_err:
             history_saved = False
             history_error = str(save_err)
 
         return {
-            "success": analysis_result.get("success", True),
+            "success": result.get("success", True),
             "company_name": payload.company_name.strip(),
             "question": payload.question.strip(),
-            "answer": analysis_result.get("direct_answer") or answer_bundle.get("short_answer", ""),
-            "explanation": answer_bundle.get("full_answer", analysis_result.get("explanation", "")),
-            "evidence": analysis_result.get("evidence", []),
-            "metrics": analysis_result.get("metrics", {}),
-            "source_file": analysis_result.get("source_file", ""),
+            "answer": result.get("direct_answer", ""),
+            "explanation": result.get("explanation", ""),
+            "evidence": result.get("evidence", []),
+            "metrics": result.get("metrics", {}),
+            "source_file": result.get("source_file", ""),
             "history_saved": history_saved,
             "history_error": history_error,
             "history_id": history_id,

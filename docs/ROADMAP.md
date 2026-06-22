@@ -99,12 +99,36 @@ Goal: semantic retrieval over chunks with provenance.
 
 Goal: hallucination-free financial answers.
 
-- [ ] DeepSeek planner → strict JSON plan
-- [ ] Plan validator (allow-list: tasks, operators, canonical fields)
-- [ ] Deterministic pandas executor
-- [ ] Language-aware answer generator (si/en) + citations (bbox)
-- [ ] Retry loop (×2) + clarification + scope resolver
-- [ ] Replace ad-hoc logic in `ai_helper.py` / `data_tools.py`
+- [x] DeepSeek planner → strict JSON plan — `backend/pal_planner.py`
+- [x] Plan validator (allow-list: tasks, operators, canonical fields) — `backend/pal_validator.py`
+      (canonical fields = component-3.md's 10 + a documented `flow_type` extension —
+      payable/receivable/income/expense is core to every query this app answers and there's no
+      other canonical field for it; company-level scoping happens before the plan runs)
+- [x] Deterministic pandas executor — `backend/pal_executor.py` (filters: eq/in/contains/gte/lte/
+      between; aggregations: sum/avg/count/max/min; tasks: aggregate_sum/avg/count, compare,
+      lookup_value, group_by_sum; mixed-currency aggregates auto-split into a per-currency
+      breakdown instead of summing across currencies)
+- [x] Language-aware answer generator (si/en) — `backend/pal_answer.py` (Sinhala/English
+      auto-detected from the question); citations are `[]` for now — bbox citations need C1/C2
+      wired into the live pipeline first, tracked as a follow-up
+- [x] Retry loop (×2) + scope resolver — `backend/pal_qa.py` orchestrator + `backend/pal_scope.py`
+      (tenant + company-name scoping over live `FinancialDocument`/`LineItem`; no C4 graph
+      expansion yet, that's Iteration 6)
+- [x] **Wired live into `/ask-query`** (`app.py`) — replaces the `ai_helper.py`/`data_tools.py`
+      call site. PAL degrades to the pre-PAL ad-hoc logic (kept, not deleted) when DeepSeek can't
+      produce a valid plan within the retry budget, the question is a listing intent PAL doesn't
+      cover (e.g. "list my invoices"), or the validated plan matches zero rows — same
+      "deterministic fallback when the LLM can't be trusted" philosophy as `safe_correct()`
+- [x] **Tests:** 43 tests — validator allow-list, executor (all tasks/ops/aggs, mixed currency,
+      empty input), scope row-flattening, planner/answer-generator DeepSeek boundaries
+      (monkeypatched), and the full orchestrator including both fallback paths
+- [ ] _Follow-up:_ "no rows retrieved" degrades straight to the legacy path instead of broadening
+      the retrieval (component-3.md's literal failure-table behavior); simplification for this
+      iteration, tracked for revisit
+- [ ] _Follow-up:_ swap `pal_scope.py`'s row source for C2 SpatialChunks + vector retrieval
+      (Iter 3/4) once C1/C2 are wired into `document_pipeline.py` — the planner/validator/executor
+      are retrieval-source-agnostic, so this is a contained change
+- [ ] _Follow-up:_ citations (bbox) once C1/C2 are wired in
 - [ ] **Tests:** arithmetic-accuracy harness vs ground truth (target ~100% on supported ops)
 
 ## Iteration 6 — Component 4: Multi-Tenant Relationship Index
