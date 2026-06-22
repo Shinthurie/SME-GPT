@@ -1,0 +1,130 @@
+{
+  "invoice": [
+    {
+      "blocks": [
+        {
+          "label": "SectionHeader",
+          "raw_label": "SectionHeader",
+          "reading_order": 0,
+          "html": "<p>කොරුවන් සේවය</p>",
+          "polygon": [[40, 8], [260, 8], [260, 38], [40, 38]],
+          "bbox": [40, 8, 260, 38],
+          "confidence": 0.58,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "label": "Picture",
+          "raw_label": "Picture",
+          "reading_order": 1,
+          "html": "",
+          "polygon": [[90, 45], [210, 45], [210, 160], [90, 160]],
+          "bbox": [90, 45, 210, 160],
+          "confidence": 0.95,
+          "skipped": true,
+          "error": false
+        },
+        {
+          "label": "SectionHeader",
+          "raw_label": "Title",
+          "reading_order": 2,
+          "html": "<p>චාමර සැලෝන්</p>",
+          "polygon": [[70, 165], [230, 165], [230, 195], [70, 195]],
+          "bbox": [70, 165, 230, 195],
+          "confidence": 0.77,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "label": "Text",
+          "raw_label": "Text",
+          "reading_order": 3,
+          "html": "<p>කදවත</p>",
+          "polygon": [[120, 198], [180, 198], [180, 213], [120, 213]],
+          "bbox": [120, 198, 180, 213],
+          "confidence": 0.52,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "label": "Text",
+          "raw_label": "Text",
+          "reading_order": 4,
+          "html": "<p>07726920S7</p>",
+          "polygon": [[95, 216], [205, 216], [205, 231], [95, 231]],
+          "bbox": [95, 216, 205, 231],
+          "confidence": 0.81,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "label": "Text",
+          "raw_label": "Text",
+          "reading_order": 5,
+          "html": "<p>Date: 9/8/2025 4:23 PM</p>",
+          "polygon": [[20, 236], [180, 236], [180, 251], [20, 251]],
+          "bbox": [20, 236, 180, 251],
+          "confidence": 0.88,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "label": "Text",
+          "raw_label": "Text",
+          "reading_order": 6,
+          "html": "<p>0rder ID: 8</p>",
+          "polygon": [[20, 253], [120, 253], [120, 268], [20, 268]],
+          "bbox": [20, 253, 120, 268],
+          "confidence": 0.74,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "label": "Table",
+          "raw_label": "Table",
+          "reading_order": 7,
+          "html": "<table><tr><td>No.</td><td>සේවාව</td><td>මුදල</td></tr><tr><td>1</td><td>කොණ්ඩෙය කැපිමට (වැඩිහිටි)</td><td>600</td></tr><tr><td>2</td><td>කොණ්ඩෙය කැපිමට (පැසටිම)</td><td>400</td></tr><tr><td>3</td><td>රැවුල කැපිමට</td><td>300</td></tr></table>",
+          "polygon": [[15, 272], [285, 272], [285, 340], [15, 340]],
+          "bbox": [15, 272, 285, 340],
+          "confidence": 0.69,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "label": "Text",
+          "raw_label": "Text",
+          "reading_order": 8,
+          "html": "<p>Toatl Rs 1,300</p>",
+          "polygon": [[140, 345], [285, 345], [285, 362], [140, 362]],
+          "bbox": [140, 345, 285, 362],
+          "confidence": 0.66,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "label": "Text",
+          "raw_label": "Text",
+          "reading_order": 9,
+          "html": "<p>Cach retrun Rs 200</p>",
+          "polygon": [[120, 365], [285, 365], [285, 382], [120, 382]],
+          "bbox": [120, 365, 285, 382],
+          "confidence": 0.60,
+          "skipped": false,
+          "error": false
+        },
+        {
+          "label": "PageFooter",
+          "raw_label": "PageFooter",
+          "reading_order": 10,
+          "html": "<p>Be Focus Your Look</p>",
+          "polygon": [[80, 400], [220, 400], [220, 415], [80, 415]],
+          "bbox": [80, 400, 220, 415],
+          "confidence": 0.83,
+          "skipped": false,
+          "error": false
+        }
+      ],
+      "image_bbox": [0, 0, 300, 430]
+    }
+  ]
+}

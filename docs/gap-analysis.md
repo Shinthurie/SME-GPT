@@ -12,9 +12,9 @@ Update this file as iterations land. Status: ❌ none · 🟡 partial · ✅ don
 | FR-03 | Preprocess (deskew, denoise, crop) | 🟡 | partial in pipeline; formalize Iter 2 |
 | FR-04 | Reject corrupted/unreadable docs with clear error | 🟡 | improve error contract Iter 1 |
 | FR-05 | Extract text in Sinhala & English | ✅ | Surya OCR (colab/local) |
-| FR-06 | Bounding boxes for every text segment | 🟡 | OCR returns boxes; carry through C1/C2 in Iter 2–3 |
-| FR-07 | Store OCR confidence levels | 🟡 | available; persist per box Iter 1–2 |
-| FR-08 | Pluggable OCR engines | 🟡 | `ocr_selector.py`; formal `OCRService` Iter 2 |
+| FR-06 | Bounding boxes for every text segment | 🟡 | canonical box schema + safeguard in `ocr_correction.py` (Iter 2); not yet wired into live pipeline/DB |
+| FR-07 | Store OCR confidence levels | 🟡 | carried in canonical box schema (Iter 2); not yet persisted to DB |
+| FR-08 | Pluggable OCR engines | 🟡 | `OCRService` interface + `MockSuryaOCRService` (Iter 2, `backend/ocr_service.py`); real Surya v2 engine blocked on vllm/llama.cpp backend; v1 colab/local still serves live app |
 | FR-09 | Detect document structure (tables/headers/blocks) | ❌ | C2 (Iter 3) |
 | FR-10 | Extract key fields (vendor, invoice no, dates, totals) | 🟡 | `ocr_to_json_extractor.py`; align to canonical fields Iter 3/5 |
 | FR-11 | Extract line-item tables (rows/cols) | 🟡 | extractor; spatial rows in C2 Iter 3 |
@@ -65,7 +65,7 @@ Update this file as iterations land. Status: ❌ none · 🟡 partial · ✅ don
 
 | Component | Status | Iteration |
 |---|---|---|
-| C1 — Semantic OCR Post-Correction | 🟡 (text-level only) | Iter 2 |
+| C1 — Semantic OCR Post-Correction | 🟡 (box-level + numeric safeguard built & tested against a mock v2 fixture; not wired into the live pipeline; real OCR engine pending vllm/llama.cpp) | Iter 2 |
 | C2 — Layout-Aware Spatial Serialization | ❌ | Iter 3 |
 | C3 — Neuro-Symbolic PAL Arithmetic QA | 🟡 (ad-hoc) | Iter 5 |
 | C4 — Multi-Tenant Relationship Index | ❌ | Iter 6 (tables Iter 1) |

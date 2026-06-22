@@ -38,12 +38,20 @@ Goal: replace the CSV with a real, tenant-isolated relational schema.
 
 Goal: box-level correction with numeric immutability (DeepSeek instead of fine-tuned Gemma).
 
-- [ ] Refactor `llm_correction.py` to operate per OCR box
-- [ ] Output `final_safe_boxes.json` (`text, bbox, confidence, locked_digits, source`)
-- [ ] Formalize `safe_correct()` numeric safeguard (reject if digit sequence changes — research §9.2)
-- [ ] Wrap Surya (colab/local) behind a pluggable `OCRService` interface (FR-08); keep standalone
-- [ ] Quality report scaffolding (CER, NAR)
-- [ ] **Tests:** numeric-safeguard unit tests, CER/NAR eval on `sample_docs`
+- [x] Box-level correction module added (`backend/ocr_correction.py`, `correct_box`/`correct_pages`)
+      alongside (not replacing) the live whole-text `llm_correction.py` path
+- [x] Output `final_safe_boxes.json` (`text, bbox, confidence, locked_digits, source`)
+- [x] Formalize `safe_correct()` numeric safeguard (digit count + sequence + decimal structure)
+- [x] Wrap Surya behind a pluggable `OCRService` interface (FR-08) — `backend/ocr_service.py`,
+      canonical box schema, `MockSuryaOCRService` (Surya v2-shaped fixture; real v2 blocked on
+      a vllm/llama.cpp backend, see `docs/components/component-1.md`)
+- [x] Quality report scaffolding (CER, NAR) — `build_quality_report()`; NAR=1.0 by construction,
+      CER pending a ground-truth transcript fixture
+- [x] **Tests:** 16 numeric-safeguard/adapter/pipeline unit tests, all passing
+- [ ] _Follow-up:_ wire C1 into `document_pipeline.py` once C2 (layout) can consume boxes —
+      extraction today expects a single page text blob, not per-box output
+- [ ] _Follow-up:_ real `SuryaV2OCRService` once a vllm/llama.cpp inference backend is runnable
+- [ ] _Follow-up:_ ground-truth transcript fixture for CER measurement
 
 ## Iteration 3 — Component 2: Layout-Aware Spatial Serialization
 
