@@ -1,15 +1,20 @@
 # frontend
 frontend/node_modules
 frontend/.next
+frontend/.env
 frontend/.env.local
 
 # backend
+backend/venv/
 backend/__pycache__/
 backend/*.pyc
 backend/.env
 backend/temp_processing/
 backend/saved_documents/
 backend/incoming_json/
+
+# claude
+.claude/settings.local.json
 
 # OS / misc
 .DS_Store

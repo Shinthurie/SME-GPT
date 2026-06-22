@@ -1,9 +1,7 @@
 pandas
 matplotlib
 seaborn
-langchain
-langchain-ollama
-ollama
+
 opencv-python
 pdf2image
 pillow
@@ -14,3 +12,5 @@ fastapi
 uvicorn
 python-multipart
 symspellpy==6.7.7
+PyJWT
+psycopg[binary]

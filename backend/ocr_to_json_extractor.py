@@ -4,38 +4,38 @@ import re
 import requests
 from llm_correction import clean_ocr_text
 
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3")
-OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434").rstrip("/")
+DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
+DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
+DEEPSEEK_HOST = "https://api.deepseek.com"
 
 
 def call_ollama(prompt: str) -> str:
-    url = f"{OLLAMA_HOST}/api/generate"
-
+    url = f"{DEEPSEEK_HOST}/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+        "Content-Type": "application/json",
+    }
     try:
         response = requests.post(
             url,
+            headers=headers,
             json={
-                "model": OLLAMA_MODEL,
-                "prompt": prompt,
+                "model": DEEPSEEK_MODEL,
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": 0,
                 "stream": False,
-                "options": {
-                    "temperature": 0
-                }
             },
-            timeout=600
+            timeout=600,
         )
         response.raise_for_status()
         data = response.json()
-        return data.get("response", "").strip()
+        return data["choices"][0]["message"]["content"].strip()
     except requests.exceptions.ConnectionError as e:
-        raise Exception(
-            f"Could not connect to Ollama at {OLLAMA_HOST}. "
-            f"Please start Ollama and run the model first. Error: {e}"
-        )
+        raise Exception(f"Could not connect to DeepSeek API. Error: {e}")
     except requests.exceptions.HTTPError as e:
-        raise Exception(f"Ollama HTTP error: {e}. Response: {response.text}")
+        raise Exception(f"DeepSeek HTTP error: {e}. Response: {response.text}")
     except requests.exceptions.Timeout:
-        raise Exception("Ollama extraction request timed out.")
+        raise Exception("DeepSeek extraction request timed out.")
 
 
 def extract_json_block(text: str) -> str:

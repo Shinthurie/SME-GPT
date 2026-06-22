@@ -1,17 +1,23 @@
+import asyncio
 import os
 import json
 import shutil
 import tempfile
+import threading
 import uuid
 from copy import deepcopy
 from pathlib import Path
+from queue import Empty, Queue
 from typing import Any, Dict, List, Optional
+
+from dotenv import load_dotenv
+load_dotenv()  # must run before any local module is imported so env vars are set
 
 import jwt
 import psycopg
 from fastapi import FastAPI, File, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -340,8 +346,6 @@ def to_preview_data(fields: dict) -> dict:
         "raw_text": safe_text(fields.get("raw_text"), default=""),
         "corrected_text": safe_text(fields.get("corrected_text"), default=""),
         "recommended_total_from_items": safe_number(fields.get("recommended_total_from_items")),
-        "raw_text": safe_text(fields.get("raw_text"), default=""),
-        "corrected_text": safe_text(fields.get("corrected_text"), default=""),
     }
 
 
@@ -364,8 +368,6 @@ def merge_edited_preview_into_fields(original_fields: dict, edited_preview: dict
         "paid_status",
         "language",
         "items",
-        "raw_text",
-        "corrected_text",
         "raw_text",
         "corrected_text",
     ]
@@ -594,6 +596,191 @@ async def process_document(
         )
     finally:
         shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+@app.post("/process-document-stream")
+async def process_document_stream(
+    file: UploadFile = File(...),
+    authorization: str = Header(default=None),
+):
+    user_id = get_current_user_id(authorization)
+    content = await file.read()
+    filename = file.filename or "document"
+
+    ext = Path(filename).suffix.lower()
+    if ext not in {".pdf", ".png", ".jpg", ".jpeg", ".webp"}:
+        async def _bad_type():
+            yield f"data: {json.dumps({'stage': 'error', 'step': 0, 'message': 'Unsupported file type. Use PDF, PNG, JPG, JPEG or WEBP.'})}\n\n"
+        return StreamingResponse(_bad_type(), media_type="text/event-stream")
+
+    progress_q: Queue = Queue()
+    done_event = threading.Event()
+
+    def emit(stage: str, step: int, message: str, **extra):
+        progress_q.put({"stage": stage, "step": step, "message": message, **extra})
+
+    def run():
+        temp_dir = tempfile.mkdtemp(prefix="smegpt_")
+        session_id = str(uuid.uuid4())
+        try:
+            temp_path = os.path.join(temp_dir, filename)
+            with open(temp_path, "wb") as fh:
+                fh.write(content)
+
+            # Stage 1 — PDF / image conversion
+            emit("pdf_conversion", 1, "Converting document to images…")
+
+            from document_pipeline import (
+                save_uploaded_file,
+                standardize_to_images,
+                preprocess_images,
+                _normalize_multi_page_ocr_result,
+                COLAB_OCR_URL as _COLAB_URL,
+            )
+            from colab_ocr_client import send_images_to_colab_ocr
+            from local_surya_ocr_client import run_local_surya_ocr
+            from ocr_selector import select_best_ocr_version
+            from llm_correction import llm_refine_text, clean_ocr_text
+            from ocr_to_json_extractor import extract_structured_json_from_text
+            from arithmetic_validator import validate_arithmetic
+            from correction_engine import correct_extracted_fields
+
+            raw_file = save_uploaded_file(temp_path)
+            orig_images = standardize_to_images(raw_file)
+            processed_pages = preprocess_images(orig_images)
+
+            if not processed_pages:
+                emit("error", 1, "No pages found in the uploaded document.")
+                return
+
+            # Stage 2 — OCR
+            colab_url = _COLAB_URL or os.getenv("COLAB_OCR_URL", "").strip()
+            page_count = len(processed_pages)
+
+            if colab_url:
+                emit("ocr", 2, f"Running Colab OCR on {page_count} page(s)…")
+                try:
+                    ocr_result = send_images_to_colab_ocr(processed_pages, colab_url)
+                except Exception as ocr_err:
+                    emit("ocr", 2, f"Colab OCR failed ({ocr_err}) — switching to local OCR…")
+                    ocr_result = run_local_surya_ocr(processed_pages)
+            else:
+                emit("ocr", 2, f"Running local OCR on {page_count} page(s)…")
+                ocr_result = run_local_surya_ocr(processed_pages)
+
+            normalized = _normalize_multi_page_ocr_result(ocr_result)
+            versions = normalized.get("versions", {})
+            failures = normalized.get("failures", {})
+
+            if not versions:
+                emit("error", 2, f"OCR returned no usable text. Failures: {failures}")
+                return
+
+            selection = select_best_ocr_version(versions)
+            selected_version = selection["selected_version"]
+            selected_text = selection["selected_text"]
+
+            if not selected_text.strip():
+                failure_detail = ""
+                if failures:
+                    sample = list(failures.items())[:3]
+                    failure_detail = " | ".join(f"{k}: {str(v)[:120]}" for k, v in sample)
+                emit("error", 2,
+                     f"OCR returned empty text. "
+                     f"{'Failure details: ' + failure_detail if failure_detail else 'No text was extracted — check that COLAB_OCR_URL is set to your live ngrok URL and the Colab notebook is running.'}"
+                )
+                return
+
+            selected_text = clean_ocr_text(selected_text)
+
+            # Stage 3 — LLM correction
+            emit("llm_correction", 3, "Correcting OCR text with LLM…")
+            corrected_text = llm_refine_text(selected_text)
+
+            # Stage 4 — Structured extraction
+            emit("extraction", 4, "Extracting structured fields…")
+            extracted_json = extract_structured_json_from_text(selected_text)
+            extracted_json["document_type"] = (
+                str(extracted_json.get("document_type", "unknown")).strip().lower() or "unknown"
+            )
+            extracted_json["corrected_text"] = corrected_text
+            extracted_json["raw_text"] = selected_text
+            extracted_json["ocr_selected_version"] = selected_version
+            extracted_json["ocr_scores"] = selection.get("scores", {})
+            extracted_json["ocr_failures"] = failures
+
+            extracted_json = correct_extracted_fields(extracted_json)
+            arithmetic_validation = validate_arithmetic(extracted_json)
+            extracted_json["arithmetic_validation"] = arithmetic_validation
+            extracted_json["arithmetic_status"] = arithmetic_validation.get("status", "not_checked")
+
+            recommended = arithmetic_validation.get("recommended", {}) or {}
+            if extracted_json["arithmetic_status"] == "mismatch":
+                if recommended.get("final_total_amount") is not None:
+                    extracted_json["final_total_amount"] = recommended["final_total_amount"]
+                if recommended.get("payable_amount") is not None:
+                    extracted_json["payable_amount"] = recommended["payable_amount"]
+
+            preview = to_preview_data(extracted_json)
+
+            PROCESSING_SESSIONS[session_id] = {
+                "user_id": user_id,
+                "fields": extracted_json,
+                "preview": preview,
+                "meta": {
+                    "uploaded_file": str(raw_file),
+                    "standard_image": processed_pages[0]["orig"],
+                    "selected_ocr_version": selected_version,
+                    "ocr_scores": selection.get("scores", {}),
+                    "ocr_failures": failures,
+                },
+            }
+
+            emit(
+                "done", 4, "Processing complete.",
+                session_id=session_id,
+                preview=preview,
+                meta={
+                    "uploaded_file": str(raw_file),
+                    "standard_image": processed_pages[0]["orig"],
+                    "selected_ocr_version": selected_version,
+                    "ocr_scores": selection.get("scores", {}),
+                    "ocr_failures": failures,
+                    "arithmetic_status": extracted_json.get("arithmetic_status"),
+                    "arithmetic_validation": extracted_json.get("arithmetic_validation", {}),
+                },
+            )
+
+        except Exception as exc:
+            import traceback
+            emit("error", 0, str(exc), trace=traceback.format_exc())
+        finally:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+            done_event.set()
+
+    threading.Thread(target=run, daemon=True).start()
+
+    async def generate():
+        while True:
+            try:
+                event = progress_q.get_nowait()
+                yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+                if event.get("stage") in ("done", "error"):
+                    break
+            except Empty:
+                if done_event.is_set() and progress_q.empty():
+                    break
+                await asyncio.sleep(0.05)
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )
 
 
 @app.post("/confirm-save")
