@@ -1,8 +1,11 @@
 import os
 import re
-import requests
 from pathlib import Path
-from symspellpy import SymSpell, Verbosity
+try:
+    from symspellpy import SymSpell, Verbosity
+except ModuleNotFoundError:  # pragma: no cover - optional in lightweight CI
+    SymSpell = None
+    Verbosity = None
 
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
 DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
@@ -11,7 +14,7 @@ DEEPSEEK_HOST = "https://api.deepseek.com"
 BASE_DIR = Path(__file__).resolve().parent
 DICT_DIR = BASE_DIR / "dictionaries"
 
-sym_spell = SymSpell(max_dictionary_edit_distance=2, prefix_length=7)
+sym_spell = SymSpell(max_dictionary_edit_distance=2, prefix_length=7) if SymSpell else None
 
 CUSTOM_ENGLISH_TERMS = set()
 CUSTOM_SINHALA_TERMS = set()
@@ -78,7 +81,8 @@ def load_custom_terms():
                 word = line.strip()
                 if word:
                     CUSTOM_ENGLISH_TERMS.add(word.lower())
-                    sym_spell.create_dictionary_entry(word.lower(), 10)
+                    if sym_spell:
+                        sym_spell.create_dictionary_entry(word.lower(), 10)
 
     if sinhala_path.exists():
         with open(sinhala_path, "r", encoding="utf-8") as f:
@@ -253,6 +257,8 @@ def correct_english_token_with_symspell(word: str) -> str:
         corrected = lower_word
     elif lower_word in ENGLISH_CORRECTIONS:
         corrected = ENGLISH_CORRECTIONS[lower_word]
+    elif not sym_spell:
+        corrected = lower_word
     else:
         suggestions = sym_spell.lookup(
             lower_word,
@@ -296,6 +302,11 @@ def dictionary_correct_text(text: str) -> str:
 
 
 def call_ollama(prompt: str) -> str:
+    try:
+        import requests
+    except ModuleNotFoundError as e:
+        raise Exception("DeepSeek correction requires the 'requests' package.") from e
+
     url = f"{DEEPSEEK_HOST}/chat/completions"
     headers = {
         "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
