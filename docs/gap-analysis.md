@@ -20,12 +20,12 @@ Update this file as iterations land. Status: ❌ none · 🟡 partial · ✅ don
 | FR-11 | Extract line-item tables (rows/cols) | 🟡 | extractor (live); C2 `line_item_row`/`line_item_block` templates built standalone (Iter 3) |
 | FR-12 | Multi-page extraction | 🟡 | pipeline handles pages; `build_spatial_chunks` iterates pages (Iter 3); multi-table-per-page clustering is a follow-up |
 | FR-13 | Store page + bbox per extracted field | 🟡 | C2 provenance (`page`, `bbox`, `token_bboxes`) built in `spatial_chunks.json` (Iter 3); not yet persisted to DB |
-| FR-14 | Convert extracted content to embeddings | ❌ | Iter 4 (pgvector) |
-| FR-15 | Store embeddings in a vector DB | ❌ | Iter 4 (pgvector) |
-| FR-16 | Semantic retrieval for queries | ❌ | Iter 4 |
-| FR-17 | Return provenance metadata with results | ❌ | Iter 4 |
+| FR-14 | Convert extracted content to embeddings | 🟡 | `backend/embedding_service.py` (`EmbeddingService`, real default `intfloat/multilingual-e5-small`, Iter 4); not yet wired to the live pipeline (no SpatialChunks to embed until C1/C2 are wired in) |
+| FR-15 | Store embeddings in a vector DB | 🟡 | `ChunkEmbedding` table (pgvector, `docs/design/iter-4-schema.md`, migration applied to Supabase, Iter 4); `backend/vector_index.py::upsert_chunk_embeddings` |
+| FR-16 | Semantic retrieval for queries | 🟡 | `backend/vector_index.py::retrieve_top_k` (pgvector cosine distance, tenant-filtered, Iter 4); not yet exposed via a FastAPI endpoint or wired into C3 |
+| FR-17 | Return provenance metadata with results | 🟡 | `retrieve_top_k` returns `page`/`bbox`/`chunk_type` per result (Iter 4) |
 | FR-18 | Natural-language questions (si/en) | 🟡 | `ai_helper.py`; PAL in Iter 5 |
-| FR-19 | RAG pipeline to retrieve context before answering | ❌ | Iter 4–5 |
+| FR-19 | RAG pipeline to retrieve context before answering | 🟡 | retrieval built standalone (Iter 4); not yet wired into an answer-generation flow (Iter 5) |
 | FR-20 | Calculator/deterministic arithmetic | 🟡 | `arithmetic_validator.py`; PAL executor Iter 5 |
 | FR-21 | Multi-document reasoning (sum across invoices) | 🟡 | `data_tools.py` over CSV; PAL + C4 Iter 5–6 |
 | FR-22 | Only answer when provenance available | ❌ | Iter 5 (citations) |

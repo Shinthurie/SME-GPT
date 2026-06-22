@@ -198,3 +198,24 @@ model DocLink {
   @@index([tenantId, toDocId])
   @@index([tenantId, linkType])
 }
+
+// ---- Iteration 4: vector embeddings over C2 SpatialChunks ----
+// See docs/design/iter-4-schema.md. `embedding` is Unsupported because Prisma
+// has no native pgvector scalar; the real column type + HNSW index are in the
+// hand-authored migration SQL.
+model ChunkEmbedding {
+  id         String   @id @default(cuid())
+  tenantId   String
+  documentId String // SpatialChunk's document_id (business id, not FinancialDocument.id)
+  chunkId    String // SpatialChunk.chunk_id
+  page       Int
+  bbox       Json // [x1, y1, x2, y2] -- provenance.bbox
+  chunkType  String // SpatialChunk.chunk_type
+  text       String   @db.Text // SpatialChunk.text (what's embedded)
+  embedding  Unsupported("vector(384)")
+  createdAt  DateTime @default(now())
+
+  @@unique([tenantId, documentId, chunkId])
+  @@index([tenantId])
+  @@index([tenantId, documentId])
+}
