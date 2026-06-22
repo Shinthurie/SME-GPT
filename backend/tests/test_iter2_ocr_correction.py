@@ -90,8 +90,10 @@ def test_mock_fixture_loads_expected_box_count():
     pages = service.run(["invoice.png"])
 
     assert len(pages) == 1
-    # The fixture has 11 blocks, 1 of which is a skipped Picture -> 10 text boxes.
-    assert len(pages[0]) == 10
+    # 11 blocks: 1 skipped Picture, 1 Table (4 rows x 3 cols = 12 cell boxes,
+    # see ocr_service.table_block_to_cell_boxes), 9 other text/header blocks.
+    # -> 9 + 12 = 21 canonical boxes.
+    assert len(pages[0]) == 21
     assert all(box["text"] for box in pages[0])
     assert all("bbox" in box and "confidence" in box and "page" in box for box in pages[0])
 

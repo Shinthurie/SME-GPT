@@ -45,12 +45,90 @@ def html_block_to_text(html_content: str) -> str:
     return text.strip()
 
 
-def boxes_from_surya_v2_page(page: dict, page_number: int) -> list[dict]:
-    """Adapt one Surya v2 page dict (`blocks` + `image_bbox`) into canonical boxes."""
+def _parse_html_table_rows(html_content: str) -> list[list[str]]:
+    """Parse a Surya v2 `<table>` block's HTML into rows of cell text. Regex-based
+    (no bs4 dependency, consistent with `html_block_to_text` above)."""
+    if not html_content:
+        return []
+    rows = []
+    for tr_match in re.finditer(r"<tr[^>]*>(.*?)</tr>", html_content, flags=re.IGNORECASE | re.DOTALL):
+        cells = [
+            html_block_to_text(cell_match.group(1))
+            for cell_match in re.finditer(
+                r"<t[dh][^>]*>(.*?)</t[dh]>", tr_match.group(1), flags=re.IGNORECASE | re.DOTALL
+            )
+        ]
+        if cells:
+            rows.append(cells)
+    return rows
+
+
+def table_block_to_cell_boxes(block: dict, page_number: int, table_id: str) -> list[dict]:
+    """Surya v2 emits one block (one bbox) per detected table — the HTML inside
+    already carries row/cell structure, but there's no per-cell geometry. C2's
+    row-clustering/header-binding algorithm (docs/components/component-2.md) is
+    built for token-level boxes, so expand the table block into one canonical
+    box per cell, with a synthetic bbox from a uniform grid over the block's
+    bbox. This is an approximation — Surya v2 doesn't expose real per-cell
+    coordinates — but it's the finest geometry available and keeps C2 working
+    against actual box geometry instead of pre-parsed HTML.
+    """
+    rows = _parse_html_table_rows(block.get("html", ""))
+    if not rows:
+        return []
+
+    bx1, by1, bx2, by2 = block["bbox"]
+    num_rows = len(rows)
+    num_cols = max(len(r) for r in rows)
+    row_h = (by2 - by1) / num_rows
+    col_w = (bx2 - bx1) / num_cols if num_cols else (bx2 - bx1)
+    confidence = float(block.get("confidence") or 0.0)
+
     boxes = []
+    for r, cells in enumerate(rows):
+        for c, text in enumerate(cells):
+            if not text.strip():
+                continue
+            boxes.append({
+                "text": text,
+                "bbox": [
+                    bx1 + c * col_w,
+                    by1 + r * row_h,
+                    bx1 + (c + 1) * col_w,
+                    by1 + (r + 1) * row_h,
+                ],
+                "confidence": confidence,
+                "label": "TableCell",
+                "page": page_number,
+                "table_id": table_id,
+                "row_index": r,
+                "col_index": c,
+            })
+    return boxes
+
+
+def boxes_from_surya_v2_page(page: dict, page_number: int) -> list[dict]:
+    """Adapt one Surya v2 page dict (`blocks` + `image_bbox`) into canonical boxes.
+
+    `Table` blocks are expanded into per-cell boxes (see `table_block_to_cell_boxes`)
+    rather than flattened to one text blob, since C2 needs per-cell geometry to
+    cluster rows and bind columns.
+    """
+    boxes = []
+    table_count = 0
     for block in page.get("blocks", []) or []:
         if block.get("skipped") or block.get("error"):
             continue
+
+        if block.get("label") == "Table":
+            table_count += 1
+            cell_boxes = table_block_to_cell_boxes(block, page_number, table_id=f"t{table_count}")
+            if cell_boxes:
+                boxes.extend(cell_boxes)
+                continue
+            # Parsing produced nothing (e.g. malformed HTML) -> never drop the
+            # block, fall through to the flattened-text path below.
+
         text = html_block_to_text(block.get("html", ""))
         if not text:
             continue
