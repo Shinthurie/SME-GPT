@@ -108,8 +108,8 @@ export default function DashboardPage() {
         const data = await res.json();
         if (!res.ok || !data.success) throw new Error(data.message || "Failed to fetch summary.");
         setSummary(data);
-      } catch (err: any) {
-        setError(err.message || "Failed to fetch dashboard summary.");
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to fetch dashboard summary.");
       }
     };
 

@@ -69,8 +69,8 @@ export default function RepositoryPage() {
         const data = await res.json();
         if (!res.ok || !data.success) throw new Error(data.message || "Failed to fetch.");
         setDocuments(data.documents || []);
-      } catch (err: any) {
-        setError(err.message || "Failed to fetch documents.");
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to fetch documents.");
       } finally {
         setLoading(false);
       }

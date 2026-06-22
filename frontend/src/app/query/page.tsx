@@ -64,8 +64,8 @@ export default function QueryPage() {
       sessionStorage.setItem("query_result", JSON.stringify(data));
       sessionStorage.removeItem("selected_query_history");
       router.push("/answer");
-    } catch (err: any) {
-      setError(err.message || "Something went wrong.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong.");
     } finally {
       setLoading(false);
     }

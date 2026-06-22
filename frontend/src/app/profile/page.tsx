@@ -24,8 +24,6 @@ type ProfileData = {
   country: string;
 };
 
-type QueryHistoryItem = { id: string; question: string; created_at: string };
-
 /* ── Shared sub-components ────────────────────────────────────────── */
 
 function SectionHeader({ icon, title, danger }: { icon: string; title: string; danger?: boolean }) {

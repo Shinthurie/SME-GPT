@@ -26,9 +26,9 @@ type EvidenceItem = {
   reason_used: string;
   items?: {
   description: string;
-  quantity: any;
-  unit_price: any;
-  line_total: any;
+  quantity: number | string | null;
+  unit_price: number | string | null;
+  line_total: number | string | null;
 }[];
 };
 
@@ -39,7 +39,7 @@ type QueryResult = {
   answer: string;
   explanation: string;
   evidence: EvidenceItem[];
-  metrics: Record<string, any>;
+  metrics: Record<string, unknown>;
   source_file: string;
   history_saved?: boolean;
   history_error?: string;
@@ -51,14 +51,14 @@ function getAuthToken() {
   return localStorage.getItem("token") || sessionStorage.getItem("token") || "";
 }
 
-function formatValue(value: any) {
+function formatValue(value: unknown) {
   if (value === null || value === undefined || value === "") return "NULL";
   return String(value);
 }
 
 export default function AnswerPage() {
   const router = useRouter();
-  const [lang, setLang] = useState<AppLanguage>("en");
+  const [, setLang] = useState<AppLanguage>("en");
   const [result, setResult] = useState<QueryResult | null>(null);
   const [followUpQuestion, setFollowUpQuestion] = useState("");
   const [asking, setAsking] = useState(false);
@@ -137,8 +137,10 @@ export default function AnswerPage() {
       setFollowUpQuestion("");
       setShowExplanation(false);
       setShowEvidence(false);
-    } catch (err: any) {
-      setFollowUpError(err.message || "Failed to ask follow-up question.");
+    } catch (err) {
+      setFollowUpError(
+        err instanceof Error ? err.message : "Failed to ask follow-up question."
+      );
     } finally {
       setAsking(false);
     }
