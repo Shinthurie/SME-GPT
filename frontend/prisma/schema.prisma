@@ -91,3 +91,110 @@ model query_history {
   source_file  String?
   created_at   DateTime? @default(now()) @db.Timestamp(6)
 }
+
+// ─────────────────────────────────────────────────────────────────────
+// Iteration 1 — financial document store (replaces the CSV) + C4 tables.
+// tenantId == User.id (string/cuid). Backend accesses these via psycopg.
+// See docs/design/iter-1-schema.md.
+// ─────────────────────────────────────────────────────────────────────
+
+model FinancialDocument {
+  id                 String     @id @default(cuid())
+  tenantId           String
+  documentId         String
+  documentType       String?
+  orderId            String?
+  flowType           String?
+  effectiveFlowType  String?
+  companyName        String?
+  supplierName       String?
+  docDate            String?
+  rawTotalAmount     Decimal?   @db.Decimal(14, 2)
+  finalTotalAmount   Decimal?   @db.Decimal(14, 2)
+  totalStatus        String?
+  payableAmount      Decimal?   @db.Decimal(14, 2)
+  cashReturn         Decimal?   @db.Decimal(14, 2)
+  currency           String?    @default("LKR")
+  receivedStatus     String?
+  paidStatus         String?
+  status             String?
+  language           String?
+  rawText            String?
+  correctedText      String?
+  structuredJson     Json?
+  correctionJson     Json?
+  arithmeticStatus   String?
+  arithmeticJson     Json?
+  ocrSelectedVersion String?
+  deletedAt          DateTime?
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
+  lineItems          LineItem[]
+
+  @@unique([tenantId, documentId])
+  @@index([tenantId])
+  @@index([tenantId, docDate])
+  @@index([tenantId, supplierName])
+}
+
+model LineItem {
+  id          String            @id @default(cuid())
+  tenantId    String
+  documentRef String
+  lineNo      Int
+  description String?
+  qty         Decimal?          @db.Decimal(14, 3)
+  unitPrice   Decimal?          @db.Decimal(14, 2)
+  total       Decimal?          @db.Decimal(14, 2)
+  tax         Decimal?          @db.Decimal(14, 2)
+  discount    Decimal?          @db.Decimal(14, 2)
+  currency    String?
+  rawJson     Json?
+  document    FinancialDocument @relation(fields: [documentRef], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([documentRef])
+}
+
+model Entity {
+  id            String        @id @default(cuid())
+  tenantId      String
+  entityType    String
+  canonicalName String
+  rawName       String?
+  createdAt     DateTime      @default(now())
+  aliases       EntityAlias[]
+
+  @@unique([tenantId, entityType, canonicalName])
+  @@index([tenantId, entityType])
+}
+
+model EntityAlias {
+  id        String   @id @default(cuid())
+  tenantId  String
+  entityRef String
+  aliasText String
+  score     Float?
+  method    String
+  createdAt DateTime @default(now())
+  entity    Entity   @relation(fields: [entityRef], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, entityRef])
+  @@index([tenantId, aliasText])
+}
+
+model DocLink {
+  id          String   @id @default(cuid())
+  tenantId    String
+  fromDocId   String
+  linkType    String
+  toEntityRef String?
+  toDocId     String?
+  confidence  Float    @default(1.0)
+  evidence    Json?
+  createdAt   DateTime @default(now())
+
+  @@index([tenantId, fromDocId])
+  @@index([tenantId, toDocId])
+  @@index([tenantId, linkType])
+}
