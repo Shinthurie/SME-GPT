@@ -2,29 +2,31 @@ import os
 import json
 import requests
 
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3")
-OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434").rstrip("/")
+DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
+DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
+DEEPSEEK_HOST = "https://api.deepseek.com"
 
 
 def call_ollama(prompt: str) -> str:
-    url = f"{OLLAMA_HOST}/api/generate"
-
+    url = f"{DEEPSEEK_HOST}/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+        "Content-Type": "application/json",
+    }
     response = requests.post(
         url,
+        headers=headers,
         json={
-            "model": OLLAMA_MODEL,
-            "prompt": prompt,
+            "model": DEEPSEEK_MODEL,
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": 0,
             "stream": False,
-            "options": {
-                "temperature": 0
-            }
         },
         timeout=600,
     )
-
     response.raise_for_status()
     data = response.json()
-    return data.get("response", "").strip()
+    return data["choices"][0]["message"]["content"].strip()
 
 
 def detect_currency(result: dict) -> str:

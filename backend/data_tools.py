@@ -370,9 +370,9 @@ def analyze_financial_query(question: str, company_name: str, user_id: str):
         if not candidate_df.empty:
             filtered_df = candidate_df
             entity_filter_applied = True
-        
-        if question_type in ["expense", "income"]:
-            result_df = filtered_df[
+
+    if question_type in ["expense", "income"]:
+        result_df = filtered_df[
             filtered_df["flow_type"].apply(normalize_flow) == question_type
         ].copy()
 
@@ -401,6 +401,7 @@ def analyze_financial_query(question: str, company_name: str, user_id: str):
             },
             "source_file": DATASET_PATH,
         }
+
     if question_type == "receivable":
         receivable_df = filtered_df[filtered_df["flow_type"].apply(normalize_flow) == "receivable"].copy()
 
