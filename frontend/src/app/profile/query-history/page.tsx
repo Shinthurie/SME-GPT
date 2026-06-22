@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import MobileShell from "@/components/layout/MobileShell";
 import BottomNav from "@/components/layout/BottomNav";
@@ -15,8 +15,8 @@ type QueryHistoryItem = {
   question: string;
   answer: string;
   explanation: string;
-  metrics: Record<string, any>;
-  evidence: any[];
+  metrics: Record<string, unknown>;
+  evidence: unknown[];
   source_file: string;
   created_at: string;
 };
@@ -36,7 +36,7 @@ export default function QueryHistoryPage() {
   const [deletingId, setDeletingId] = useState("");
   const [clearing, setClearing] = useState(false);
 
-  const loadHistory = async () => {
+  const loadHistory = useCallback(async () => {
     const token = getStoredToken();
 
     if (!token) {
@@ -62,16 +62,16 @@ export default function QueryHistoryPage() {
       }
 
       setHistory(data.history || []);
-    } catch (err: any) {
-      setError(err.message || "Failed to load history.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load history.");
     } finally {
       setLoading(false);
     }
-  };
+  }, [router]);
 
   useEffect(() => {
     loadHistory();
-  }, []);
+  }, [loadHistory]);
 
   const openHistoryItem = (item: QueryHistoryItem) => {
     const payload = {
@@ -115,8 +115,8 @@ export default function QueryHistoryPage() {
       }
 
       setHistory((prev) => prev.filter((item) => item.id !== id));
-    } catch (err: any) {
-      alert(err.message || "Failed to delete history item.");
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to delete history item.");
     } finally {
       setDeletingId("");
     }
@@ -145,8 +145,8 @@ export default function QueryHistoryPage() {
       }
 
       setHistory([]);
-    } catch (err: any) {
-      alert(err.message || "Failed to clear history.");
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to clear history.");
     } finally {
       setClearing(false);
     }

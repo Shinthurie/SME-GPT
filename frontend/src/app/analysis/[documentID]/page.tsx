@@ -63,7 +63,7 @@ export default function AnalysisDetailPage() {
   const router = useRouter();
   const pathname = usePathname();
 
-  const [lang, setLang] = useState<AppLanguage>("en");
+  const [, setLang] = useState<AppLanguage>("en");
   const [document, setDocument] = useState<DocumentDetail | null>(null);
   const [editedDocument, setEditedDocument] = useState<DocumentDetail | null>(null);
   const [editMode, setEditMode] = useState(false);
@@ -128,8 +128,8 @@ export default function AnalysisDetailPage() {
 
         setDocument(data.document);
         setEditedDocument(data.document);
-      } catch (err: any) {
-        setError(err.message || "Failed to load document.");
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to load document.");
       } finally {
         setLoading(false);
       }
@@ -146,14 +146,21 @@ export default function AnalysisDetailPage() {
     return "NULL";
   };
 
-  const updateField = (key: keyof DocumentDetail, value: any) => {
+  const updateField = <K extends keyof DocumentDetail>(
+    key: K,
+    value: DocumentDetail[K]
+  ) => {
     setEditedDocument((prev) => {
       if (!prev) return prev;
       return { ...prev, [key]: value };
     });
   };
 
-  const updateItemField = (index: number, key: keyof Item, value: any) => {
+  const updateItemField = <K extends keyof Item>(
+    index: number,
+    key: K,
+    value: Item[K]
+  ) => {
     setEditedDocument((prev) => {
       if (!prev) return prev;
       const updatedItems = [...(prev.items || [])];
@@ -221,8 +228,8 @@ export default function AnalysisDetailPage() {
       setSuccessMessage("Document updated successfully.");
 
 
-    } catch (err: any) {
-      setError(err.message || "Failed to update document.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update document.");
     } finally {
       setSaving(false);
     }
@@ -259,8 +266,8 @@ export default function AnalysisDetailPage() {
       }
 
       router.push("/repository");
-    } catch (err: any) {
-      setError(err.message || "Failed to delete document.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to delete document.");
     } finally {
       setDeleting(false);
     }
