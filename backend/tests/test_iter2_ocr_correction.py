@@ -19,5 +19,5 @@ def test_call_ollama_raises_on_missing_requests(monkeypatch):
 
     monkeypatch.setattr(builtins, "__import__", fake_import)
 
-    with pytest.raises(Exception, match="requires the 'requests' package"):
+    with pytest.raises(ImportError, match="requires the 'requests' package"):
         llm_correction.call_ollama("hello")
