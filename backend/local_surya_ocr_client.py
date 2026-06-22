@@ -1,3 +1,4 @@
+import inspect
 import os
 from pathlib import Path
 from typing import Dict, List
@@ -103,15 +104,36 @@ def _prediction_to_page_data(prediction):
     }
 
 
+def _call_recognition_predictor(image):
+    """Call RecognitionPredictor, adapting to different Surya API versions."""
+    try:
+        call_params = set(inspect.signature(_recognition_predictor.__call__).parameters.keys())
+    except Exception:
+        call_params = set()
+
+    if "det_predictor" in call_params:
+        # Older Surya: pass the predictor object directly
+        return _recognition_predictor([image], det_predictor=_detection_predictor)
+
+    # Newer Surya: run detection first, then pass results to recognition
+    det_results = _detection_predictor([image])
+
+    if "det_predictions" in call_params:
+        return _recognition_predictor([image], det_predictions=det_results)
+
+    # Last resort: try positional, then no-detection fallback
+    try:
+        return _recognition_predictor([image], det_results)
+    except TypeError:
+        return _recognition_predictor([image])
+
+
 def _run_surya_on_single_image(image_path: Path) -> Dict:
     _ensure_surya_loaded()
 
     image = _pil_from_path(image_path)
 
-    predictions = _recognition_predictor(
-        [image],
-        det_predictor=_detection_predictor
-    )
+    predictions = _call_recognition_predictor(image)
 
     if not predictions:
         raise ValueError(f"No OCR predictions returned for {image_path.name}")
