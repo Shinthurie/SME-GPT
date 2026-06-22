@@ -28,12 +28,10 @@ def test_call_ollama_uses_requests_when_available(monkeypatch):
     class DummyResponse:
         text = "ok"
 
-        @staticmethod
-        def raise_for_status():
+        def raise_for_status(self):
             return None
 
-        @staticmethod
-        def json():
+        def json(self):
             return {"choices": [{"message": {"content": " refined output "}}]}
 
     fake_requests = types.SimpleNamespace(
@@ -60,8 +58,11 @@ def test_call_ollama_handles_timeout(monkeypatch):
     class TimeoutErrorForTest(Exception):
         pass
 
+    def raise_timeout(*args, **kwargs):
+        raise TimeoutErrorForTest()
+
     fake_requests = types.SimpleNamespace(
-        post=lambda *args, **kwargs: (_ for _ in ()).throw(TimeoutErrorForTest()),
+        post=raise_timeout,
         exceptions=types.SimpleNamespace(
             ConnectionError=ConnectionErrorForTest,
             HTTPError=HttpErrorForTest,

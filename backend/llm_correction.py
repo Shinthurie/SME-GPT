@@ -14,7 +14,13 @@ DEEPSEEK_HOST = "https://api.deepseek.com"
 BASE_DIR = Path(__file__).resolve().parent
 DICT_DIR = BASE_DIR / "dictionaries"
 
-sym_spell = SymSpell(max_dictionary_edit_distance=2, prefix_length=7) if SymSpell else None
+if SymSpell:
+    try:
+        sym_spell = SymSpell(max_dictionary_edit_distance=2, prefix_length=7)
+    except Exception:  # pragma: no cover - keep module importable in minimal envs
+        sym_spell = None
+else:
+    sym_spell = None
 
 CUSTOM_ENGLISH_TERMS = set()
 CUSTOM_SINHALA_TERMS = set()
