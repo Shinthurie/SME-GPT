@@ -88,9 +88,11 @@ function FieldRow({
 export default function ProvenancePanel({
   doc,
   arithmeticJson,
+  activeChunkId,
 }: {
   doc: Record<string, unknown>;
   arithmeticJson?: ArithmeticJson | null;
+  activeChunkId?: string | null;
 }) {
   const arithmeticStatus = String(doc.arithmetic_status || "").toLowerCase();
   const ocrVersion = String(doc.ocr_selected_version || "").trim();
@@ -102,6 +104,13 @@ export default function ProvenancePanel({
 
   return (
     <div className="rounded-[18px] border border-[#e2e8f0] bg-[#f8fafc] px-5 py-5">
+      {/* Active chunk callout — shown when user clicks a bbox */}
+      {activeChunkId && (
+        <div className="mb-4 rounded-[12px] border border-[#2563ff] bg-[#eff6ff] px-4 py-3 text-[12px] text-[#2563ff]">
+          <span className="font-bold">Selected chunk:</span>{" "}
+          <span className="font-mono">{activeChunkId}</span>
+        </div>
+      )}
       <div className="mb-4 flex items-center justify-between">
         <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#64748b]">
           Field Provenance
