@@ -1,9 +1,32 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
+import * as jwt from "jsonwebtoken";
+import { prisma } from "@/lib/prisma";
 
 export async function POST() {
   try {
     const cookieStore = await cookies();
+    const token = cookieStore.get("token")?.value;
+
+    if (token) {
+      try {
+        const payload = jwt.verify(token, process.env.JWT_SECRET as string) as {
+          userId?: string;
+        };
+        if (payload.userId) {
+          await prisma.activityLog.create({
+            data: {
+              userId: payload.userId,
+              type: "LOGOUT",
+              content: "User logged out",
+            },
+          });
+        }
+      } catch (logError) {
+        // Expired/invalid token -- still proceed to clear the cookie, just skip the log.
+        console.error("LOGOUT AUDIT LOG ERROR:", logError);
+      }
+    }
 
     cookieStore.set("token", "", {
       httpOnly: true,

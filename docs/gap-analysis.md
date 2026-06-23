@@ -38,8 +38,8 @@ Update this file as iterations land. Status: ❌ none · 🟡 partial · ✅ don
 | FR-29 | Clear errors and status updates | 🟡 | improve Iter 7 |
 | FR-30 | TLS for all communication | 🟡 | deploy concern; Iter 8 |
 | FR-31 | Encrypt stored data (AES-256) | ❌ | Supabase at-rest; Iter 8 |
-| FR-32 | Role-Based Access Control | ❌ | Iter 8 |
-| FR-33 | Audit logs for all actions | 🟡 | `ActivityLog` exists; extend Iter 8 |
+| FR-32 | Role-Based Access Control | ✅ | `User.role` (Iter 8) enforced via `require_write_role`/`require_admin_role` in `app.py` (Iter 11) — auditor is read-only, gates all destructive endpoints |
+| FR-33 | Audit logs for all actions | 🟡 | `ActivityLog` table (Iter 8); `_log_audit_event()` now logs document save/update/delete, RBAC denials, and (frontend) signup/password-reset/logout (Iter 11); document *reads* and the admin panel aren't logged yet |
 
 ## Non-Functional Requirements
 
@@ -59,7 +59,7 @@ Update this file as iterations land. Status: ❌ none · 🟡 partial · ✅ don
 | NFR-12 | Run on different devices | 🟡 | Docker Iter 8 |
 | NFR-13 | Docker containers | ❌ | Iter 8 |
 | NFR-14 | GDPR-like data handling | ❌ | Iter 8 |
-| NFR-15 | Audit logs permanent for 1 year + tenant isolation | 🟡 | tenancy Iter 1, retention Iter 8 |
+| NFR-15 | Audit logs permanent for 1 year + tenant isolation | 🟡 | tenancy Iter 1; write-action logging Iter 11; retention policy (auto-delete after 1 year) still not scheduled |
 
 ## Research components coverage
 
