@@ -121,7 +121,7 @@ export async function POST(req: Request) {
     }
 
     const token = jwt.sign(
-      { userId: user.id, sessionVersion: user.sessionVersion, role: user.role },
+      { userId: user.id, sessionVersion: user.sessionVersion, role: user.role ?? "owner" },
       process.env.JWT_SECRET as string,
       { expiresIn: "7d" }
     );
