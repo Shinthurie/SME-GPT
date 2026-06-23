@@ -52,7 +52,7 @@ Update this file as iterations land. Status: ❌ none · 🟡 partial · ✅ don
 | NFR-05 | 99% uptime | ❌ | deploy/ops Iter 8 |
 | NFR-06 | Simple, intuitive UI | 🟡 | ongoing |
 | NFR-07 | Bilingual UI | ✅ | done |
-| NFR-08 | Installable on mobile + desktop | ❌ | PWA later |
+| NFR-08 | Installable on mobile + desktop | ✅ | `public/manifest.json` + hand-written `public/sw.js` (Iter 14) registered via `PwaRegister.tsx`; no Workbox/`next-pwa` -- that's a webpack plugin and this project builds with Turbopack, which doesn't run webpack plugins at all (confirmed against `node_modules/next/dist/docs`), so the iteration plan's exact approach was swapped for an equivalent hand-rolled SW |
 | NFR-09 | Responsive UI | 🟡 | ongoing |
 | NFR-10 | Modular system | 🟡 | improves each iteration |
 | NFR-11 | Easy to update/replace models | 🟡 | `OCRService` + LLM abstraction Iter 2/5 |
