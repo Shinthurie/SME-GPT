@@ -1,12 +1,25 @@
 import "./globals.css";
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
+import PwaRegister from "@/components/PwaRegister";
 
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
   title: "SME-GPT",
   description: "Enterprise Document Intelligence",
+  manifest: "/manifest.json",
+  icons: {
+    apple: "/icons/icon-192.png",
+  },
+  appleWebApp: {
+    capable: true,
+    title: "SME-GPT",
+  },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#2563ff",
 };
 
 export default function RootLayout({
@@ -28,7 +41,10 @@ export default function RootLayout({
           href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0"
         />
       </head>
-      <body className={inter.className}>{children}</body>
+      <body className={inter.className}>
+        <PwaRegister />
+        {children}
+      </body>
     </html>
   );
 }
