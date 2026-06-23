@@ -1,4 +1,8 @@
-@import "tailwindcss";
+/* Explicit Tailwind v4 layer imports — avoids Turbopack resolving the bare
+   specifier @import "tailwindcss" from the git-root instead of frontend/. */
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/preflight.css" layer(base);
+@import "tailwindcss/utilities.css" layer(utilities);
 
 /* ─── Design tokens ─────────────────────────────────────────── */
 :root {
