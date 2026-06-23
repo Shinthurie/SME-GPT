@@ -63,6 +63,61 @@ def test_get_current_user_role_returns_role_from_token(app_module):
     assert app_module.get_current_user_role(auth) == "accountant"
 
 
+# ---------------------------------------------------------------------------
+# sessionVersion enforcement (mirrors frontend/src/lib/auth-server.ts) --
+# makes a password reset invalidate a leaked Bearer token on the backend
+# too, not just the Next.js cookie session.
+# ---------------------------------------------------------------------------
+
+def test_decode_token_accepts_matching_session_version(app_module, monkeypatch):
+    monkeypatch.setattr(app_module, "_get_session_version", lambda user_id: 3)
+    auth = _bearer(app_module, userId="user-1", sessionVersion=3)
+    assert app_module.get_current_user_id(auth) == "user-1"
+
+
+def test_decode_token_rejects_stale_session_version(app_module, monkeypatch):
+    """A password reset bumps User.sessionVersion -- a token signed before
+    that (still carrying the old value) must be rejected."""
+    monkeypatch.setattr(app_module, "_get_session_version", lambda user_id: 4)
+    auth = _bearer(app_module, userId="user-1", sessionVersion=3)
+    with pytest.raises(app_module.HTTPException) as exc:
+        app_module.get_current_user_id(auth)
+    assert exc.value.status_code == 401
+
+
+def test_decode_token_rejects_when_user_no_longer_exists(app_module, monkeypatch):
+    monkeypatch.setattr(app_module, "_get_session_version", lambda user_id: None)
+    auth = _bearer(app_module, userId="deleted-user", sessionVersion=1)
+    with pytest.raises(app_module.HTTPException) as exc:
+        app_module.get_current_user_id(auth)
+    assert exc.value.status_code == 401
+
+
+def test_decode_token_fails_closed_on_db_error(app_module, monkeypatch):
+    """If the session-version lookup itself fails (DB down), deny rather
+    than silently skipping the check."""
+    def _boom(user_id):
+        raise RuntimeError("connection refused")
+
+    monkeypatch.setattr(app_module, "_get_session_version", _boom)
+    auth = _bearer(app_module, userId="user-1", sessionVersion=1)
+    with pytest.raises(app_module.HTTPException) as exc:
+        app_module.get_current_user_id(auth)
+    assert exc.value.status_code == 401
+
+
+def test_decode_token_skips_check_when_claim_absent(app_module, monkeypatch):
+    """Tokens without a sessionVersion claim at all (shouldn't happen with
+    either current login path, but defensive) skip the DB check entirely
+    rather than failing -- same graceful-degradation approach as the missing
+    `role` claim defaulting to 'owner'."""
+    called = []
+    monkeypatch.setattr(app_module, "_get_session_version", lambda user_id: called.append(user_id))
+    auth = _bearer(app_module, userId="user-1")
+    assert app_module.get_current_user_id(auth) == "user-1"
+    assert called == []
+
+
 def test_get_current_user_role_defaults_to_owner_when_missing(app_module):
     """Tokens issued before RBAC roles existed (Iteration 8) have no `role`
     claim at all -- must not break, must default to the least-surprising
@@ -242,4 +297,40 @@ def test_log_audit_event_persists_and_is_readable(app_module):
     finally:
         with db.get_conn() as conn:
             # Cascades to ActivityLog (onDelete: Cascade in schema.prisma).
+            conn.cursor().execute('DELETE FROM "User" WHERE id = %s', (test_user_id,))
+
+
+@pytestmark_db
+def test_session_version_check_against_real_db(app_module):
+    """End-to-end: a token signed with the user's current sessionVersion
+    works; after bumping sessionVersion (what reset-password now does), the
+    same token is rejected -- proving the backend half of the password-reset
+    session-invalidation fix actually works against the real schema."""
+    import uuid
+
+    import db
+
+    test_user_id = f"test_{uuid.uuid4().hex}"
+    with db.get_conn() as conn:
+        conn.cursor().execute(
+            'INSERT INTO "User" (id, email, password, "sessionVersion", "updatedAt") '
+            "VALUES (%s, %s, %s, %s, NOW())",
+            (test_user_id, f"{test_user_id}@example.test", "unused", 1),
+        )
+
+    try:
+        auth = _bearer(app_module, userId=test_user_id, sessionVersion=1)
+        assert app_module.get_current_user_id(auth) == test_user_id
+
+        with db.get_conn() as conn:
+            conn.cursor().execute(
+                'UPDATE "User" SET "sessionVersion" = "sessionVersion" + 1 WHERE id = %s',
+                (test_user_id,),
+            )
+
+        with pytest.raises(app_module.HTTPException) as exc:
+            app_module.get_current_user_id(auth)
+        assert exc.value.status_code == 401
+    finally:
+        with db.get_conn() as conn:
             conn.cursor().execute('DELETE FROM "User" WHERE id = %s', (test_user_id,))
