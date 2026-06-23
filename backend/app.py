@@ -103,6 +103,48 @@ SAVED_DOCS_DIR.mkdir(parents=True, exist_ok=True)
 app.mount("/saved-documents", StaticFiles(directory=str(SAVED_DOCS_DIR)), name="saved-documents")
 
 
+# ── Iteration 13: standardised error responses (GAP-I) ──────────────────────
+class ErrorResponse(BaseModel):
+    success: bool = False
+    error_code: str
+    message: str
+
+
+_ERROR_CODE_BY_STATUS = {
+    400: "BAD_REQUEST",
+    401: "UNAUTHORIZED",
+    403: "FORBIDDEN",
+    404: "DOCUMENT_NOT_FOUND",
+    409: "CONFLICT",
+    429: "RATE_LIMITED",
+}
+
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    error_code = _ERROR_CODE_BY_STATUS.get(exc.status_code, f"HTTP_{exc.status_code}")
+    return JSONResponse(
+        status_code=exc.status_code,
+        content=ErrorResponse(error_code=error_code, message=str(exc.detail)).model_dump(),
+    )
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    # Full traceback server-side only -- the response body must never leak
+    # exception text (could contain SQL, file paths, or other internals).
+    import traceback
+    traceback.print_exc()
+    return JSONResponse(
+        status_code=500,
+        content=ErrorResponse(
+            error_code="INTERNAL_ERROR",
+            message="An unexpected error occurred.",
+        ).model_dump(),
+    )
+# ─────────────────────────────────────────────────────────────────────────────
+
+
 # =========================
 # DB HELPERS
 # =========================
@@ -660,21 +702,15 @@ async def process_document(
 
     try:
         if not file.filename:
-            return JSONResponse(
-                status_code=400,
-                content={"success": False, "message": "No file uploaded."}
-            )
+            raise HTTPException(status_code=400, detail="No file uploaded.")
 
         ext = Path(file.filename).suffix.lower()
         allowed_exts = {".pdf", ".png", ".jpg", ".jpeg", ".webp"}
 
         if ext not in allowed_exts:
-            return JSONResponse(
+            raise HTTPException(
                 status_code=400,
-                content={
-                    "success": False,
-                    "message": "Unsupported file type. Use PDF, PNG, JPG, JPEG, or WEBP."
-                }
+                detail="Unsupported file type. Use PDF, PNG, JPG, JPEG, or WEBP.",
             )
 
         temp_file_path = os.path.join(temp_dir, file.filename)
@@ -718,18 +754,6 @@ async def process_document(
             }
         }
 
-    except HTTPException as http_err:
-        return JSONResponse(
-            status_code=http_err.status_code,
-            content={"success": False, "message": http_err.detail}
-        )
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        return JSONResponse(
-            status_code=500,
-            content={"success": False, "message": f"Error while processing document: {str(e)}"}
-        )
     finally:
         shutil.rmtree(temp_dir, ignore_errors=True)
 
@@ -943,454 +967,305 @@ async def process_document_stream(
 
 @app.post("/confirm-save")
 def confirm_save(payload: ConfirmSaveRequest, authorization: str = Header(default=None)):
-    try:
-        user_id = get_current_user_id(authorization)
-        require_write_role(authorization)
-        session = PROCESSING_SESSIONS.get(payload.session_id)
+    user_id = get_current_user_id(authorization)
+    require_write_role(authorization)
+    session = PROCESSING_SESSIONS.get(payload.session_id)
 
-        if not session:
-            return JSONResponse(
-                status_code=404,
-                content={"success": False, "message": "Session expired or not found. Please process the document again."}
-            )
-
-        if str(session.get("user_id")) != str(user_id):
-            return JSONResponse(
-                status_code=403,
-                content={"success": False, "message": "This processing session does not belong to the current user."}
-            )
-
-        original_fields = session["fields"]
-        final_data = merge_edited_preview_into_fields(original_fields, payload.edited_preview)
-
-        duplicate = find_duplicate_record(final_data, user_id=user_id)
-        if duplicate and not payload.force_save:
-            return JSONResponse(
-                status_code=200,
-                content={
-                    "success": False,
-                    "duplicate_found": True,
-                    "message": "Already we have this document.",
-                    "existing_document_id": duplicate.get("document_id", "NULL")
-                }
-            )
-
-        save_input_json(final_data, "last_confirmed.json")
-        save_result = upsert_confirmed_record(final_data, user_id=user_id)
-
-        document_id = save_result["record"]["document_id"]
-        image_url = save_document_image_from_session(session["meta"], document_id)
-
-        # ── Iteration 9: embed spatial chunks + persist JSON blobs ───────────
-        _safe_boxes = session.get("meta", {}).get("safe_boxes", [])
-        if _safe_boxes and save_result["action"] == "inserted":
-            try:
-                from spatial_serialization import build_spatial_chunks as _bsc
-                from vector_index import flatten_chunks_for_embedding, embed_rows, upsert_chunk_embeddings
-                from embedding_service import get_embedding_service
-
-                _c1_pages = [
-                    {"page": i + 1, "boxes": pb}
-                    for i, pb in enumerate(_safe_boxes)
-                ]
-                _rich = _bsc(_c1_pages, tenant_id=user_id, document_id=document_id)
-                _rows = flatten_chunks_for_embedding(_rich)
-                if _rows:
-                    _embedded = embed_rows(_rows, service=get_embedding_service())
-                    upsert_chunk_embeddings(_embedded)
-                    print(f"[CONFIRM-SAVE] {len(_embedded)} chunks embedded for {document_id}", flush=True)
-
-                # Persist JSON blobs directly via psycopg (no upsert_confirmed_record rewrite)
-                _safe_json = json.dumps(_safe_boxes, ensure_ascii=False)
-                _chunks_json = json.dumps(_rich, ensure_ascii=False)
-                with get_db_connection() as _conn:
-                    with _conn.cursor() as _cur:
-                        _cur.execute(
-                            'UPDATE "FinancialDocument" '
-                            'SET "safeboxJson"=%s, "spatialChunksJson"=%s, "updatedAt"=NOW() '
-                            'WHERE "tenantId"=%s AND "documentId"=%s AND "deletedAt" IS NULL',
-                            (_safe_json, _chunks_json, str(user_id), str(document_id)),
-                        )
-                    _conn.commit()
-                print(f"[CONFIRM-SAVE] spatial blobs persisted for {document_id}", flush=True)
-            except Exception as _emb_err:
-                # Embedding is best-effort — never block the save response
-                print(f"[CONFIRM-SAVE] embedding/persist failed (non-fatal): {_emb_err}", flush=True)
-        # ─────────────────────────────────────────────────────────────────────
-
-        PROCESSING_SESSIONS.pop(payload.session_id, None)
-
-        _log_audit_event(user_id, "DOCUMENT_SAVED", f"document_id={document_id} action={save_result['action']}")
-
-        return {
-            "success": True,
-            "duplicate_found": bool(duplicate),
-            "message": "Document saved successfully.",
-            "document_id": document_id,
-            "image_url": image_url,
-            "action": save_result["action"],
-            "record": save_result["record"]
-        }
-
-    except HTTPException as http_err:
-        return JSONResponse(
-            status_code=http_err.status_code,
-            content={"success": False, "message": http_err.detail}
+    if not session:
+        raise HTTPException(
+            status_code=404,
+            detail="Session expired or not found. Please process the document again.",
         )
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        return JSONResponse(
-            status_code=500,
-            content={"success": False, "message": f"Error while saving document: {str(e)}"}
+
+    if str(session.get("user_id")) != str(user_id):
+        raise HTTPException(
+            status_code=403,
+            detail="This processing session does not belong to the current user.",
         )
+
+    original_fields = session["fields"]
+    final_data = merge_edited_preview_into_fields(original_fields, payload.edited_preview)
+
+    duplicate = find_duplicate_record(final_data, user_id=user_id)
+    if duplicate and not payload.force_save:
+        return JSONResponse(
+            status_code=200,
+            content={
+                "success": False,
+                "duplicate_found": True,
+                "message": "Already we have this document.",
+                "existing_document_id": duplicate.get("document_id", "NULL")
+            }
+        )
+
+    save_input_json(final_data, "last_confirmed.json")
+    save_result = upsert_confirmed_record(final_data, user_id=user_id)
+
+    document_id = save_result["record"]["document_id"]
+    image_url = save_document_image_from_session(session["meta"], document_id)
+
+    # ── Iteration 9: embed spatial chunks + persist JSON blobs ───────────
+    _safe_boxes = session.get("meta", {}).get("safe_boxes", [])
+    if _safe_boxes and save_result["action"] == "inserted":
+        try:
+            from spatial_serialization import build_spatial_chunks as _bsc
+            from vector_index import flatten_chunks_for_embedding, embed_rows, upsert_chunk_embeddings
+            from embedding_service import get_embedding_service
+
+            _c1_pages = [
+                {"page": i + 1, "boxes": pb}
+                for i, pb in enumerate(_safe_boxes)
+            ]
+            _rich = _bsc(_c1_pages, tenant_id=user_id, document_id=document_id)
+            _rows = flatten_chunks_for_embedding(_rich)
+            if _rows:
+                _embedded = embed_rows(_rows, service=get_embedding_service())
+                upsert_chunk_embeddings(_embedded)
+                print(f"[CONFIRM-SAVE] {len(_embedded)} chunks embedded for {document_id}", flush=True)
+
+            # Persist JSON blobs directly via psycopg (no upsert_confirmed_record rewrite)
+            _safe_json = json.dumps(_safe_boxes, ensure_ascii=False)
+            _chunks_json = json.dumps(_rich, ensure_ascii=False)
+            with get_db_connection() as _conn:
+                with _conn.cursor() as _cur:
+                    _cur.execute(
+                        'UPDATE "FinancialDocument" '
+                        'SET "safeboxJson"=%s, "spatialChunksJson"=%s, "updatedAt"=NOW() '
+                        'WHERE "tenantId"=%s AND "documentId"=%s AND "deletedAt" IS NULL',
+                        (_safe_json, _chunks_json, str(user_id), str(document_id)),
+                    )
+                _conn.commit()
+            print(f"[CONFIRM-SAVE] spatial blobs persisted for {document_id}", flush=True)
+        except Exception as _emb_err:
+            # Embedding is best-effort — never block the save response
+            print(f"[CONFIRM-SAVE] embedding/persist failed (non-fatal): {_emb_err}", flush=True)
+    # ─────────────────────────────────────────────────────────────────────
+
+    PROCESSING_SESSIONS.pop(payload.session_id, None)
+
+    _log_audit_event(user_id, "DOCUMENT_SAVED", f"document_id={document_id} action={save_result['action']}")
+
+    return {
+        "success": True,
+        "duplicate_found": bool(duplicate),
+        "message": "Document saved successfully.",
+        "document_id": document_id,
+        "image_url": image_url,
+        "action": save_result["action"],
+        "record": save_result["record"]
+    }
 
 
 @app.put("/documents/{document_id}")
 def update_document(document_id: str, payload: UpdateDocumentRequest, authorization: str = Header(default=None)):
-    try:
-        user_id = get_current_user_id(authorization)
-        require_write_role(authorization)
-        update_data = payload.dict(exclude_unset=True)
+    user_id = get_current_user_id(authorization)
+    require_write_role(authorization)
+    update_data = payload.dict(exclude_unset=True)
 
-        if "items" in update_data:
-            update_data["items"] = normalize_items(update_data.get("items", []))
+    if "items" in update_data:
+        update_data["items"] = normalize_items(update_data.get("items", []))
 
-        for numeric_key in ["raw_total_amount", "final_total_amount", "payable_amount", "cash_return"]:
-            if numeric_key in update_data:
-                update_data[numeric_key] = safe_number(update_data[numeric_key])
+    for numeric_key in ["raw_total_amount", "final_total_amount", "payable_amount", "cash_return"]:
+        if numeric_key in update_data:
+            update_data[numeric_key] = safe_number(update_data[numeric_key])
 
-        existing = get_record_by_id_for_user(user_id=user_id, document_id=document_id)
-        if not existing:
-            return JSONResponse(
-                status_code=404,
-                content={"success": False, "message": "Document not found."}
-            )
+    existing = get_record_by_id_for_user(user_id=user_id, document_id=document_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Document not found.")
 
-        next_flow_type = update_data.get("flow_type", existing.get("flow_type", ""))
-        next_received_status = update_data.get("received_status", existing.get("received_status", ""))
-        next_paid_status = update_data.get("paid_status", existing.get("paid_status", ""))
+    next_flow_type = update_data.get("flow_type", existing.get("flow_type", ""))
+    next_received_status = update_data.get("received_status", existing.get("received_status", ""))
+    next_paid_status = update_data.get("paid_status", existing.get("paid_status", ""))
 
-        effective_flow_type = derive_effective_flow_type(
-            next_flow_type,
-            next_received_status,
-            next_paid_status,
-        )
+    effective_flow_type = derive_effective_flow_type(
+        next_flow_type,
+        next_received_status,
+        next_paid_status,
+    )
 
-        update_data["effective_flow_type"] = effective_flow_type
+    update_data["effective_flow_type"] = effective_flow_type
 
-        flow_changed_message = ""
-        if str(next_flow_type).strip().lower() == "receivable" and str(next_received_status).strip().lower() == "received":
-            flow_changed_message = "Flow type changed from receivable to income because received_status is received."
-        elif str(next_flow_type).strip().lower() == "payable" and str(next_paid_status).strip().lower() == "paid":
-            flow_changed_message = "Flow type changed from payable to expense because paid_status is paid."
+    flow_changed_message = ""
+    if str(next_flow_type).strip().lower() == "receivable" and str(next_received_status).strip().lower() == "received":
+        flow_changed_message = "Flow type changed from receivable to income because received_status is received."
+    elif str(next_flow_type).strip().lower() == "payable" and str(next_paid_status).strip().lower() == "paid":
+        flow_changed_message = "Flow type changed from payable to expense because paid_status is paid."
 
-        updated = update_record_for_user(
-            user_id=user_id,
-            document_id=document_id,
-            updates=update_data,
-        )
+    updated = update_record_for_user(
+        user_id=user_id,
+        document_id=document_id,
+        updates=update_data,
+    )
 
-        if not updated:
-            return JSONResponse(
-                status_code=404,
-                content={"success": False, "message": "Document not found."}
-            )
+    if not updated:
+        raise HTTPException(status_code=404, detail="Document not found.")
 
-        _log_audit_event(user_id, "DOCUMENT_UPDATED", f"document_id={document_id}")
+    _log_audit_event(user_id, "DOCUMENT_UPDATED", f"document_id={document_id}")
 
-        return {
-            "success": True,
-            "message": "Document updated successfully.",
-            "flow_change_message": flow_changed_message,
-            "document": updated
-        }
-
-    except HTTPException as http_err:
-        return JSONResponse(
-            status_code=http_err.status_code,
-            content={"success": False, "message": http_err.detail}
-        )
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        return JSONResponse(
-            status_code=500,
-            content={"success": False, "message": f"Error while updating document: {str(e)}"}
-        )
+    return {
+        "success": True,
+        "message": "Document updated successfully.",
+        "flow_change_message": flow_changed_message,
+        "document": updated
+    }
 
 @app.delete("/documents/{document_id}")
 def delete_document(document_id: str, authorization: str = Header(default=None)):
-    try:
-        user_id = get_current_user_id(authorization)
-        require_write_role(authorization)
+    user_id = get_current_user_id(authorization)
+    require_write_role(authorization)
 
-        deleted = delete_record_for_user(
-            user_id=user_id,
-            document_id=document_id,
-        )
+    deleted = delete_record_for_user(
+        user_id=user_id,
+        document_id=document_id,
+    )
 
-        if not deleted:
-            return JSONResponse(
-                status_code=404,
-                content={"success": False, "message": "Document not found."}
-            )
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Document not found.")
 
-        _log_audit_event(user_id, "DOCUMENT_DELETED", f"document_id={document_id}")
+    _log_audit_event(user_id, "DOCUMENT_DELETED", f"document_id={document_id}")
 
-        return {
-            "success": True,
-            "message": "Document deleted successfully.",
-            "document_id": document_id,
-        }
-
-    except HTTPException as http_err:
-        return JSONResponse(
-            status_code=http_err.status_code,
-            content={"success": False, "message": http_err.detail}
-        )
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        return JSONResponse(
-            status_code=500,
-            content={"success": False, "message": f"Error while deleting document: {str(e)}"}
-        )
+    return {
+        "success": True,
+        "message": "Document deleted successfully.",
+        "document_id": document_id,
+    }
 
 @app.get("/documents")
 def get_documents(authorization: str = Header(default=None)):
-    try:
-        user_id = get_current_user_id(authorization)
-        records = load_all_records(user_id=user_id)
+    user_id = get_current_user_id(authorization)
+    records = load_all_records(user_id=user_id)
 
-        normalized_records = []
-        for record in records:
-            effective_flow = record.get("effective_flow_type") or record.get("flow_type")
-            normalized_records.append({
-                **record,
-                "original_flow_type": record.get("flow_type"),
-                "flow_type": effective_flow,
-            })
+    normalized_records = []
+    for record in records:
+        effective_flow = record.get("effective_flow_type") or record.get("flow_type")
+        normalized_records.append({
+            **record,
+            "original_flow_type": record.get("flow_type"),
+            "flow_type": effective_flow,
+        })
 
-        return {"success": True, "documents": normalized_records}
-    except HTTPException as http_err:
-        return JSONResponse(
-            status_code=http_err.status_code,
-            content={"success": False, "message": http_err.detail}
-        )
+    return {"success": True, "documents": normalized_records}
 
 
 @app.get("/documents/{document_id}")
 def get_document_by_id(document_id: str, authorization: str = Header(default=None)):
-    try:
-        user_id = get_current_user_id(authorization)
-        document = build_document_detail(user_id=user_id, document_id=document_id)
+    user_id = get_current_user_id(authorization)
+    document = build_document_detail(user_id=user_id, document_id=document_id)
 
-        if not document:
-            return JSONResponse(
-                status_code=404,
-                content={"success": False, "message": "Document not found."}
-            )
+    if not document:
+        raise HTTPException(status_code=404, detail="Document not found.")
 
-        return {"success": True, "document": document}
-    except HTTPException as http_err:
-        return JSONResponse(
-            status_code=http_err.status_code,
-            content={"success": False, "message": http_err.detail}
-        )
+    return {"success": True, "document": document}
 
 
 @app.get("/dashboard-summary")
 def dashboard_summary(authorization: str = Header(default=None)):
-    try:
-        user_id = get_current_user_id(authorization)
-        records = load_all_records(user_id=user_id)
-        summary = build_dashboard_summary(records)
-        return {
-            "success": True,
-            "total": summary.get("total_documents", 0),
-            "invoice": summary.get("invoice_count", 0),
-            "receipt": summary.get("receipt_count", 0),
-            "po": summary.get("po_count", 0),
-            "dn": summary.get("dn_count", 0),
-            "recent_documents": records[:5] if records else [],
-            "total_payable_amount": summary.get("total_payable_amount", 0.0),
-            "total_receivable_amount": summary.get("total_receivable_amount", 0.0),
-        }
-    except HTTPException as http_err:
-        return JSONResponse(
-            status_code=http_err.status_code,
-            content={"success": False, "message": http_err.detail}
-        )
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        return JSONResponse(
-            status_code=500,
-            content={"success": False, "message": f"Error while loading dashboard summary: {str(e)}"}
-        )
+    user_id = get_current_user_id(authorization)
+    records = load_all_records(user_id=user_id)
+    summary = build_dashboard_summary(records)
+    return {
+        "success": True,
+        "total": summary.get("total_documents", 0),
+        "invoice": summary.get("invoice_count", 0),
+        "receipt": summary.get("receipt_count", 0),
+        "po": summary.get("po_count", 0),
+        "dn": summary.get("dn_count", 0),
+        "recent_documents": records[:5] if records else [],
+        "total_payable_amount": summary.get("total_payable_amount", 0.0),
+        "total_receivable_amount": summary.get("total_receivable_amount", 0.0),
+    }
 
 
 @app.post("/ask-query")
 def ask_query(payload: QueryRequest, authorization: str = Header(default=None)):
+    user_id = get_current_user_id(authorization)
+
+    if not payload.company_name.strip():
+        raise HTTPException(status_code=400, detail="Company name is required.")
+
+    if not payload.question.strip():
+        raise HTTPException(status_code=400, detail="Question is required.")
+
+    result = answer_financial_question(
+        question=payload.question.strip(),
+        company_name=payload.company_name.strip(),
+        user_id=user_id,
+    )
+
+    history_saved = True
+    history_error = ""
+    history_id = None
+
     try:
-        user_id = get_current_user_id(authorization)
-
-        if not payload.company_name.strip():
-            return JSONResponse(
-                status_code=400,
-                content={"success": False, "message": "Company name is required."}
-            )
-
-        if not payload.question.strip():
-            return JSONResponse(
-                status_code=400,
-                content={"success": False, "message": "Question is required."}
-            )
-
-        result = answer_financial_question(
-            question=payload.question.strip(),
-            company_name=payload.company_name.strip(),
+        history_id = save_query_history_to_db(
             user_id=user_id,
+            company_name=payload.company_name.strip(),
+            question=payload.question.strip(),
+            answer=result.get("direct_answer", ""),
+            explanation=result.get("explanation", ""),
+            metrics=result.get("metrics", {}),
+            evidence=result.get("evidence", []),
+            source_file=result.get("source_file", ""),
         )
+    except Exception as save_err:
+        history_saved = False
+        history_error = str(save_err)
 
-        history_saved = True
-        history_error = ""
-        history_id = None
-
-        try:
-            history_id = save_query_history_to_db(
-                user_id=user_id,
-                company_name=payload.company_name.strip(),
-                question=payload.question.strip(),
-                answer=result.get("direct_answer", ""),
-                explanation=result.get("explanation", ""),
-                metrics=result.get("metrics", {}),
-                evidence=result.get("evidence", []),
-                source_file=result.get("source_file", ""),
-            )
-        except Exception as save_err:
-            history_saved = False
-            history_error = str(save_err)
-
-        return {
-            "success": result.get("success", True),
-            "company_name": payload.company_name.strip(),
-            "question": payload.question.strip(),
-            "answer": result.get("direct_answer", ""),
-            "explanation": result.get("explanation", ""),
-            "evidence": result.get("evidence", []),
-            "metrics": result.get("metrics", {}),
-            "source_file": result.get("source_file", ""),
-            "history_saved": history_saved,
-            "history_error": history_error,
-            "history_id": history_id,
-        }
-
-    except HTTPException as http_err:
-        return JSONResponse(
-            status_code=http_err.status_code,
-            content={"success": False, "message": http_err.detail}
-        )
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        return JSONResponse(
-            status_code=500,
-            content={"success": False, "message": f"Error while answering query: {str(e)}"}
-        )
+    return {
+        "success": result.get("success", True),
+        "company_name": payload.company_name.strip(),
+        "question": payload.question.strip(),
+        "answer": result.get("direct_answer", ""),
+        "explanation": result.get("explanation", ""),
+        "evidence": result.get("evidence", []),
+        "metrics": result.get("metrics", {}),
+        "source_file": result.get("source_file", ""),
+        "history_saved": history_saved,
+        "history_error": history_error,
+        "history_id": history_id,
+    }
 
 
 @app.get("/query-history")
 def get_query_history(authorization: str = Header(default=None)):
-    try:
-        user_id = get_current_user_id(authorization)
-        history = load_query_history_for_user(user_id)
-        return {"success": True, "history": history}
-    except HTTPException as http_err:
-        return JSONResponse(
-            status_code=http_err.status_code,
-            content={"success": False, "message": http_err.detail}
-        )
-    except Exception as e:
-        return JSONResponse(
-            status_code=500,
-            content={"success": False, "message": f"Failed to load query history: {str(e)}"}
-        )
+    user_id = get_current_user_id(authorization)
+    history = load_query_history_for_user(user_id)
+    return {"success": True, "history": history}
 
 
 @app.get("/query-history/{history_id}")
 def get_query_history_item(history_id: str, authorization: str = Header(default=None)):
-    try:
-        user_id = get_current_user_id(authorization)
-        item = get_query_history_item_for_user(user_id, history_id)
+    user_id = get_current_user_id(authorization)
+    item = get_query_history_item_for_user(user_id, history_id)
 
-        if not item:
-            return JSONResponse(
-                status_code=404,
-                content={"success": False, "message": "Query history item not found."}
-            )
+    if not item:
+        raise HTTPException(status_code=404, detail="Query history item not found.")
 
-        return {"success": True, "item": item}
-    except HTTPException as http_err:
-        return JSONResponse(
-            status_code=http_err.status_code,
-            content={"success": False, "message": http_err.detail}
-        )
-    except Exception as e:
-        return JSONResponse(
-            status_code=500,
-            content={"success": False, "message": f"Failed to load query history item: {str(e)}"}
-        )
+    return {"success": True, "item": item}
 
 
 @app.delete("/query-history/{history_id}")
 def delete_query_history_item(history_id: str, authorization: str = Header(default=None)):
-    try:
-        user_id = get_current_user_id(authorization)
-        require_write_role(authorization)
-        deleted = delete_query_history_item_for_user(user_id, history_id)
+    user_id = get_current_user_id(authorization)
+    require_write_role(authorization)
+    deleted = delete_query_history_item_for_user(user_id, history_id)
 
-        if not deleted:
-            return JSONResponse(
-                status_code=404,
-                content={"success": False, "message": "Query history item not found."}
-            )
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Query history item not found.")
 
-        return {"success": True, "message": "Query history deleted successfully."}
-    except HTTPException as http_err:
-        return JSONResponse(
-            status_code=http_err.status_code,
-            content={"success": False, "message": http_err.detail}
-        )
-    except Exception as e:
-        return JSONResponse(
-            status_code=500,
-            content={"success": False, "message": f"Failed to delete query history item: {str(e)}"}
-        )
+    return {"success": True, "message": "Query history deleted successfully."}
 
 
 @app.delete("/query-history")
 def clear_query_history(authorization: str = Header(default=None)):
-    try:
-        user_id = get_current_user_id(authorization)
-        require_write_role(authorization)
-        deleted_count = clear_query_history_for_user(user_id)
-        return {
-            "success": True,
-            "message": "Query history cleared successfully.",
-            "deleted_count": deleted_count,
-        }
-    except HTTPException as http_err:
-        return JSONResponse(
-            status_code=http_err.status_code,
-            content={"success": False, "message": http_err.detail}
-        )
-    except Exception as e:
-        return JSONResponse(
-            status_code=500,
-            content={"success": False, "message": f"Failed to clear query history: {str(e)}"}
-        )
+    user_id = get_current_user_id(authorization)
+    require_write_role(authorization)
+    deleted_count = clear_query_history_for_user(user_id)
+    return {
+        "success": True,
+        "message": "Query history cleared successfully.",
+        "deleted_count": deleted_count,
+    }
 
 
 # =========================
@@ -1398,29 +1273,18 @@ def clear_query_history(authorization: str = Header(default=None)):
 # =========================
 @app.get("/user/export")
 def export_user_data(authorization: str = Header(default=None)):
-    try:
-        user_id = get_current_user_id(authorization)
+    user_id = get_current_user_id(authorization)
 
-        documents = load_all_records(user_id=user_id)
-        query_history = load_query_history_for_user(user_id)
+    documents = load_all_records(user_id=user_id)
+    query_history = load_query_history_for_user(user_id)
 
-        return {
-            "success": True,
-            "exported_at": datetime.now(timezone.utc).isoformat(),
-            "user_id": user_id,
-            "documents": documents,
-            "query_history": query_history,
-        }
-    except HTTPException as http_err:
-        return JSONResponse(
-            status_code=http_err.status_code,
-            content={"success": False, "message": http_err.detail}
-        )
-    except Exception as e:
-        return JSONResponse(
-            status_code=500,
-            content={"success": False, "message": f"Failed to export user data: {str(e)}"}
-        )
+    return {
+        "success": True,
+        "exported_at": datetime.now(timezone.utc).isoformat(),
+        "user_id": user_id,
+        "documents": documents,
+        "query_history": query_history,
+    }
 
 
 @app.delete("/user/account")
@@ -1430,26 +1294,15 @@ def delete_user_account(authorization: str = Header(default=None)):
     TrustedDevice/LoginVerification/ActivityLog/UploadedFile) -- this endpoint
     only owns the tables the backend writes directly via psycopg, which Prisma
     cascades can't reach."""
-    try:
-        user_id = get_current_user_id(authorization)
+    user_id = get_current_user_id(authorization)
 
-        with get_db_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute('DELETE FROM "DocLink" WHERE "tenantId" = %s', (user_id,))
-                cur.execute('DELETE FROM "ChunkEmbedding" WHERE "tenantId" = %s', (user_id,))
-                cur.execute('DELETE FROM "Entity" WHERE "tenantId" = %s', (user_id,))  # cascades EntityAlias
-                cur.execute('DELETE FROM "FinancialDocument" WHERE "tenantId" = %s', (user_id,))  # cascades LineItem
-                cur.execute('DELETE FROM query_history WHERE user_id = %s', (user_id,))
-            conn.commit()
+    with get_db_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute('DELETE FROM "DocLink" WHERE "tenantId" = %s', (user_id,))
+            cur.execute('DELETE FROM "ChunkEmbedding" WHERE "tenantId" = %s', (user_id,))
+            cur.execute('DELETE FROM "Entity" WHERE "tenantId" = %s', (user_id,))  # cascades EntityAlias
+            cur.execute('DELETE FROM "FinancialDocument" WHERE "tenantId" = %s', (user_id,))  # cascades LineItem
+            cur.execute('DELETE FROM query_history WHERE user_id = %s', (user_id,))
+        conn.commit()
 
-        return {"success": True, "message": "All document data deleted for this account."}
-    except HTTPException as http_err:
-        return JSONResponse(
-            status_code=http_err.status_code,
-            content={"success": False, "message": http_err.detail}
-        )
-    except Exception as e:
-        return JSONResponse(
-            status_code=500,
-            content={"success": False, "message": f"Failed to delete account data: {str(e)}"}
-        )
+    return {"success": True, "message": "All document data deleted for this account."}
