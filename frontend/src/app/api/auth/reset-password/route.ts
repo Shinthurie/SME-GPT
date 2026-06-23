@@ -41,14 +41,28 @@ export async function POST(req: Request) {
         password: hashedPassword,
         resetToken: null,
         resetTokenExpiry: null,
+        // Invalidate every existing session/JWT (cookie or localStorage) --
+        // getAuthenticatedUser() rejects any token whose sessionVersion
+        // claim doesn't match the current value. Without this, resetting
+        // your password (e.g. because you suspected someone else had
+        // access) would leave their session logged in.
+        sessionVersion: { increment: 1 },
       },
     });
 
     console.log("PASSWORD UPDATED FOR:", user.email);
 
-    await prisma.activityLog.create({
-      data: { userId: user.id, type: "PASSWORD_RESET", content: `Password reset for ${user.email}` },
-    }).catch(() => {});
+    try {
+      await prisma.activityLog.create({
+        data: {
+          userId: user.id,
+          type: "PASSWORD_RESET",
+          content: `Password reset for ${user.email}`,
+        },
+      });
+    } catch (logError) {
+      console.error("PASSWORD_RESET AUDIT LOG ERROR:", logError);
+    }
 
     return NextResponse.json({
       success: true,

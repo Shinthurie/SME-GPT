@@ -50,6 +50,7 @@ export async function POST(req: Request) {
       {
         userId: verification.user.id,
         sessionVersion: verification.user.sessionVersion,
+        role: verification.user.role,
       },
       process.env.JWT_SECRET as string,
       { expiresIn: "7d" }
