@@ -32,6 +32,25 @@ _NON_ARITHMETIC_INTENTS = {"invoice_list", "receipt_list", "po_list", "dn_list"}
 
 def _legacy_answer(question: str, company_name: str, user_id: str, *, audit_extra: dict | None = None) -> dict:
     analysis_result = dt.analyze_financial_query(question=question, company_name=company_name, user_id=user_id)
+    evidence = analysis_result.get("evidence", [])
+
+    # FR-22: Only answer when provenance is available.  If the data layer found
+    # no grounding evidence at all, refuse rather than generating a potentially
+    # hallucinated answer via the LLM.
+    if not evidence:
+        refusal = (
+            "I could not find any documents related to your query for the given company. "
+            "Please upload relevant invoices or purchase orders first, or try a different company name."
+        )
+        return {
+            "success": False,
+            "direct_answer": refusal, "short_answer": refusal, "full_answer": refusal,
+            "explanation": refusal, "evidence": [], "metrics": analysis_result.get("metrics", {}),
+            "source_file": analysis_result.get("source_file", SOURCE),
+            "computed": None, "citations": [],
+            "audit": {"engine": "legacy_ad_hoc", "validation": "refused_no_provenance", **(audit_extra or {})},
+        }
+
     answer_bundle = generate_explainable_answer(question=question, company_name=company_name, result=analysis_result)
     return {
         "success": analysis_result.get("success", False),
@@ -39,7 +58,7 @@ def _legacy_answer(question: str, company_name: str, user_id: str, *, audit_extr
         "short_answer": answer_bundle.get("short_answer", ""),
         "full_answer": answer_bundle.get("full_answer", analysis_result.get("explanation", "")),
         "explanation": answer_bundle.get("full_answer", analysis_result.get("explanation", "")),
-        "evidence": analysis_result.get("evidence", []),
+        "evidence": evidence,
         "metrics": analysis_result.get("metrics", {}),
         "source_file": analysis_result.get("source_file", ""),
         "computed": None,

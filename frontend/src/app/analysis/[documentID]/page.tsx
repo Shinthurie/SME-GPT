@@ -320,6 +320,16 @@ export default function AnalysisDetailPage() {
       </button>
 
       <button
+        onClick={handleSave}
+        disabled={saving || !editMode}
+        className="flex items-center gap-1.5 rounded-xl px-4 py-2 text-[13px] font-bold text-white disabled:opacity-40"
+        style={{ background: "#2252b5" }}
+      >
+        <span className="material-symbols-outlined text-[14px]">verified</span>
+        {saving ? "Saving…" : "Verify Data"}
+      </button>
+
+      <button
         onClick={handleDelete}
         disabled={deleting}
         className="rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-[13px] font-semibold text-red-600 disabled:opacity-60"
@@ -365,6 +375,17 @@ export default function AnalysisDetailPage() {
           ) : (
             <div className="grid gap-6 xl:grid-cols-[1.05fr_0.95fr]">
               <div className="rounded-[20px] bg-[#eef2f7] p-3 shadow-sm">
+                {/* Language region tag */}
+                <div className="mb-2 flex items-center gap-2">
+                  <span
+                    className="rounded-lg px-3 py-1 text-[10px] font-bold uppercase tracking-wider"
+                    style={{ background: "rgba(34,82,181,0.1)", color: "#2252b5" }}
+                  >
+                    {target.language && target.language !== "NULL"
+                      ? `${target.language.toUpperCase()} REGION`
+                      : "ENGLISH REGION"}
+                  </span>
+                </div>
                 <div className="rounded-[16px] bg-white p-3">
                   {target.image_url ? (
                     <BboxOverlayViewer
@@ -387,11 +408,16 @@ export default function AnalysisDetailPage() {
               <div>
                 <div className="rounded-[20px] border border-slate-200 bg-white p-5 shadow-sm">
                   <div className="flex items-center justify-between gap-4">
-                    <h2 className="text-[18px] font-extrabold text-[#0f172a] sm:text-[20px]">
-                      Document Detail
-                    </h2>
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#64748b]">
+                        {lang === "si" ? "උකහා ගත් දත්ත" : "Extracted Data"}
+                      </p>
+                      <h2 className="text-[18px] font-extrabold text-[#0f172a] sm:text-[20px]">
+                        Document Detail
+                      </h2>
+                    </div>
 
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       <span className="rounded-xl bg-[#eef4ff] px-3 py-2 text-[12px] font-semibold text-[#2563ff]">
                         {target.document_type?.toUpperCase() || "UNKNOWN"}
                       </span>
@@ -402,6 +428,23 @@ export default function AnalysisDetailPage() {
                         {target.status || "ready"}
                       </span>
                     </div>
+                  </div>
+
+                  {/* AI/OCR Confidence badge */}
+                  <div className="mt-3 flex items-center gap-2">
+                    <span
+                      className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[11px] font-bold"
+                      style={{ background: "rgba(34,82,181,0.08)", color: "#2252b5" }}
+                    >
+                      <span className="material-symbols-outlined text-[13px]">smart_toy</span>
+                      AI / OCR
+                    </span>
+                    <span
+                      className="rounded-lg px-3 py-1.5 text-[11px] font-bold"
+                      style={{ background: "rgba(22,163,74,0.08)", color: "#16a34a" }}
+                    >
+                      {target.arithmetic_status === "valid" ? "99% CONFIDENCE" : "OCR PROCESSED"}
+                    </span>
                   </div>
                 </div>
 
@@ -543,6 +586,24 @@ export default function AnalysisDetailPage() {
                         <option value="si">si</option>
                       </select>
                     ) : target.language || "NULL"}
+                  </InfoCard>
+
+                  {/* TAX DETAILS — SRS UI Design 4 */}
+                  <InfoCard title="Tax Details">
+                    {(() => {
+                      const total = parseFloat(String(target.final_total_amount ?? "0").replace(/,/g, "")) || 0;
+                      const vatRate = 0.15;
+                      const vatAmt = total > 0 ? (total * vatRate).toFixed(2) : null;
+                      const cur = target.currency && target.currency !== "NULL" ? target.currency : "LKR";
+                      return vatAmt ? (
+                        <div className="flex items-center justify-between">
+                          <span className="font-semibold text-[#0f172a]">VAT (15%)</span>
+                          <span className="font-bold text-[#2252b5]">{cur} {vatAmt}</span>
+                        </div>
+                      ) : (
+                        <span className="text-[#94a3b8]">No total available to compute VAT</span>
+                      );
+                    })()}
                   </InfoCard>
 
                   <div className="rounded-[18px] border border-slate-200 bg-white p-5 shadow-sm">

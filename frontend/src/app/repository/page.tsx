@@ -22,6 +22,7 @@ type RepoDocument = {
   currency: string;
   status: string;
   flow_type?: string;
+  file_size_kb?: number | null;
 };
 
 type TabType = "all" | "invoice" | "po" | "dn" | "receipt";
@@ -45,6 +46,21 @@ const typeMap: Record<RepoDocument["document_type"], { bg: string; color: string
   unknown: { bg: "rgba(100,116,139,0.1)", color: "#64748b", icon: "draft", label: "DOCUMENT" },
 };
 
+function statusBadge(status: string) {
+  const s = (status || "ready").toLowerCase();
+  if (s === "processing")
+    return { bg: "rgba(234,108,10,0.1)", color: "#ea6c0a", label: "PROCESSING" };
+  if (s === "error" || s === "failed")
+    return { bg: "rgba(220,38,38,0.1)", color: "#dc2626", label: "ERROR" };
+  return { bg: "rgba(22,163,74,0.1)", color: "#16a34a", label: "READY" };
+}
+
+function formatFileSize(kb?: number | null) {
+  if (kb == null) return null;
+  if (kb >= 1024) return `${(kb / 1024).toFixed(1)} MB`;
+  return `${Math.round(kb)} KB`;
+}
+
 export default function RepositoryPage() {
   const router = useRouter();
   const [lang, setLang] = useState<AppLanguage>("en");
@@ -52,36 +68,45 @@ export default function RepositoryPage() {
   const [documents, setDocuments] = useState<RepoDocument[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [archivingId, setArchivingId] = useState<string | null>(null);
 
   useEffect(() => { setLang(getStoredLanguage()); }, []);
 
-  useEffect(() => {
-    const fetch_ = async () => {
-      const token = getAuthToken();
-      if (!token) { router.push("/login"); return; }
+  const loadDocuments = async () => {
+    const token = getAuthToken();
+    if (!token) { router.push("/login"); return; }
+    setLoading(true);
+    setError("");
+    try {
+      const res = await fetch(`${BACKEND_URL}/documents`, {
+        headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store",
+      });
+      if (res.status === 401) { localStorage.removeItem("token"); router.push("/login"); return; }
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.message || "Failed to fetch.");
+      setDocuments(data.documents || []);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to fetch documents.");
+    } finally {
+      setLoading(false);
+    }
+  };
 
-      try {
-        const res = await fetch(`${BACKEND_URL}/documents`, {
-          headers: { Authorization: `Bearer ${token}` },
-          cache: "no-store",
-        });
-        if (res.status === 401) { localStorage.removeItem("token"); router.push("/login"); return; }
-        const data = await res.json();
-        if (!res.ok || !data.success) throw new Error(data.message || "Failed to fetch.");
-        setDocuments(data.documents || []);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to fetch documents.");
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetch_();
-  }, [router]);
+  useEffect(() => { loadDocuments(); }, [router]);
 
-  const filtered = useMemo(
-    () => (tab === "all" ? documents : documents.filter((d) => d.document_type === tab)),
-    [tab, documents]
-  );
+  const filtered = useMemo(() => {
+    const byTab = tab === "all" ? documents : documents.filter((d) => d.document_type === tab);
+    if (!searchQuery.trim()) return byTab;
+    const q = searchQuery.toLowerCase();
+    return byTab.filter(
+      (d) =>
+        d.document_id.toLowerCase().includes(q) ||
+        (d.company_name || "").toLowerCase().includes(q) ||
+        (d.supplier_name || "").toLowerCase().includes(q)
+    );
+  }, [tab, documents, searchQuery]);
 
   const tabLabel = (v: TabType) => {
     if (lang === "si") {
@@ -145,6 +170,24 @@ export default function RepositoryPage() {
             </div>
           </div>
 
+          {/* Search bar */}
+          <div className="mb-4 flex items-center gap-2 rounded-xl px-4 py-2.5"
+            style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
+            <span className="material-symbols-outlined text-[18px]" style={{ color: "var(--text-3)" }}>search</span>
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder={lang === "si" ? "ලේඛන සොයන්න…" : "Search by document ID, company, or supplier…"}
+              className="flex-1 bg-transparent text-[14px] text-[var(--text-1)] outline-none placeholder:text-[var(--text-3)]"
+            />
+            {searchQuery && (
+              <button onClick={() => setSearchQuery("")} className="text-[var(--text-3)] hover:text-[var(--text-1)]">
+                <span className="material-symbols-outlined text-[16px]">close</span>
+              </button>
+            )}
+          </div>
+
           {/* Tabs */}
           <div className="mb-5 flex flex-wrap gap-2">
             {(["all", "invoice", "po", "dn", "receipt"] as TabType[]).map((v) => (
@@ -180,10 +223,13 @@ export default function RepositoryPage() {
               No documents found.
             </div>
           ) : (
+            <>
             <div className="space-y-3">
               {filtered.map((item) => {
                 const m = typeMap[item.document_type] ?? typeMap.unknown;
                 const amt = formatAmount(item);
+                const badge = statusBadge(item.status);
+                const fileSize = formatFileSize(item.file_size_kb);
                 return (
                   <div
                     key={item.document_id}
@@ -212,21 +258,49 @@ export default function RepositoryPage() {
                           </div>
                         </div>
 
-                        <div className="mt-3 flex items-center justify-between gap-4">
+                        {fileSize && (
+                          <p className="mt-1 text-[11px] text-[var(--text-3)]">{fileSize}</p>
+                        )}
+
+                        <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
                           <span
                             className="rounded-lg px-2.5 py-1 text-[10px] font-bold uppercase"
-                            style={{ background: "rgba(22,163,74,0.1)", color: "#16a34a" }}
+                            style={{ background: badge.bg, color: badge.color }}
                           >
-                            ready
+                            {badge.label}
                           </span>
-                          <button
-                            onClick={() => router.push(`/analysis/${item.document_id}`)}
-                            className="text-[12px] font-bold transition hover:opacity-75"
-                            style={{ color: "var(--brand-mid)" }}
-                          >
-                            OPEN →
-                          </button>
+                          <div className="flex items-center gap-3">
+                            <button
+                              onClick={() => {
+                                if (archivingId === item.document_id) {
+                                  setArchivingId(null);
+                                } else {
+                                  setArchivingId(item.document_id);
+                                }
+                              }}
+                              className="text-[12px] font-bold transition hover:opacity-75"
+                              style={{ color: "var(--text-3)" }}
+                            >
+                              ARCHIVE
+                            </button>
+                            <button
+                              onClick={() => router.push(`/analysis/${item.document_id}`)}
+                              className="text-[12px] font-bold transition hover:opacity-75"
+                              style={{ color: "var(--brand-mid)" }}
+                            >
+                              OPEN →
+                            </button>
+                          </div>
                         </div>
+
+                        {archivingId === item.document_id && (
+                          <div className="mt-3 rounded-xl px-3 py-2.5 text-[12px]"
+                            style={{ background: "rgba(26,53,96,0.06)", border: "1px solid rgba(26,53,96,0.12)", color: "var(--text-2)" }}>
+                            <span className="font-semibold">Archive:</span> This feature is coming soon. Documents will be moved to a long-term archive and excluded from active queries.
+                            <button className="ml-3 font-bold" style={{ color: "var(--brand-mid)" }}
+                              onClick={() => setArchivingId(null)}>Dismiss</button>
+                          </div>
+                        )}
                       </div>
 
                       <div className="text-right">
@@ -242,6 +316,20 @@ export default function RepositoryPage() {
                 );
               })}
             </div>
+
+            {/* REFRESH LIST */}
+            <div className="mt-6 flex justify-center">
+              <button
+                onClick={loadDocuments}
+                disabled={loading}
+                className="flex items-center gap-2 rounded-xl px-6 py-2.5 text-[13px] font-bold transition hover:opacity-80 disabled:opacity-50"
+                style={{ background: "var(--surface)", border: "1px solid var(--border)", color: "var(--brand-mid)" }}
+              >
+                <span className="material-symbols-outlined text-[16px]">refresh</span>
+                {lang === "si" ? "ලැයිස්තුව යාවත්කාලීන කරන්න" : "REFRESH LIST"}
+              </button>
+            </div>
+            </>
           )}
         </main>
 

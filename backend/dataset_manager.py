@@ -53,6 +53,7 @@ DATASET_COLUMNS = [
     "ocr_selected_version",
     "safe_boxes_json",
     "spatial_chunks_json",
+    "file_size_kb",
 ]
 
 # record key -> DB column (Prisma camelCase). items_json is handled separately.
@@ -86,6 +87,7 @@ RECORD_TO_DB = {
     # Iteration 9 — spatial blobs (stored as TEXT, not JSONB)
     "safe_boxes_json": "safeboxJson",
     "spatial_chunks_json": "spatialChunksJson",
+    "file_size_kb": "fileSizeKb",
 }
 
 MONEY_FIELDS = {"raw_total_amount", "final_total_amount", "payable_amount", "cash_return"}
