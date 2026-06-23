@@ -133,6 +133,19 @@ Apply via psycopg (not Prisma CLI — PgBouncer transaction mode blocks DDL).
 
 ## Iteration 11 — RBAC Enforcement + Audit Logging
 
+> **Status: done** (PR — see `docs/test-reports/iteration-11.md`). Implementation differs from the
+> plan below in a few small ways, noted inline:
+> - `require_write_role`/`require_admin_role` are called directly inside each route body
+>   (`require_write_role(authorization)`), not injected via `Depends()` — matches the codebase's
+>   existing convention (`get_current_user_id(authorization)` is already called the same way, not
+>   as a FastAPI dependency).
+> - `require_write_role`/`require_admin_role` decode the JWT themselves (sharing a new
+>   `_decode_token()` helper with `get_current_user_id`/`get_current_user_role`) and log
+>   `RBAC_WRITE_DENIED` internally before raising 403 — so call sites don't need their own
+>   audit-logging branch for denials.
+> - `require_admin_role` exists and is tested but not wired into any route yet (no admin routes
+>   exist until Iteration 12).
+
 **Goal:** Enforce role-based write restrictions on destructive backend endpoints, encode `role` in the JWT, and fill audit log gaps in both frontend auth routes and backend document operations.
 
 ### Part 1: JWT + Backend RBAC
