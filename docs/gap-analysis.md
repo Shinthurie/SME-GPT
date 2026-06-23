@@ -61,6 +61,10 @@ Update this file as iterations land. Status: ❌ none · 🟡 partial · ✅ don
 | NFR-14 | GDPR-like data handling | ❌ | Iter 8 |
 | NFR-15 | Audit logs permanent for 1 year + tenant isolation | 🟡 | tenancy Iter 1; write-action logging Iter 11; retention policy (auto-delete after 1 year) still not scheduled |
 
+(Session-invalidation fix, same iteration: password reset now bumps `User.sessionVersion`,
+checked on both the frontend (`getAuthenticatedUser()`) and backend (`app.py::_decode_token`) —
+a leaked token is invalidated everywhere after a reset, not just on Next.js page guards.)
+
 ## Research components coverage
 
 | Component | Status | Iteration |
