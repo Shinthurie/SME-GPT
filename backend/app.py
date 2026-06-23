@@ -1386,11 +1386,8 @@ def clear_query_history(authorization: str = Header(default=None)):
 def export_user_data(authorization: str = Header(default=None)):
     user_id = get_current_user_id(authorization)
 
-    # NFR-03: use paginated load; export is intentionally complete but avoids
-    # loading the entire dataset in one shot for very large tenants.
-    raw_docs = load_records(user_id=user_id)   # no limit — full export by design
-    from dataset_manager import parse_record_for_output
-    documents = [parse_record_for_output(r) for r in raw_docs]
+    # GDPR export intentionally returns ALL records — load_all_records is correct here.
+    documents = load_all_records(user_id=user_id)
     query_history = load_query_history_for_user(user_id)
 
     return {
