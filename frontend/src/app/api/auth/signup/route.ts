@@ -23,5 +23,17 @@ export async function POST(req: Request) {
     },
   });
 
+  try {
+    await prisma.activityLog.create({
+      data: {
+        userId: user.id,
+        type: "SIGNUP",
+        content: `New account created for ${user.email}`,
+      },
+    });
+  } catch (logError) {
+    console.error("SIGNUP AUDIT LOG ERROR:", logError);
+  }
+
   return NextResponse.json({ user });
 }

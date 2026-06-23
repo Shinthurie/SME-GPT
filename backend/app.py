@@ -282,7 +282,7 @@ def clear_query_history_for_user(user_id: str):
 # =========================
 # AUTH HELPERS
 # =========================
-def get_current_user_id(authorization: str = Header(default=None)) -> str:
+def _decode_token(authorization: str | None) -> dict:
     if not authorization:
         raise HTTPException(status_code=401, detail="Missing Authorization header.")
 
@@ -292,17 +292,80 @@ def get_current_user_id(authorization: str = Header(default=None)) -> str:
     token = authorization.replace("Bearer ", "").strip()
 
     try:
-        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
-        user_id = payload.get("userId") or payload.get("id") or payload.get("sub")
-
-        if not user_id:
-            raise HTTPException(status_code=401, detail="Invalid token payload.")
-
-        return str(user_id)
+        return jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token expired.")
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Invalid token.")
+
+
+def get_current_user_id(authorization: str = Header(default=None)) -> str:
+    payload = _decode_token(authorization)
+    user_id = payload.get("userId") or payload.get("id") or payload.get("sub")
+
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Invalid token payload.")
+
+    return str(user_id)
+
+
+def get_current_user_role(authorization: str = Header(default=None)) -> str:
+    """Role claim from the JWT (Iteration 8's `User.role`), defaulting to
+    'owner' for tokens that omit it (issued before RBAC roles existed, or any
+    other client that doesn't send the claim)."""
+    payload = _decode_token(authorization)
+    return str(payload.get("role") or "owner")
+
+
+# Iteration 11 (FR-32): write access is everyone except 'auditor' (read-only).
+_WRITE_ROLES = {"owner", "accountant", "admin"}
+
+
+def require_write_role(authorization: str = Header(default=None)) -> str:
+    """Raise 403 unless the token's role can perform write operations.
+    Audit-logs the denial (RBAC_WRITE_DENIED) before raising. Returns the
+    role string so callers that already need it don't have to decode twice."""
+    payload = _decode_token(authorization)
+    role = str(payload.get("role") or "owner")
+
+    if role not in _WRITE_ROLES:
+        user_id = payload.get("userId") or payload.get("id") or payload.get("sub") or "unknown"
+        _log_audit_event(str(user_id), "RBAC_WRITE_DENIED", f"role='{role}' attempted a write operation")
+        raise HTTPException(status_code=403, detail=f"Role '{role}' is not permitted to perform this action.")
+
+    return role
+
+
+def require_admin_role(authorization: str = Header(default=None)) -> str:
+    """Raise 403 unless the token's role is 'admin'. Not wired into any route
+    yet -- reserved for the admin panel (docs/iteration-plan-9-14.md Iter 12)."""
+    payload = _decode_token(authorization)
+    role = str(payload.get("role") or "owner")
+
+    if role != "admin":
+        user_id = payload.get("userId") or payload.get("id") or payload.get("sub") or "unknown"
+        _log_audit_event(str(user_id), "RBAC_WRITE_DENIED", f"role='{role}' attempted an admin-only action")
+        raise HTTPException(status_code=403, detail="Admin role required.")
+
+    return role
+
+
+def _log_audit_event(user_id: str, event_type: str, content: str) -> None:
+    """Best-effort write to ActivityLog (FR-33, NFR-15). Never raises -- a
+    logging failure must not block the actual operation it's logging."""
+    if not DATABASE_URL:
+        return
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    'INSERT INTO "ActivityLog" (id, "userId", type, content, "createdAt") '
+                    "VALUES (%s, %s, %s, %s, NOW())",
+                    (str(uuid.uuid4()), str(user_id), event_type, content),
+                )
+            conn.commit()
+    except Exception as e:
+        print(f"[AUDIT] failed to log {event_type} for user {user_id}: {e}", flush=True)
 
 
 # =========================
@@ -562,6 +625,7 @@ async def process_document(
     authorization: str = Header(default=None),
 ):
     user_id = get_current_user_id(authorization)
+    require_write_role(authorization)
     temp_dir = tempfile.mkdtemp(prefix="smegpt_")
 
     try:
@@ -646,6 +710,7 @@ async def process_document_stream(
     authorization: str = Header(default=None),
 ):
     user_id = get_current_user_id(authorization)
+    require_write_role(authorization)
     content = await file.read()
     filename = file.filename or "document"
 
@@ -850,6 +915,7 @@ async def process_document_stream(
 def confirm_save(payload: ConfirmSaveRequest, authorization: str = Header(default=None)):
     try:
         user_id = get_current_user_id(authorization)
+        require_write_role(authorization)
         session = PROCESSING_SESSIONS.get(payload.session_id)
 
         if not session:
@@ -924,6 +990,8 @@ def confirm_save(payload: ConfirmSaveRequest, authorization: str = Header(defaul
 
         PROCESSING_SESSIONS.pop(payload.session_id, None)
 
+        _log_audit_event(user_id, "DOCUMENT_SAVED", f"document_id={document_id} action={save_result['action']}")
+
         return {
             "success": True,
             "duplicate_found": bool(duplicate),
@@ -952,6 +1020,7 @@ def confirm_save(payload: ConfirmSaveRequest, authorization: str = Header(defaul
 def update_document(document_id: str, payload: UpdateDocumentRequest, authorization: str = Header(default=None)):
     try:
         user_id = get_current_user_id(authorization)
+        require_write_role(authorization)
         update_data = payload.dict(exclude_unset=True)
 
         if "items" in update_data:
@@ -998,6 +1067,8 @@ def update_document(document_id: str, payload: UpdateDocumentRequest, authorizat
                 content={"success": False, "message": "Document not found."}
             )
 
+        _log_audit_event(user_id, "DOCUMENT_UPDATED", f"document_id={document_id}")
+
         return {
             "success": True,
             "message": "Document updated successfully.",
@@ -1022,6 +1093,7 @@ def update_document(document_id: str, payload: UpdateDocumentRequest, authorizat
 def delete_document(document_id: str, authorization: str = Header(default=None)):
     try:
         user_id = get_current_user_id(authorization)
+        require_write_role(authorization)
 
         deleted = delete_record_for_user(
             user_id=user_id,
@@ -1033,6 +1105,8 @@ def delete_document(document_id: str, authorization: str = Header(default=None))
                 status_code=404,
                 content={"success": False, "message": "Document not found."}
             )
+
+        _log_audit_event(user_id, "DOCUMENT_DELETED", f"document_id={document_id}")
 
         return {
             "success": True,
@@ -1244,6 +1318,7 @@ def get_query_history_item(history_id: str, authorization: str = Header(default=
 def delete_query_history_item(history_id: str, authorization: str = Header(default=None)):
     try:
         user_id = get_current_user_id(authorization)
+        require_write_role(authorization)
         deleted = delete_query_history_item_for_user(user_id, history_id)
 
         if not deleted:
@@ -1269,6 +1344,7 @@ def delete_query_history_item(history_id: str, authorization: str = Header(defau
 def clear_query_history(authorization: str = Header(default=None)):
     try:
         user_id = get_current_user_id(authorization)
+        require_write_role(authorization)
         deleted_count = clear_query_history_for_user(user_id)
         return {
             "success": True,
