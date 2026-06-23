@@ -135,6 +135,8 @@ model FinancialDocument {
   arithmeticStatus   String?
   arithmeticJson     Json?
   ocrSelectedVersion String?
+  safeboxJson        String?   @db.Text
+  spatialChunksJson  String?   @db.Text
   deletedAt          DateTime?
   createdAt          DateTime   @default(now())
   updatedAt          DateTime   @updatedAt

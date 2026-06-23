@@ -602,6 +602,9 @@ async def process_document(
                 "selected_ocr_version": result.get("selected_ocr_version"),
                 "ocr_scores": result.get("ocr_scores", {}),
                 "ocr_failures": result.get("ocr_failures", {}),
+                # Iteration 9 — spatial data for confirm-save embedding
+                "safe_boxes": result.get("safe_boxes", []),
+                "rich_spatial_chunks_template": result.get("rich_spatial_chunks", {}),
             }
         }
 
@@ -732,6 +735,24 @@ async def process_document_stream(
 
             selected_text = clean_ocr_text(selected_text)
 
+            # Iteration 9 — C1 per-box safe correction + C2 rich spatial chunks
+            from llm_correction import correct_boxes_for_page as _correct_boxes
+            from spatial_serialization import build_spatial_chunks as _build_rich
+            _selected_pages = selection.get("selected_pages") or []
+            _safe_boxes: list = []
+            for _pe in _selected_pages:
+                _tl = _pe.get("text_lines", []) if isinstance(_pe, dict) else []
+                _safe_boxes.append(_correct_boxes(_tl))
+            _c1_pages = [{"page": i + 1, "boxes": pb} for i, pb in enumerate(_safe_boxes)]
+            _rich_template: dict = {}
+            if _c1_pages:
+                try:
+                    _rich_template = _build_rich(
+                        _c1_pages, tenant_id="__pending__", document_id="__pending__"
+                    )
+                except Exception:
+                    pass
+
             # Stage 3 — LLM correction
             emit("llm_correction", 3, "Correcting OCR text with LLM…")
             corrected_text = llm_refine_text(selected_text)
@@ -772,6 +793,9 @@ async def process_document_stream(
                     "selected_ocr_version": selected_version,
                     "ocr_scores": selection.get("scores", {}),
                     "ocr_failures": failures,
+                    # Iteration 9 — spatial data for confirm-save embedding
+                    "safe_boxes": _safe_boxes,
+                    "rich_spatial_chunks_template": _rich_template,
                 },
             }
 
@@ -860,6 +884,43 @@ def confirm_save(payload: ConfirmSaveRequest, authorization: str = Header(defaul
 
         document_id = save_result["record"]["document_id"]
         image_url = save_document_image_from_session(session["meta"], document_id)
+
+        # ── Iteration 9: embed spatial chunks + persist JSON blobs ───────────
+        _safe_boxes = session.get("meta", {}).get("safe_boxes", [])
+        if _safe_boxes and save_result["action"] == "inserted":
+            try:
+                from spatial_serialization import build_spatial_chunks as _bsc
+                from vector_index import flatten_chunks_for_embedding, embed_rows, upsert_chunk_embeddings
+                from embedding_service import get_embedding_service
+
+                _c1_pages = [
+                    {"page": i + 1, "boxes": pb}
+                    for i, pb in enumerate(_safe_boxes)
+                ]
+                _rich = _bsc(_c1_pages, tenant_id=user_id, document_id=document_id)
+                _rows = flatten_chunks_for_embedding(_rich)
+                if _rows:
+                    _embedded = embed_rows(_rows, service=get_embedding_service())
+                    upsert_chunk_embeddings(_embedded)
+                    print(f"[CONFIRM-SAVE] {len(_embedded)} chunks embedded for {document_id}", flush=True)
+
+                # Persist JSON blobs directly via psycopg (no upsert_confirmed_record rewrite)
+                _safe_json = json.dumps(_safe_boxes, ensure_ascii=False)
+                _chunks_json = json.dumps(_rich, ensure_ascii=False)
+                with get_db_connection() as _conn:
+                    with _conn.cursor() as _cur:
+                        _cur.execute(
+                            'UPDATE "FinancialDocument" '
+                            'SET "safeboxJson"=%s, "spatialChunksJson"=%s, "updatedAt"=NOW() '
+                            'WHERE "tenantId"=%s AND "documentId"=%s AND "deletedAt" IS NULL',
+                            (_safe_json, _chunks_json, str(user_id), str(document_id)),
+                        )
+                    _conn.commit()
+                print(f"[CONFIRM-SAVE] spatial blobs persisted for {document_id}", flush=True)
+            except Exception as _emb_err:
+                # Embedding is best-effort — never block the save response
+                print(f"[CONFIRM-SAVE] embedding/persist failed (non-fatal): {_emb_err}", flush=True)
+        # ─────────────────────────────────────────────────────────────────────
 
         PROCESSING_SESSIONS.pop(payload.session_id, None)
 

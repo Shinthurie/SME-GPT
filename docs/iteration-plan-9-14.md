@@ -16,7 +16,8 @@ After 8 completed iterations, the SME-GPT SRS v1.2 has 33 functional requirement
 | GAP-D: No admin panel | SRS §4.1 (Admin screen) |
 | GAP-E: Audit logging incomplete | FR-33, NFR-15 |
 | GAP-F: No deskew in preprocessing | FR-03 |
-| GAP-G: No PWA | NFR-08 |
+| GAP-G: No PWA | N
+FR-08 |
 | GAP-H: No GDPR data export/deletion | NFR-14 |
 | GAP-I: Inconsistent error responses | FR-04, FR-29 |
 

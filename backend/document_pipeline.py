@@ -13,6 +13,7 @@ from ocr_service import get_ocr_service
 from ocr_selector import select_best_ocr_version
 from llm_correction import llm_refine_text, clean_ocr_text, correct_boxes_for_page
 from spatial_serializer import serialize_safe_boxes
+from spatial_serialization import build_spatial_chunks as _build_rich_spatial_chunks
 from ocr_to_json_extractor import extract_structured_json_from_text
 from arithmetic_validator import validate_arithmetic
 from correction_engine import correct_extracted_fields
@@ -260,6 +261,20 @@ def build_preview_from_versions(version_paths: list[dict]) -> dict:
         encoding="utf-8",
     )
     print(f"[PIPELINE] spatial_chunks.json written ({len(spatial_chunks)} chunks)", flush=True)
+
+    # ── Iteration 9: rich spatial chunks (pending IDs; patched at confirm-save)
+    _c1_pages = [
+        {"page": i + 1, "boxes": page_boxes}
+        for i, page_boxes in enumerate(safe_boxes_by_page)
+    ]
+    rich_spatial_chunks = {}
+    if _c1_pages:
+        try:
+            rich_spatial_chunks = _build_rich_spatial_chunks(
+                _c1_pages, tenant_id="__pending__", document_id="__pending__"
+            )
+        except Exception as _e:
+            print(f"[PIPELINE] rich spatial chunks failed (non-fatal): {_e}", flush=True)
     # ─────────────────────────────────────────────────────────────────────────
 
     print("[PIPELINE] Starting LLM correction...", flush=True)
@@ -305,6 +320,7 @@ def build_preview_from_versions(version_paths: list[dict]) -> dict:
         "ocr_failures": failures,
         "safe_boxes": safe_boxes_by_page,
         "spatial_chunks": spatial_chunks,
+        "rich_spatial_chunks": rich_spatial_chunks,
     }
 
 def process_uploaded_document(upload_path: str):
@@ -329,4 +345,7 @@ def process_uploaded_document(upload_path: str):
         "ocr_scores": preview.get("ocr_scores", {}),
         "ocr_failures": preview.get("ocr_failures", {}),
         "extracted_fields": preview["extracted_fields"],
+        # Iteration 9 — forwarded to session for confirm-save embedding
+        "safe_boxes": preview.get("safe_boxes", []),
+        "rich_spatial_chunks": preview.get("rich_spatial_chunks", {}),
     }
