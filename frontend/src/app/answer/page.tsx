@@ -5,7 +5,8 @@ import { useRouter } from "next/navigation";
 import MobileShell from "@/components/layout/MobileShell";
 import BottomNav from "@/components/layout/BottomNav";
 import LanguageSwitcher from "@/components/layout/LanguageSwitcher";
-import { AppLanguage, getStoredLanguage } from "@/lib/i18n";
+import DerivationTrace from "@/components/ui/DerivationTrace";
+import { AppLanguage, getStoredLanguage, ui } from "@/lib/i18n";
 
 const BACKEND_URL = "http://127.0.0.1:8000";
 
@@ -58,13 +59,15 @@ function formatValue(value: unknown) {
 
 export default function AnswerPage() {
   const router = useRouter();
-  const [, setLang] = useState<AppLanguage>("en");
+  const [lang, setLang] = useState<AppLanguage>("en");
   const [result, setResult] = useState<QueryResult | null>(null);
   const [followUpQuestion, setFollowUpQuestion] = useState("");
   const [asking, setAsking] = useState(false);
   const [followUpError, setFollowUpError] = useState("");
   const [showExplanation, setShowExplanation] = useState(false);
   const [showEvidence, setShowEvidence] = useState(false);
+  const [showTrace, setShowTrace] = useState(false);
+  const t = ui[lang];
 
   useEffect(() => {
     setLang(getStoredLanguage());
@@ -377,6 +380,33 @@ export default function AnswerPage() {
                     <div className="text-[14px] text-[#64748b]">No evidence documents available.</div>
                   )}
                 </div>
+              </div>
+            )}
+          </div>
+
+          {/* Derivation Trace — Iteration 7 */}
+          <div className="mt-6 rounded-[18px] border border-slate-200 bg-white shadow-sm">
+            <button
+              onClick={() => setShowTrace((prev) => !prev)}
+              className="flex w-full items-center justify-between px-5 py-4 text-left"
+            >
+              <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#64748b]">
+                {t.derivationTrace ?? "Derivation Trace"}
+              </span>
+              <span className="material-symbols-outlined text-[#64748b]">
+                {showTrace ? "expand_less" : "expand_more"}
+              </span>
+            </button>
+            {showTrace && (
+              <div className="border-t border-slate-100 px-5 py-4">
+                <DerivationTrace
+                  evidence={result.evidence || []}
+                  metrics={result.metrics || {}}
+                  questionType={
+                    (result.metrics?.question_type as string) || "summary"
+                  }
+                  companyName={result.company_name}
+                />
               </div>
             )}
           </div>

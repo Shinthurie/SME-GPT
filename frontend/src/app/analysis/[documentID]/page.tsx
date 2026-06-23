@@ -5,7 +5,8 @@ import { usePathname, useRouter } from "next/navigation";
 import MobileShell from "@/components/layout/MobileShell";
 import BottomNav from "@/components/layout/BottomNav";
 import LanguageSwitcher from "@/components/layout/LanguageSwitcher";
-import { AppLanguage, getStoredLanguage } from "@/lib/i18n";
+import ProvenancePanel, { type ArithmeticJson } from "@/components/ui/ProvenancePanel";
+import { AppLanguage, getStoredLanguage, ui } from "@/lib/i18n";
 
 const BACKEND_URL = "http://127.0.0.1:8000";
 
@@ -35,6 +36,11 @@ type DocumentDetail = {
   paid_status: string;
   items: Item[];
   image_url?: string | null;
+  // Provenance fields (Iteration 7)
+  arithmetic_status?: string;
+  arithmetic_json?: ArithmeticJson | null;
+  ocr_selected_version?: string;
+  corrected_text?: string;
 };
 
 function getAuthToken() {
@@ -63,7 +69,9 @@ export default function AnalysisDetailPage() {
   const router = useRouter();
   const pathname = usePathname();
 
-  const [, setLang] = useState<AppLanguage>("en");
+  const [lang, setLang] = useState<AppLanguage>("en");
+  const [showProvenance, setShowProvenance] = useState(false);
+  const t = ui[lang];
   const [document, setDocument] = useState<DocumentDetail | null>(null);
   const [editedDocument, setEditedDocument] = useState<DocumentDetail | null>(null);
   const [editMode, setEditMode] = useState(false);
@@ -581,6 +589,29 @@ export default function AnalysisDetailPage() {
                   </div>
                 </div>
 
+                {/* Provenance Panel — Iteration 7 */}
+                <div className="mt-4 rounded-[18px] border border-slate-200 bg-white shadow-sm">
+                  <button
+                    onClick={() => setShowProvenance((prev) => !prev)}
+                    className="flex w-full items-center justify-between px-5 py-4 text-left"
+                  >
+                    <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#64748b]">
+                      {t.fieldProvenance ?? "Field Provenance"}
+                    </span>
+                    <span className="material-symbols-outlined text-[#64748b]">
+                      {showProvenance ? "expand_less" : "expand_more"}
+                    </span>
+                  </button>
+                  {showProvenance && (
+                    <div className="border-t border-slate-100 px-4 py-4">
+                      <ProvenancePanel
+                        doc={target as Record<string, unknown>}
+                        arithmeticJson={target.arithmetic_json}
+                      />
+                    </div>
+                  )}
+                </div>
+
                 {editMode ? (
                   <button
                     onClick={handleSave}
@@ -594,7 +625,7 @@ export default function AnalysisDetailPage() {
                     onClick={() => router.push("/repository")}
                     className="mt-5 w-full rounded-[18px] bg-[#2563ff] py-4 text-[15px] font-bold text-white shadow-[0_10px_24px_rgba(37,99,255,0.22)]"
                   >
-                    Back to Repository
+                    {t.backToDashboard ?? "Back to Repository"}
                   </button>
                 )}
               </div>

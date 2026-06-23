@@ -15,6 +15,7 @@ export async function GET() {
         email: user.email,
         fullName: user.fullName,
         companyName: user.companyName,
+        role: (user as { role?: string }).role ?? "owner",
       },
     });
   } catch (error) {

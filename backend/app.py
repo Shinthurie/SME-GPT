@@ -4,7 +4,9 @@ import json
 import shutil
 import tempfile
 import threading
+import time
 import uuid
+from collections import defaultdict
 from copy import deepcopy
 from pathlib import Path
 from queue import Empty, Queue
@@ -15,7 +17,7 @@ load_dotenv()  # must run before any local module is imported so env vars are se
 
 import jwt
 import psycopg
-from fastapi import FastAPI, File, Header, HTTPException, UploadFile
+from fastapi import FastAPI, File, Header, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -50,6 +52,47 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ── Iteration 8: in-process rate limiter ────────────────────────────────────
+# Sliding-window counter per IP. Limits:
+#   /ask-query  → 30 requests / 60 s   (LLM calls are expensive)
+#   /process-*  → 10 requests / 60 s   (OCR pipeline is heavy)
+#   all others  → 120 requests / 60 s
+_RATE_WINDOW = 60          # seconds
+_RATE_LIMITS: Dict[str, int] = {
+    "/ask-query":            30,
+    "/process-document":     10,
+    "/process-document-stream": 10,
+}
+_RATE_DEFAULT = 120
+_rate_buckets: Dict[str, list] = defaultdict(list)  # key → [timestamps]
+_rate_lock = threading.Lock()
+
+
+@app.middleware("http")
+async def rate_limit_middleware(request: Request, call_next):
+    client_ip = request.client.host if request.client else "unknown"
+    path = request.url.path
+    limit = next(
+        (v for k, v in _RATE_LIMITS.items() if path.startswith(k)),
+        _RATE_DEFAULT,
+    )
+    now = time.time()
+    bucket_key = f"{client_ip}:{path}"
+
+    with _rate_lock:
+        timestamps = _rate_buckets[bucket_key]
+        # drop entries older than the window
+        _rate_buckets[bucket_key] = [t for t in timestamps if now - t < _RATE_WINDOW]
+        if len(_rate_buckets[bucket_key]) >= limit:
+            return JSONResponse(
+                {"detail": "Rate limit exceeded. Please slow down."},
+                status_code=429,
+            )
+        _rate_buckets[bucket_key].append(now)
+
+    return await call_next(request)
+# ─────────────────────────────────────────────────────────────────────────────
 
 PROCESSING_SESSIONS: Dict[str, Dict[str, Any]] = {}
 
