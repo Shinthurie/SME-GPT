@@ -86,3 +86,33 @@ def generate_pal_answer(question: str, company_name: str, plan: dict, computed: 
 
     short_answer, full_answer = build_fallback_answer(company_name, plan, computed)
     return {"short_answer": short_answer, "full_answer": full_answer}
+
+
+def build_discrepancy_bilingual_note(discrepancies: list[dict], lang: str = "en") -> str:
+    """
+    GAP-19C (Iter 19): generate a bilingual note about price discrepancies.
+    Included in the answer when evidence contains an invoice+PO pair with a price gap.
+    """
+    actuals = [d for d in discrepancies if d.get("is_discrepancy")]
+    if not actuals:
+        return ""
+
+    lines_en = []
+    lines_si = []
+    for d in actuals:
+        sign = "+" if d.get("diff_pct", 0) > 0 else ""
+        lines_en.append(
+            f"• {d['description']}: invoice LKR {d['invoice_price']:,.2f} vs PO LKR {d['po_price']:,.2f} "
+            f"({sign}{d['diff_pct']}% {d.get('direction', '')})"
+        )
+        lines_si.append(
+            f"• {d['description']}: ඉන්වොයිස් LKR {d['invoice_price']:,.2f}, PO LKR {d['po_price']:,.2f} "
+            f"({sign}{d['diff_pct']}% {d.get('direction', '')})"
+        )
+
+    en_block = "Price discrepancies detected:\n" + "\n".join(lines_en)
+    si_block = "මිල විෂමතා හඳුනා ගන්නා ලදී:\n" + "\n".join(lines_si)
+
+    if lang == "si":
+        return f"{si_block}\n\n{en_block}"
+    return f"{en_block}\n\n{si_block}"

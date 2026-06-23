@@ -30,6 +30,8 @@ from dataset_manager import (
     save_input_json,
     find_duplicate_record,
     load_all_records,
+    count_records,
+    load_records,
     get_record_by_id_for_user,
     update_record_for_user,
     delete_record_for_user,
@@ -605,6 +607,26 @@ def build_document_detail(user_id: str, document_id: str):
     }
 
 
+def _build_field_chunk_map(extracted: dict, spatial_chunks: dict) -> dict:
+    """GAP-18C (FR-24/26): fuzzy-match extracted field values → chunk_id for click-to-source."""
+    from difflib import SequenceMatcher
+    all_chunks = [c for p in spatial_chunks.get("pages", []) for c in p.get("chunks", [])]
+    field_chunk_map: dict[str, str] = {}
+    for field in ("company_name", "supplier_name", "order_id", "date",
+                  "raw_total_amount", "final_total_amount", "currency"):
+        value = str(extracted.get(field, "") or "").strip()
+        if not value or value.upper() == "NULL":
+            continue
+        best_id, best_ratio = None, 0.0
+        for chunk in all_chunks:
+            ratio = SequenceMatcher(None, value.lower(), (chunk.get("text") or "").lower()).ratio()
+            if ratio > best_ratio:
+                best_ratio, best_id = ratio, chunk.get("chunk_id")
+        if best_ratio >= 0.55 and best_id:
+            field_chunk_map[field] = best_id
+    return field_chunk_map
+
+
 def build_dashboard_summary(records: List[dict]):
     total = len(records)
     invoice = sum(1 for r in records if str(r.get("document_type", "")).strip().lower() == "invoice")
@@ -629,6 +651,12 @@ def build_dashboard_summary(records: List[dict]):
         elif flow == "receivable":
             total_receivable += amount
 
+    # GAP-18D: PENDING / READY counts for UI-D2 dashboard mockup
+    pending_count = sum(
+        1 for r in records if str(r.get("status", "ready")).strip().lower() == "processing"
+    )
+    ready_count = total - pending_count
+
     return {
         "total_documents": total,
         "invoice_count": invoice,
@@ -637,6 +665,8 @@ def build_dashboard_summary(records: List[dict]):
         "dn_count": dn,
         "total_payable_amount": round(total_payable, 2),
         "total_receivable_amount": round(total_receivable, 2),
+        "pending_processing_count": pending_count,
+        "ready_for_query_count": ready_count,
     }
 
 def derive_effective_flow_type(flow_type: str, received_status: str, paid_status: str) -> str:
@@ -1042,9 +1072,33 @@ def confirm_save(payload: ConfirmSaveRequest, authorization: str = Header(defaul
                     )
                 _conn.commit()
             print(f"[CONFIRM-SAVE] spatial blobs persisted for {document_id}", flush=True)
+
+            # GAP-18C: build field→chunk map for click-to-source in ProvenancePanel (FR-24/26)
+            try:
+                _field_chunk_map = _build_field_chunk_map(final_data, _rich)
+                _fcm_json = json.dumps(_field_chunk_map, ensure_ascii=False)
+                with get_db_connection() as _conn2:
+                    with _conn2.cursor() as _cur2:
+                        _cur2.execute(
+                            'UPDATE "FinancialDocument" '
+                            'SET "fieldChunkMapJson"=%s, "updatedAt"=NOW() '
+                            'WHERE "tenantId"=%s AND "documentId"=%s AND "deletedAt" IS NULL',
+                            (_fcm_json, str(user_id), str(document_id)),
+                        )
+                    _conn2.commit()
+            except Exception as _fcm_err:
+                print(f"[CONFIRM-SAVE] field-chunk-map failed (non-fatal): {_fcm_err}", flush=True)
         except Exception as _emb_err:
             # Embedding is best-effort — never block the save response
             print(f"[CONFIRM-SAVE] embedding/persist failed (non-fatal): {_emb_err}", flush=True)
+
+    # GAP-18F: wire C4 entity index (DocLinks) — best-effort, never blocks save
+    try:
+        from entity_index import index_document as _index_doc
+        _index_doc(final_data, user_id)
+        print(f"[CONFIRM-SAVE] C4 entity index updated for {document_id}", flush=True)
+    except Exception as _c4_err:
+        print(f"[CONFIRM-SAVE] C4 entity index failed (non-fatal): {_c4_err}", flush=True)
     # ─────────────────────────────────────────────────────────────────────
 
     PROCESSING_SESSIONS.pop(payload.session_id, None)
@@ -1142,22 +1196,18 @@ def get_documents(
     page: int = Query(default=1, ge=1),
     limit: int = Query(default=50, ge=1, le=200),
 ):
-    """NFR-02/03: supports ?page=N&limit=M for large result sets."""
+    """NFR-02/03: DB-level LIMIT/OFFSET — never loads the full dataset into memory."""
     user_id = get_current_user_id(authorization)
-    records = load_all_records(user_id=user_id)
+    total = count_records(user_id=user_id)
+    offset = (page - 1) * limit
+    raw_records = load_records(user_id=user_id, limit=limit, offset=offset)
 
-    normalized_records = []
-    for record in records:
-        effective_flow = record.get("effective_flow_type") or record.get("flow_type")
-        normalized_records.append({
-            **record,
-            "original_flow_type": record.get("flow_type"),
-            "flow_type": effective_flow,
-        })
-
-    total = len(normalized_records)
-    start = (page - 1) * limit
-    page_records = normalized_records[start:start + limit]
+    from dataset_manager import parse_record_for_output
+    page_records = []
+    for record in raw_records:
+        r = parse_record_for_output(record)
+        effective_flow = r.get("effective_flow_type") or r.get("flow_type")
+        page_records.append({**r, "original_flow_type": r.get("flow_type"), "flow_type": effective_flow})
 
     return {
         "success": True,
@@ -1165,7 +1215,7 @@ def get_documents(
         "pagination": {
             "page": page, "limit": limit, "total": total,
             "pages": max(1, (total + limit - 1) // limit),
-            "has_next": start + limit < total,
+            "has_next": offset + limit < total,
         },
     }
 
@@ -1234,6 +1284,10 @@ def ask_query(payload: QueryRequest, authorization: str = Header(default=None)):
         history_saved = False
         history_error = str(save_err)
 
+    # GAP-19A: detect cross-document price discrepancies (Iter 19)
+    from data_tools import detect_discrepancies_in_evidence
+    discrepancies = detect_discrepancies_in_evidence(result.get("evidence", []))
+
     # FR-33: log query event
     _log_audit_event(user_id, "QUERY_EXECUTED",
                      f"Q: {payload.question.strip()[:120]} | co: {payload.company_name.strip()}")
@@ -1250,6 +1304,7 @@ def ask_query(payload: QueryRequest, authorization: str = Header(default=None)):
         "history_saved": history_saved,
         "history_error": history_error,
         "history_id": history_id,
+        "discrepancies": discrepancies,
     }
 
 

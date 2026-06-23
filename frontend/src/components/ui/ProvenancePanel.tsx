@@ -31,11 +31,15 @@ function FieldRow({
   value,
   source,
   warn,
+  chunkId,
+  onChunkSelect,
 }: {
   label: string;
   value: string;
   source: "ocr" | "llm" | "arithmetic" | "user";
   warn?: string;
+  chunkId?: string | null;
+  onChunkSelect?: (id: string) => void;
 }) {
   const status: FieldStatus = fieldStatus(value);
 
@@ -67,6 +71,17 @@ function FieldRow({
           <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${sourceBg[source]}`}>
             {sourceLabel[source]}
           </span>
+          {chunkId && onChunkSelect && (
+            <button
+              onClick={() => onChunkSelect(chunkId)}
+              title="Highlight source in document"
+              className="flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-bold transition hover:opacity-75"
+              style={{ background: "#eff6ff", color: "#2563ff" }}
+            >
+              <span className="material-symbols-outlined text-[11px]">my_location</span>
+              source
+            </button>
+          )}
         </div>
         <p className={`mt-1 text-[14px] font-medium ${status === "missing" ? "text-[#94a3b8] italic" : "text-[#0f172a]"}`}>
           {status === "missing" ? "Not extracted" : value}
@@ -89,10 +104,14 @@ export default function ProvenancePanel({
   doc,
   arithmeticJson,
   activeChunkId,
+  fieldChunkMap,
+  onChunkSelect,
 }: {
   doc: Record<string, unknown>;
   arithmeticJson?: ArithmeticJson | null;
   activeChunkId?: string | null;
+  fieldChunkMap?: Record<string, string> | null;
+  onChunkSelect?: (chunkId: string) => void;
 }) {
   const arithmeticStatus = String(doc.arithmetic_status || "").toLowerCase();
   const ocrVersion = String(doc.ocr_selected_version || "").trim();
@@ -136,21 +155,28 @@ export default function ProvenancePanel({
       </div>
 
       <div className="space-y-2">
-        <FieldRow label="Document Type"    value={String(doc.document_type    || "")} source="llm" />
-        <FieldRow label="Company / Buyer"  value={String(doc.company_name     || "")} source="llm" />
-        <FieldRow label="Supplier"         value={String(doc.supplier_name    || "")} source="llm" />
-        <FieldRow label="Date"             value={String(doc.date             || "")} source="ocr" />
-        <FieldRow label="Order ID"         value={String(doc.order_id         || "")} source="ocr" />
+        <FieldRow label="Document Type"   value={String(doc.document_type    || "")} source="llm" />
+        <FieldRow label="Company / Buyer" value={String(doc.company_name     || "")} source="llm"
+          chunkId={fieldChunkMap?.company_name}       onChunkSelect={onChunkSelect} />
+        <FieldRow label="Supplier"        value={String(doc.supplier_name    || "")} source="llm"
+          chunkId={fieldChunkMap?.supplier_name}      onChunkSelect={onChunkSelect} />
+        <FieldRow label="Date"            value={String(doc.date             || "")} source="ocr"
+          chunkId={fieldChunkMap?.date}               onChunkSelect={onChunkSelect} />
+        <FieldRow label="Order ID"        value={String(doc.order_id         || "")} source="ocr"
+          chunkId={fieldChunkMap?.order_id}           onChunkSelect={onChunkSelect} />
         <FieldRow
           label="Final Total"
           value={String(doc.final_total_amount || "")}
           source="arithmetic"
           warn={totalWarn}
+          chunkId={fieldChunkMap?.final_total_amount} onChunkSelect={onChunkSelect}
         />
-        <FieldRow label="Payable Amount"   value={String(doc.payable_amount   || "")} source="arithmetic" />
-        <FieldRow label="Currency"         value={String(doc.currency         || "")} source="llm" />
-        <FieldRow label="Flow Type"        value={String(doc.flow_type        || "")} source="llm" />
-        <FieldRow label="Language"         value={String(doc.language         || "")} source="llm" />
+        <FieldRow label="Payable Amount"  value={String(doc.payable_amount   || "")} source="arithmetic"
+          chunkId={fieldChunkMap?.payable_amount}     onChunkSelect={onChunkSelect} />
+        <FieldRow label="Currency"        value={String(doc.currency         || "")} source="llm"
+          chunkId={fieldChunkMap?.currency}           onChunkSelect={onChunkSelect} />
+        <FieldRow label="Flow Type"       value={String(doc.flow_type        || "")} source="llm" />
+        <FieldRow label="Language"        value={String(doc.language         || "")} source="llm" />
       </div>
 
       {/* Legend */}
