@@ -6,6 +6,7 @@ import MobileShell from "@/components/layout/MobileShell";
 import BottomNav from "@/components/layout/BottomNav";
 import LanguageSwitcher from "@/components/layout/LanguageSwitcher";
 import ProvenancePanel, { type ArithmeticJson } from "@/components/ui/ProvenancePanel";
+import BboxOverlayViewer from "@/components/ui/BboxOverlayViewer";
 import { AppLanguage, getStoredLanguage, ui } from "@/lib/i18n";
 
 const BACKEND_URL = "http://127.0.0.1:8000";
@@ -41,6 +42,9 @@ type DocumentDetail = {
   arithmetic_json?: ArithmeticJson | null;
   ocr_selected_version?: string;
   corrected_text?: string;
+  // Spatial blobs (Iteration 9 + 10)
+  spatial_chunks_json?: string | null;
+  safe_boxes_json?: string | null;
 };
 
 function getAuthToken() {
@@ -71,6 +75,7 @@ export default function AnalysisDetailPage() {
 
   const [lang, setLang] = useState<AppLanguage>("en");
   const [showProvenance, setShowProvenance] = useState(false);
+  const [activeChunkId, setActiveChunkId] = useState<string | null>(null);
   const t = ui[lang];
   const [document, setDocument] = useState<DocumentDetail | null>(null);
   const [editedDocument, setEditedDocument] = useState<DocumentDetail | null>(null);
@@ -361,19 +366,21 @@ export default function AnalysisDetailPage() {
             <div className="grid gap-6 xl:grid-cols-[1.05fr_0.95fr]">
               <div className="rounded-[20px] bg-[#eef2f7] p-3 shadow-sm">
                 <div className="rounded-[16px] bg-white p-3">
-                  <div className="flex min-h-[420px] items-center justify-center rounded-[16px] bg-[#f3f4f6] sm:min-h-[520px]">
-                    {target.image_url ? (
-                      <img
-                        src={`${BACKEND_URL}${target.image_url}`}
-                        alt={target.document_id}
-                        className="max-h-[520px] w-full rounded-[12px] object-contain"
-                      />
-                    ) : (
+                  {target.image_url ? (
+                    <BboxOverlayViewer
+                      imageUrl={`${BACKEND_URL}${target.image_url}`}
+                      documentId={target.document_id}
+                      spatialChunksJson={target.spatial_chunks_json}
+                      activeChunkId={activeChunkId}
+                      onChunkSelect={setActiveChunkId}
+                    />
+                  ) : (
+                    <div className="flex min-h-[420px] items-center justify-center rounded-[16px] bg-[#f3f4f6] sm:min-h-[520px]">
                       <div className="text-[13px] text-[#94a3b8]">
                         No saved preview image for this document
                       </div>
-                    )}
-                  </div>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -607,6 +614,7 @@ export default function AnalysisDetailPage() {
                       <ProvenancePanel
                         doc={target as Record<string, unknown>}
                         arithmeticJson={target.arithmetic_json}
+                        activeChunkId={activeChunkId}
                       />
                     </div>
                   )}
