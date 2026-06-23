@@ -19,6 +19,8 @@ type SummaryData = {
   po: number;
   dn: number;
   recent_documents: RecentDocument[];
+  pending_processing_count?: number;
+  ready_for_query_count?: number;
 };
 
 type RecentDocument = {
@@ -237,10 +239,10 @@ export default function DashboardPage() {
           {/* Stats */}
           <section className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
             <StatCard label={t.totalDocs} value={String(summary?.total ?? 0)} />
+            <StatCard label="Pending Processing" value={String(summary?.pending_processing_count ?? 0)} color="#ea6c0a" />
+            <StatCard label="Ready for Query" value={String(summary?.ready_for_query_count ?? 0)} color="#16a34a" />
             <StatCard label="Invoices" value={String(summary?.invoice ?? 0)} color="var(--brand-mid)" />
-            <StatCard label="Receipts" value={String(summary?.receipt ?? 0)} color="#16a34a" />
-            <StatCard label="PO" value={String(summary?.po ?? 0)} color="#7c3aed" />
-            <StatCard label="DN" value={String(summary?.dn ?? 0)} color="#ea6c0a" />
+            <StatCard label="PO / DN" value={String((summary?.po ?? 0) + (summary?.dn ?? 0))} color="#7c3aed" />
           </section>
 
           {/* Recent docs */}

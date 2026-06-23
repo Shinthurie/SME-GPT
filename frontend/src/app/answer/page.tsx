@@ -33,6 +33,15 @@ type EvidenceItem = {
 }[];
 };
 
+type DiscrepancyItem = {
+  description: string;
+  invoice_price: number;
+  po_price: number;
+  diff_pct: number;
+  is_discrepancy: boolean;
+  direction: "higher" | "lower";
+};
+
 type QueryResult = {
   success: boolean;
   company_name: string;
@@ -45,6 +54,7 @@ type QueryResult = {
   history_saved?: boolean;
   history_error?: string;
   opened_from_history?: boolean;
+  discrepancies?: DiscrepancyItem[];
 };
 
 function getAuthToken() {
@@ -327,6 +337,42 @@ export default function AnswerPage() {
               <button onClick={() => setNotifyOpen(false)} className="mt-2 text-[12px] font-bold text-[#2563ff]">
                 Dismiss
               </button>
+            </div>
+          )}
+
+          {/* GAP-19B: Price discrepancy card (Iter 19 — SRS UI-D6 use case) */}
+          {result.discrepancies && result.discrepancies.length > 0 && (
+            <div className="mt-4 rounded-[18px] border border-amber-200 bg-amber-50 p-5">
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-[18px] text-amber-600">warning</span>
+                <p className="text-[13px] font-bold text-amber-800 uppercase tracking-wide">
+                  Price Discrepancy Found
+                </p>
+              </div>
+              <div className="mt-3 space-y-3">
+                {result.discrepancies.filter(d => d.is_discrepancy).map((d, i) => (
+                  <div key={i} className="rounded-[12px] border border-amber-200 bg-white px-4 py-3">
+                    <p className="text-[13px] font-semibold text-[#0f172a]">{d.description}</p>
+                    <div className="mt-2 flex flex-wrap items-center gap-4 text-[12px]">
+                      <span className="text-[#334155]">
+                        Invoice: <span className="font-bold text-red-600">{d.invoice_price.toLocaleString()}</span>
+                      </span>
+                      <span className="text-[#334155]">
+                        PO: <span className="font-bold text-[#16a34a]">{d.po_price.toLocaleString()}</span>
+                      </span>
+                      <span
+                        className="rounded-lg px-2 py-0.5 text-[11px] font-bold"
+                        style={{
+                          background: d.direction === "higher" ? "rgba(220,38,38,0.1)" : "rgba(22,163,74,0.1)",
+                          color: d.direction === "higher" ? "#dc2626" : "#16a34a",
+                        }}
+                      >
+                        {d.diff_pct > 0 ? "+" : ""}{d.diff_pct}% {d.direction.toUpperCase()}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 

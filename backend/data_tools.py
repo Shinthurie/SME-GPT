@@ -570,3 +570,59 @@ def analyze_financial_query(question: str, company_name: str, user_id: str):
         "source_file": DATASET_PATH,
         "direct_answer": build_direct_answer(result_df, "summary", company_name, question),
     }
+
+
+# ─────────────────── GAP-19A: cross-document price discrepancy ───────────────
+
+
+def _desc_similarity(a: str, b: str) -> float:
+    """Simple word-overlap similarity for matching line-item descriptions."""
+    wa = set(a.lower().split())
+    wb = set(b.lower().split())
+    if not wa or not wb:
+        return 0.0
+    return len(wa & wb) / max(len(wa), len(wb))
+
+
+def find_price_discrepancies(invoice_items: list[dict], po_items: list[dict]) -> list[dict]:
+    """
+    GAP-19A (Iter 19): compare unit prices between an invoice and its linked PO.
+    Returns a list of discrepancy dicts for items where unit_price differs by >2%.
+    """
+    results = []
+    for inv in invoice_items:
+        inv_price = to_float(inv.get("unit_price", 0))
+        inv_desc = str(inv.get("description") or "").strip()
+        if inv_price <= 0 or not inv_desc:
+            continue
+        for po in po_items:
+            po_price = to_float(po.get("unit_price", 0))
+            po_desc = str(po.get("description") or "").strip()
+            if po_price <= 0 or not po_desc:
+                continue
+            if _desc_similarity(inv_desc, po_desc) >= 0.5:
+                diff_pct = ((inv_price - po_price) / po_price) * 100
+                results.append({
+                    "description": inv_desc,
+                    "invoice_price": round(inv_price, 2),
+                    "po_price": round(po_price, 2),
+                    "diff_pct": round(diff_pct, 1),
+                    "is_discrepancy": abs(diff_pct) > 2.0,
+                    "direction": "higher" if diff_pct > 0 else "lower",
+                })
+                break
+    return results
+
+
+def detect_discrepancies_in_evidence(evidence: list[dict]) -> list[dict]:
+    """
+    Check if evidence contains both an invoice and a PO — if so, compare line-item prices.
+    Returns the discrepancy list (may be empty).
+    """
+    invoices = [e for e in evidence if str(e.get("document_type", "")).lower() == "invoice"]
+    pos = [e for e in evidence if str(e.get("document_type", "")).lower() == "po"]
+    if not invoices or not pos:
+        return []
+    inv_items = invoices[0].get("items") or []
+    po_items = pos[0].get("items") or []
+    return find_price_discrepancies(inv_items, po_items)
