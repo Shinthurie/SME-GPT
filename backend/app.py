@@ -7,6 +7,7 @@ import threading
 import time
 import uuid
 from collections import defaultdict
+from datetime import datetime, timezone
 from copy import deepcopy
 from pathlib import Path
 from queue import Empty, Queue
@@ -1389,4 +1390,66 @@ def clear_query_history(authorization: str = Header(default=None)):
         return JSONResponse(
             status_code=500,
             content={"success": False, "message": f"Failed to clear query history: {str(e)}"}
+        )
+
+
+# =========================
+# Iteration 12 — GDPR data export + account deletion (NFR-14)
+# =========================
+@app.get("/user/export")
+def export_user_data(authorization: str = Header(default=None)):
+    try:
+        user_id = get_current_user_id(authorization)
+
+        documents = load_all_records(user_id=user_id)
+        query_history = load_query_history_for_user(user_id)
+
+        return {
+            "success": True,
+            "exported_at": datetime.now(timezone.utc).isoformat(),
+            "user_id": user_id,
+            "documents": documents,
+            "query_history": query_history,
+        }
+    except HTTPException as http_err:
+        return JSONResponse(
+            status_code=http_err.status_code,
+            content={"success": False, "message": http_err.detail}
+        )
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "message": f"Failed to export user data: {str(e)}"}
+        )
+
+
+@app.delete("/user/account")
+def delete_user_account(authorization: str = Header(default=None)):
+    """Hard-deletes every tenant-scoped Postgres row for the caller (FR/NFR-14).
+    The frontend separately deletes the `User` row itself (cascades
+    TrustedDevice/LoginVerification/ActivityLog/UploadedFile) -- this endpoint
+    only owns the tables the backend writes directly via psycopg, which Prisma
+    cascades can't reach."""
+    try:
+        user_id = get_current_user_id(authorization)
+
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute('DELETE FROM "DocLink" WHERE "tenantId" = %s', (user_id,))
+                cur.execute('DELETE FROM "ChunkEmbedding" WHERE "tenantId" = %s', (user_id,))
+                cur.execute('DELETE FROM "Entity" WHERE "tenantId" = %s', (user_id,))  # cascades EntityAlias
+                cur.execute('DELETE FROM "FinancialDocument" WHERE "tenantId" = %s', (user_id,))  # cascades LineItem
+                cur.execute('DELETE FROM query_history WHERE user_id = %s', (user_id,))
+            conn.commit()
+
+        return {"success": True, "message": "All document data deleted for this account."}
+    except HTTPException as http_err:
+        return JSONResponse(
+            status_code=http_err.status_code,
+            content={"success": False, "message": http_err.detail}
+        )
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "message": f"Failed to delete account data: {str(e)}"}
         )
