@@ -12,6 +12,13 @@ import { hasUnreadNotifications } from "@/lib/notifications";
 
 const BACKEND_URL = "http://127.0.0.1:8000";
 
+type MismatchAlert = {
+  document_id: string;
+  company_name: string;
+  date: string;
+  document_type: string;
+};
+
 type SummaryData = {
   total: number;
   invoice: number;
@@ -21,6 +28,7 @@ type SummaryData = {
   recent_documents: RecentDocument[];
   pending_processing_count?: number;
   ready_for_query_count?: number;
+  mismatch_alerts?: MismatchAlert[];
 };
 
 type RecentDocument = {
@@ -298,6 +306,44 @@ export default function DashboardPage() {
               )}
             </div>
           </section>
+
+          {/* UI-D2: Invoice Insights Ready notification card */}
+          {summary?.mismatch_alerts && summary.mismatch_alerts.length > 0 && (
+            <section className="mt-5">
+              <div
+                className="rounded-2xl p-4"
+                style={{ background: "rgba(234,108,10,0.06)", border: "1px solid rgba(234,108,10,0.25)" }}
+              >
+                <div className="flex items-center gap-2">
+                  <span className="material-symbols-outlined text-[18px]" style={{ color: "#ea6c0a" }}>
+                    insights
+                  </span>
+                  <p className="text-[13px] font-bold" style={{ color: "#ea6c0a" }}>
+                    Invoice Insights Ready
+                  </p>
+                </div>
+                {summary.mismatch_alerts.map((alert) => (
+                  <div key={alert.document_id} className="mt-2">
+                    <p className="text-[12px] text-[var(--text-2)]">
+                      System detected an arithmetic mismatch in{" "}
+                      <span className="font-semibold text-[var(--text-1)]">{alert.document_id}</span>
+                      {alert.company_name && alert.company_name !== "NULL"
+                        ? ` (${alert.company_name})`
+                        : ""}
+                      . Verify the extracted totals.
+                    </p>
+                    <button
+                      onClick={() => router.push(`/analysis/${alert.document_id}`)}
+                      className="mt-1 text-[12px] font-bold transition hover:opacity-75"
+                      style={{ color: "var(--brand-mid)" }}
+                    >
+                      View Comparison →
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
         </main>
 
         <BottomNav />

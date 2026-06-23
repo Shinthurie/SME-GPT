@@ -1234,8 +1234,20 @@ def get_document_by_id(document_id: str, authorization: str = Header(default=Non
 @app.get("/dashboard-summary")
 def dashboard_summary(authorization: str = Header(default=None)):
     user_id = get_current_user_id(authorization)
-    records = load_all_records(user_id=user_id)
+    # NFR-03: load only the most recent 200 docs for summary (avoids full table scan)
+    records = load_records(user_id=user_id, limit=200, offset=0)
+    from dataset_manager import parse_record_for_output
+    records = [parse_record_for_output(r) for r in records]
     summary = build_dashboard_summary(records)
+
+    # UI-D2: "Invoice Insights Ready" — surface arithmetic mismatches in recent docs
+    mismatch_docs = [
+        {"document_id": r.get("document_id"), "company_name": r.get("company_name"),
+         "date": r.get("date"), "document_type": r.get("document_type")}
+        for r in records
+        if str(r.get("arithmetic_status", "")).lower() == "mismatch"
+    ][:3]
+
     return {
         "success": True,
         "total": summary.get("total_documents", 0),
@@ -1246,6 +1258,9 @@ def dashboard_summary(authorization: str = Header(default=None)):
         "recent_documents": records[:5] if records else [],
         "total_payable_amount": summary.get("total_payable_amount", 0.0),
         "total_receivable_amount": summary.get("total_receivable_amount", 0.0),
+        "pending_processing_count": summary.get("pending_processing_count", 0),
+        "ready_for_query_count": summary.get("ready_for_query_count", 0),
+        "mismatch_alerts": mismatch_docs,
     }
 
 
@@ -1288,6 +1303,20 @@ def ask_query(payload: QueryRequest, authorization: str = Header(default=None)):
     from data_tools import detect_discrepancies_in_evidence
     discrepancies = detect_discrepancies_in_evidence(result.get("evidence", []))
 
+    # GAP-19C: append bilingual discrepancy note to the answer text when applicable
+    answer_text = result.get("direct_answer", "")
+    if discrepancies and any(d.get("is_discrepancy") for d in discrepancies):
+        from pal_answer import build_discrepancy_bilingual_note
+        try:
+            from llm_correction import count_sinhala_chars
+            q = payload.question.strip()
+            lang = "si" if count_sinhala_chars(q) >= max(3, len(q) // 4) else "en"
+        except Exception:
+            lang = "en"
+        note = build_discrepancy_bilingual_note(discrepancies, lang=lang)
+        if note:
+            answer_text = f"{answer_text}\n\n{note}"
+
     # FR-33: log query event
     _log_audit_event(user_id, "QUERY_EXECUTED",
                      f"Q: {payload.question.strip()[:120]} | co: {payload.company_name.strip()}")
@@ -1296,7 +1325,7 @@ def ask_query(payload: QueryRequest, authorization: str = Header(default=None)):
         "success": result.get("success", True),
         "company_name": payload.company_name.strip(),
         "question": payload.question.strip(),
-        "answer": result.get("direct_answer", ""),
+        "answer": answer_text,
         "explanation": result.get("explanation", ""),
         "evidence": result.get("evidence", []),
         "metrics": result.get("metrics", {}),
@@ -1357,7 +1386,11 @@ def clear_query_history(authorization: str = Header(default=None)):
 def export_user_data(authorization: str = Header(default=None)):
     user_id = get_current_user_id(authorization)
 
-    documents = load_all_records(user_id=user_id)
+    # NFR-03: use paginated load; export is intentionally complete but avoids
+    # loading the entire dataset in one shot for very large tenants.
+    raw_docs = load_records(user_id=user_id)   # no limit — full export by design
+    from dataset_manager import parse_record_for_output
+    documents = [parse_record_for_output(r) for r in raw_docs]
     query_history = load_query_history_for_user(user_id)
 
     return {
@@ -1386,6 +1419,9 @@ def delete_user_account(authorization: str = Header(default=None)):
             cur.execute('DELETE FROM "FinancialDocument" WHERE "tenantId" = %s', (user_id,))  # cascades LineItem
             cur.execute('DELETE FROM query_history WHERE user_id = %s', (user_id,))
         conn.commit()
+
+    # FR-33: audit the account deletion (Fix 4 — this event was previously missing)
+    _log_audit_event(user_id, "ACCOUNT_DELETED", "All tenant data purged via /user/account")
 
     return {"success": True, "message": "All document data deleted for this account."}
 
