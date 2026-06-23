@@ -351,7 +351,7 @@ def test_answer_financial_question_non_arithmetic_intent_uses_legacy_path(monkey
 
 
 def test_answer_financial_question_empty_scope_returns_not_found_message(monkeypatch):
-    monkeypatch.setattr(pal_qa, "resolve_scope", lambda _company, _user: (pd.DataFrame(), "No records found for company 'MyCo' under the current user."))
+    monkeypatch.setattr(pal_qa, "resolve_scope_with_rag", lambda _q, _company, _user: (pd.DataFrame(), "No records found for company 'MyCo' under the current user."))
     result = pal_qa.answer_financial_question("how much do I owe?", "MyCo", "user1")
     assert result["success"] is False
     assert "No records found" in result["direct_answer"]
@@ -360,7 +360,7 @@ def test_answer_financial_question_empty_scope_returns_not_found_message(monkeyp
 
 def test_answer_financial_question_pal_success_path(monkeypatch):
     monkeypatch.setattr(pal_qa.dt, "route_question", lambda _q: "payable")
-    monkeypatch.setattr(pal_qa, "resolve_scope", lambda _company, _user: (_SCOPE_DF, None))
+    monkeypatch.setattr(pal_qa, "resolve_scope_with_rag", lambda _q, _company, _user: (_SCOPE_DF, None))
     plan = {"task": "aggregate_sum", "filters": [{"field": "flow_type", "op": "eq", "value": "payable"}],
             "measure": {"field": "total", "agg": "sum"}, "group_by": []}
     monkeypatch.setattr(pal_qa, "plan_query", lambda _q, error_reason=None: plan)
@@ -378,7 +378,7 @@ def test_answer_financial_question_pal_success_path(monkeypatch):
 
 def test_answer_financial_question_degrades_to_legacy_after_exhausting_retries(monkeypatch):
     monkeypatch.setattr(pal_qa.dt, "route_question", lambda _q: "payable")
-    monkeypatch.setattr(pal_qa, "resolve_scope", lambda _company, _user: (_SCOPE_DF, None))
+    monkeypatch.setattr(pal_qa, "resolve_scope_with_rag", lambda _q, _company, _user: (_SCOPE_DF, None))
     monkeypatch.setattr(pal_qa, "plan_query", lambda _q, error_reason=None: {"task": "not_a_real_task"})
     monkeypatch.setattr(pal_qa.dt, "analyze_financial_query", lambda **_kw: {"success": True, "direct_answer": "legacy", "explanation": "legacy", "evidence": [], "metrics": {}, "source_file": "x"})
     monkeypatch.setattr(pal_qa, "generate_explainable_answer", lambda **_kw: {"short_answer": "legacy", "full_answer": "legacy"})
@@ -392,7 +392,7 @@ def test_answer_financial_question_degrades_to_legacy_after_exhausting_retries(m
 
 def test_answer_financial_question_degrades_to_legacy_when_plan_matches_no_rows(monkeypatch):
     monkeypatch.setattr(pal_qa.dt, "route_question", lambda _q: "payable")
-    monkeypatch.setattr(pal_qa, "resolve_scope", lambda _company, _user: (_SCOPE_DF, None))
+    monkeypatch.setattr(pal_qa, "resolve_scope_with_rag", lambda _q, _company, _user: (_SCOPE_DF, None))
     plan = {"task": "aggregate_sum", "filters": [{"field": "vendor", "op": "eq", "value": "Nobody"}],
             "measure": {"field": "total", "agg": "sum"}, "group_by": []}
     monkeypatch.setattr(pal_qa, "plan_query", lambda _q, error_reason=None: plan)

@@ -72,6 +72,38 @@ def resolve_scope_with_c4(company_name: str, user_id: str) -> tuple[pd.DataFrame
     return df, None
 
 
+def resolve_scope_with_rag(question: str, company_name: str, user_id: str) -> tuple[pd.DataFrame, str | None]:
+    """Iteration 15 — Hybrid RAG + SQL scope resolution (FR-19).
+
+    Calls retrieve_top_k() for semantic relevance, unions result doc IDs
+    with the company-name SQL scope.  Degrades silently to SQL-only when
+    no embeddings exist or sentence-transformers is unavailable.
+    """
+    rag_doc_ids: set[str] = set()
+    try:
+        from vector_index import retrieve_top_k
+        chunks = retrieve_top_k(question, tenant_id=user_id, k=15)
+        rag_doc_ids = {c["document_id"] for c in (chunks or []) if c.get("document_id")}
+    except Exception:
+        pass
+
+    sql_df, sql_err = resolve_scope_with_c4(company_name, user_id)
+
+    if rag_doc_ids and not sql_df.empty:
+        try:
+            all_df = dt.filter_user_context(dt.load_dataset(user_id=user_id), user_id=user_id)
+            sql_ids = set(sql_df["document_id"].dropna().astype(str))
+            union_ids = sql_ids | rag_doc_ids
+            if len(union_ids) > len(sql_ids):
+                expanded = all_df[all_df["document_id"].astype(str).isin(union_ids)].copy()
+                if not expanded.empty:
+                    return expanded, None
+        except Exception:
+            pass
+
+    return sql_df, sql_err
+
+
 def build_row_records(documents_df: pd.DataFrame) -> list[dict]:
     """One row per LineItem, joined with its parent document's canonical
     fields. Documents without a line-item breakdown get one synthetic row
