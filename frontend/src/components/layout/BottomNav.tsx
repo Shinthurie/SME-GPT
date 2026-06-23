@@ -8,9 +8,14 @@ import { AppLanguage, getStoredLanguage, ui } from "@/lib/i18n";
 export default function BottomNav() {
   const pathname = usePathname();
   const [lang, setLang] = useState<AppLanguage>("en");
+  const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
     setLang(getStoredLanguage());
+    fetch("/api/auth/me", { cache: "no-store" })
+      .then((res) => res.json())
+      .then((data) => setIsAdmin(data?.user?.role === "admin"))
+      .catch(() => {});
   }, []);
 
   const t = ui[lang];
@@ -20,6 +25,7 @@ export default function BottomNav() {
     { label: t.files, icon: "folder", href: "/repository" },
     { label: t.query, icon: "query_stats", href: "/query" },
     { label: t.settings, icon: "settings", href: "/profile" },
+    ...(isAdmin ? [{ label: "Admin", icon: "admin_panel_settings", href: "/admin" }] : []),
   ];
 
   return (
@@ -31,7 +37,7 @@ export default function BottomNav() {
       }}
     >
       <div className="mx-auto w-full max-w-[1180px]">
-        <div className="grid grid-cols-4 px-2 py-1.5">
+        <div className={`grid px-2 py-1.5 ${isAdmin ? "grid-cols-5" : "grid-cols-4"}`}>
           {items.map((item) => {
             const active = pathname === item.href || pathname.startsWith(item.href + "/");
             return (
