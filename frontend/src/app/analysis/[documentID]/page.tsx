@@ -45,6 +45,8 @@ type DocumentDetail = {
   // Spatial blobs (Iteration 9 + 10)
   spatial_chunks_json?: string | null;
   safe_boxes_json?: string | null;
+  // Field→chunk map (Iteration 18 GAP-18C)
+  field_chunk_map_json?: string | null;
 };
 
 function getAuthToken() {
@@ -676,6 +678,12 @@ export default function AnalysisDetailPage() {
                         doc={target as Record<string, unknown>}
                         arithmeticJson={target.arithmetic_json}
                         activeChunkId={activeChunkId}
+                        fieldChunkMap={
+                          target.field_chunk_map_json
+                            ? (() => { try { return JSON.parse(target.field_chunk_map_json!); } catch { return null; } })()
+                            : null
+                        }
+                        onChunkSelect={setActiveChunkId}
                       />
                     </div>
                   )}

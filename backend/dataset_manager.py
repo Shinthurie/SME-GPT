@@ -54,6 +54,7 @@ DATASET_COLUMNS = [
     "safe_boxes_json",
     "spatial_chunks_json",
     "file_size_kb",
+    "field_chunk_map_json",
 ]
 
 # record key -> DB column (Prisma camelCase). items_json is handled separately.
@@ -88,6 +89,7 @@ RECORD_TO_DB = {
     "safe_boxes_json": "safeboxJson",
     "spatial_chunks_json": "spatialChunksJson",
     "file_size_kb": "fileSizeKb",
+    "field_chunk_map_json": "fieldChunkMapJson",
 }
 
 MONEY_FIELDS = {"raw_total_amount", "final_total_amount", "payable_amount", "cash_return"}
@@ -378,9 +380,26 @@ def _row_to_record(row: dict, items: list) -> dict:
 
 # ──────────────────────────── reads ────────────────────────────
 
-def load_records(user_id: str = None, document_id: str = None):
+def count_records(user_id: str) -> int:
+    """NFR-03: returns total row count without loading data into memory."""
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            'SELECT COUNT(*) AS n FROM "FinancialDocument" WHERE "tenantId"=%s AND "deletedAt" IS NULL',
+            (str(user_id),),
+        )
+        row = cur.fetchone()
+    return int((row or {}).get("n", 0))
+
+
+def load_records(
+    user_id: str = None,
+    document_id: str = None,
+    limit: int | None = None,
+    offset: int = 0,
+):
     where = ['"deletedAt" IS NULL']
-    params = []
+    params: list = []
     if user_id is not None:
         where.append('"tenantId" = %s')
         params.append(str(user_id))
@@ -388,7 +407,10 @@ def load_records(user_id: str = None, document_id: str = None):
         where.append('"documentId" = %s')
         params.append(str(document_id))
 
-    sql = f'SELECT * FROM "FinancialDocument" WHERE {" AND ".join(where)} ORDER BY "createdAt"'
+    sql = f'SELECT * FROM "FinancialDocument" WHERE {" AND ".join(where)} ORDER BY "createdAt" DESC'
+    if limit is not None:
+        sql += " LIMIT %s OFFSET %s"
+        params += [limit, offset]
 
     with get_conn() as conn:
         cur = conn.cursor()

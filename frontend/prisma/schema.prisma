@@ -138,6 +138,7 @@ model FinancialDocument {
   safeboxJson        String?   @db.Text
   spatialChunksJson  String?   @db.Text
   fileSizeKb         Float?
+  fieldChunkMapJson  String?   @db.Text
   deletedAt          DateTime?
   createdAt          DateTime   @default(now())
   updatedAt          DateTime   @updatedAt
