@@ -7,6 +7,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import cv2
+import numpy as np
+from deskew import determine_skew
 from pdf2image import convert_from_path
 
 from colab_ocr_client import send_images_to_colab_ocr
@@ -98,6 +100,25 @@ def standardize_to_images(raw_file_path: Path) -> list[Path]:
 
     return output_paths
 
+def _deskew_image(img: np.ndarray) -> np.ndarray:
+    """Corrects skew (FR-03) for phone-photo documents. Angles under 0.3deg are
+    treated as noise -- determine_skew() never returns exactly 0 even for a
+    perfectly straight scan, and rotating a near-zero angle just re-samples
+    the image (a quality loss) for no benefit."""
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    angle = determine_skew(gray)
+    if angle is None or abs(angle) < 0.3:
+        return img
+
+    h, w = img.shape[:2]
+    rot_mat = cv2.getRotationMatrix2D((w / 2, h / 2), angle, 1.0)
+    return cv2.warpAffine(
+        img, rot_mat, (w, h),
+        flags=cv2.INTER_CUBIC,
+        borderMode=cv2.BORDER_REPLICATE,
+    )
+
+
 def preprocess_images(orig_paths: list[Path]) -> list[dict]:
     processed_pages = []
     for orig_path in orig_paths:
@@ -108,6 +129,8 @@ def preprocess_images(orig_paths: list[Path]) -> list[dict]:
         img = cv2.imread(str(orig_path))
         if img is None:
             raise ValueError(f"Failed to read standardized image: {orig_path}")
+
+        img = _deskew_image(img)
 
         h, w = img.shape[:2]
 

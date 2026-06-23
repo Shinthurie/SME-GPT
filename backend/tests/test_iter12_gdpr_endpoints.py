@@ -31,7 +31,10 @@ def app_module():
 
 @pytest.fixture()
 def client(app_module):
-    return TestClient(app_module.app)
+    # raise_server_exceptions=False so the test client returns the response
+    # produced by app.py's global Exception handler (Iteration 13) instead
+    # of re-raising the original exception for debugging.
+    return TestClient(app_module.app, raise_server_exceptions=False)
 
 
 def _token(app_module, **claims):

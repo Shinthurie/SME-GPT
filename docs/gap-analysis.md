@@ -9,8 +9,8 @@ Update this file as iterations land. Status: ❌ none · 🟡 partial · ✅ don
 |---|---|---|---|
 | FR-01 | Accept PDFs and images (JPG/PNG) | 🟡 | `app.py` upload; harden in Iter 0/1 |
 | FR-02 | Convert PDF pages to 300 DPI images | 🟡 | `document_pipeline.py` (pdf2image); standardize DPI Iter 2 |
-| FR-03 | Preprocess (deskew, denoise, crop) | 🟡 | partial in pipeline; formalize Iter 2 |
-| FR-04 | Reject corrupted/unreadable docs with clear error | 🟡 | improve error contract Iter 1 |
+| FR-03 | Preprocess (deskew, denoise, crop) | ✅ | denoise/crop already in `preprocess_images()`; `_deskew_image()` (`determine_skew()` + `cv2.warpAffine`, skips angles <0.3deg) added in Iter 13 |
+| FR-04 | Reject corrupted/unreadable docs with clear error | ✅ | global `HTTPException`/`Exception` handlers in `app.py` (Iter 13) return `{"success":false,"error_code":...,"message":...}` for every error path, never leaking internals |
 | FR-05 | Extract text in Sinhala & English | ✅ | Surya OCR (colab/local) |
 | FR-06 | Bounding boxes for every text segment | 🟡 | canonical box schema + safeguard in `ocr_correction.py` (Iter 2); not yet wired into live pipeline/DB |
 | FR-07 | Store OCR confidence levels | 🟡 | carried in canonical box schema (Iter 2); not yet persisted to DB |
@@ -35,7 +35,7 @@ Update this file as iterations land. Status: ❌ none · 🟡 partial · ✅ don
 | FR-26 | Click values to see origin | ❌ | Iter 7 |
 | FR-27 | Document viewer with overlays | ❌ | Iter 7 |
 | FR-28 | Bilingual UI (si/en) | ✅ | i18n in `frontend/src/lib` |
-| FR-29 | Clear errors and status updates | 🟡 | improve Iter 7 |
+| FR-29 | Clear errors and status updates | ✅ | standardised `{"success":false,"error_code":...,"message":...}` shape on every error (Iter 13); `/process-document-stream`'s SSE progress events (Iter 8) cover in-flight status |
 | FR-30 | TLS for all communication | 🟡 | deploy concern; Iter 8 |
 | FR-31 | Encrypt stored data (AES-256) | ❌ | Supabase at-rest; Iter 8 |
 | FR-32 | Role-Based Access Control | ✅ | `User.role` (Iter 8) enforced via `require_write_role`/`require_admin_role` in `app.py` (Iter 11) — auditor is read-only, gates all destructive endpoints |
