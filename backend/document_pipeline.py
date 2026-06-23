@@ -9,13 +9,13 @@ load_dotenv()
 import cv2
 from pdf2image import convert_from_path
 
-from colab_ocr_client import send_images_to_colab_ocr
+from ocr_service import get_ocr_service
 from ocr_selector import select_best_ocr_version
-from llm_correction import llm_refine_text, clean_ocr_text
+from llm_correction import llm_refine_text, clean_ocr_text, correct_boxes_for_page
+from spatial_serializer import serialize_safe_boxes
 from ocr_to_json_extractor import extract_structured_json_from_text
 from arithmetic_validator import validate_arithmetic
 from correction_engine import correct_extracted_fields
-from local_surya_ocr_client import run_local_surya_ocr
 
 COLAB_OCR_URL = os.getenv("COLAB_OCR_URL", "").strip()
 POPPLER_PATH = os.getenv("POPPLER_PATH", "")
@@ -204,23 +204,19 @@ def _normalize_multi_page_ocr_result(ocr_result: dict) -> dict:
     }
 def build_preview_from_versions(version_paths: list[dict]) -> dict:
     final_colab_url = COLAB_OCR_URL or os.getenv("COLAB_OCR_URL", "").strip()
+    ocr_svc = get_ocr_service(final_colab_url)
 
-    if final_colab_url:
-        try:
-            print("[PIPELINE] Trying Colab OCR...", flush=True)
-            ocr_result = send_images_to_colab_ocr(
-                processed_pages=version_paths,
-                colab_url=final_colab_url,
-            )
-            print("[PIPELINE] Colab OCR completed", flush=True)
-        except Exception as e:
-            print(f"[PIPELINE] Colab OCR failed: {e}", flush=True)
-            print("[PIPELINE] Falling back to local Surya OCR...", flush=True)
-            ocr_result = run_local_surya_ocr(version_paths)
-            print("[PIPELINE] Local Surya OCR completed", flush=True)
-    else:
-        print("[PIPELINE] No COLAB_OCR_URL set — using local Surya OCR...", flush=True)
-        ocr_result = run_local_surya_ocr(version_paths)
+    try:
+        engine_name = type(ocr_svc).__name__
+        print(f"[PIPELINE] Running OCR via {engine_name}...", flush=True)
+        ocr_result = ocr_svc.run(version_paths)
+        print("[PIPELINE] OCR completed", flush=True)
+    except Exception as e:
+        from ocr_service import LocalSuryaOCRService
+        if isinstance(ocr_svc, LocalSuryaOCRService):
+            raise
+        print(f"[PIPELINE] Colab OCR failed: {e} — falling back to local Surya", flush=True)
+        ocr_result = LocalSuryaOCRService().run(version_paths)
         print("[PIPELINE] Local Surya OCR completed", flush=True)
 
     normalized_ocr = _normalize_multi_page_ocr_result(ocr_result)
@@ -240,6 +236,31 @@ def build_preview_from_versions(version_paths: list[dict]) -> dict:
 
     print("[PIPELINE] OCR selection finished", flush=True)
     selected_text = clean_ocr_text(selected_text)
+
+    # ── Iteration 2: per-box safe correction → final_safe_boxes.json ─────────
+    selected_pages = selection.get("selected_pages", [])
+    safe_boxes_by_page = []
+    for page_entry in selected_pages:
+        text_lines = page_entry.get("text_lines", []) if isinstance(page_entry, dict) else []
+        safe_boxes_by_page.append(correct_boxes_for_page(text_lines))
+
+    import json as _json
+    safe_boxes_path = TEMP_BASE / "final_safe_boxes.json"
+    safe_boxes_path.write_text(
+        _json.dumps(safe_boxes_by_page, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    print(f"[PIPELINE] final_safe_boxes.json written ({sum(len(p) for p in safe_boxes_by_page)} boxes)", flush=True)
+
+    # ── Iteration 3: spatial serialization → spatial_chunks.json ─────────────
+    spatial_chunks = serialize_safe_boxes(safe_boxes_by_page)
+    chunks_path = TEMP_BASE / "spatial_chunks.json"
+    chunks_path.write_text(
+        _json.dumps(spatial_chunks, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    print(f"[PIPELINE] spatial_chunks.json written ({len(spatial_chunks)} chunks)", flush=True)
+    # ─────────────────────────────────────────────────────────────────────────
 
     print("[PIPELINE] Starting LLM correction...", flush=True)
     corrected_text = llm_refine_text(selected_text)
@@ -282,6 +303,8 @@ def build_preview_from_versions(version_paths: list[dict]) -> dict:
         "extracted_fields": extracted_json,
         "ocr_scores": selection.get("scores", {}),
         "ocr_failures": failures,
+        "safe_boxes": safe_boxes_by_page,
+        "spatial_chunks": spatial_chunks,
     }
 
 def process_uploaded_document(upload_path: str):

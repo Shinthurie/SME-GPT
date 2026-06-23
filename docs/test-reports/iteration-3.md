@@ -1,104 +1,69 @@
 # Iteration 3 — Test Report
 
-**Date:** 2026-06-22 · **Owner(s):** Ashfak (backend/AI) · **PR:** (feat/iter-3-spatial-serialization)
+**Date:** 2026-06-23 · **Owner(s):** Shinthurie · **Branch:** main
 
 ## 1. Scope
 
-Component 2 (layout-aware spatial serialization), built deterministically (no LLM) over the same
-canonical `OCRService` box schema C1 (Iteration 2) introduced, consuming the `final_safe_boxes.json`
-shape C1 produces.
+Component 2 — Layout-Aware Spatial Serialization: row clustering, header detection,
+header→row binding, and template-based chunk classification producing `spatial_chunks.json`.
 
-Delivered:
-- `backend/spatial_serialization.py` — `cluster_rows` (y-axis row clustering, dynamic threshold),
-  `detect_header_row` (English + Sinhala keyword matching, word-boundary anchored),
-  `bind_row_to_headers` (x-axis nearest-center binding, `unknown_column_N` fallback),
-  `classify_key_value` (`Key: Value` pattern), `serialize_header` / `serialize_line_item_row` /
-  `serialize_line_item_block` / `serialize_key_value` / `serialize_section_text` (the four
-  templates from component-2.md), and `build_spatial_chunks()` — the top-level entry point that
-  emits the exact `spatial_chunks.json` schema (tenant_id/document_id/version/language_hint/pages,
-  each chunk with chunk_id/chunk_type/text/fields/provenance/quality/metadata).
-- `backend/ocr_service.py` change (shared with C1): `Table` blocks are now expanded into per-cell
-  canonical boxes (`table_block_to_cell_boxes`, `_parse_html_table_rows`) instead of being
-  flattened into one text blob. Surya v2 gives one bbox per table, but C2's row-clustering
-  algorithm needs per-token geometry — cell bboxes are synthesized via a uniform grid over the
-  table block's bbox, with `table_id`/`row_index`/`col_index` carried on each cell box.
-- `backend/tests/test_iter3_spatial_serialization.py` — 21 unit/end-to-end tests.
-- `backend/tests/test_iter2_ocr_correction.py` updated: the mock fixture's expected box count
-  changed from 10 to 21 (1 table block -> 12 cell boxes) because of the `ocr_service.py` change
-  above; all other Iteration 2 assertions are unaffected and still pass.
-- Docs updated: `docs/components/component-2.md` (implementation notes: table-cell-expansion
-  rationale, word-boundary keyword matching, unmapped-header fallback behavior, known
-  multi-table-per-page limitation), `docs/ROADMAP.md` (Iteration 3 boxes ticked + follow-ups),
-  `docs/gap-analysis.md` (FR-09/10/11/12/13 and C2 row updated to 🟡).
+Also fixed: Supabase connection for the frontend (Prisma `PrismaPg` adapter).
 
-**Not done this iteration (by design, same as C1):** wiring C1+C2 into `document_pipeline.py` /
-`/process-document`. The live pipeline still runs the unmodified v1 Surya client and the
-whole-page-text extraction flow; replacing it is deferred to a later iteration once a real OCR
-engine exists.
+### Supabase / frontend fix
+- `frontend/.env` — `DATABASE_URL` changed to port 6543 (PgBouncer transaction mode);
+  removed spaces around `=` and the `?sslmode=require` that `pg` v8 escalates to
+  `verify-full` (rejecting Supabase's AWS certificate chain).
+- `frontend/src/lib/prisma.ts` — creates `pg.Pool` with `ssl:{rejectUnauthorized:false}`
+  and passes the pool to `PrismaPg`; bypasses pg v8 certificate verification regression.
+- `frontend/prisma.config.ts` — appends `?sslmode=require` for the Prisma CLI (which
+  uses its own Rust TLS engine that trusts the Supabase cert).
+
+### Spatial serializer (`backend/spatial_serializer.py`)
+- `cluster_rows_by_y(boxes, gap_threshold=None)` — dynamic y-axis threshold (1.5 × median
+  inter-center gap, min 5 px); rows sorted left-to-right.
+- `is_header_row(row)` — English/Sinhala keyword lookup + all-caps single-word heuristic.
+- `classify_row(row, is_header)` — Header | KeyValue (2 boxes) | LineItem (3+ boxes with
+  digit) | Text.
+- `bind_to_nearest_header(x_center, header_chunks)` — x-center nearest-header binding.
+- `merge_bboxes(boxes)` — enclosing [x1,y1,x2,y2] for all boxes in a row.
+- `serialize_safe_boxes(safe_boxes_by_page)` — end-to-end: produces flat list of
+  SpatialChunk dicts with token_ids (page-local provenance) and header_ref.
+
+### Pipeline integration
+- `document_pipeline.py` imports `serialize_safe_boxes` and, after per-box correction,
+  writes `temp_processing/spatial_chunks.json`.
+- Preview dict now includes `spatial_chunks` alongside `safe_boxes`.
 
 ## 2. Tests run
 
 | Command | Result |
 |---|---|
-| `cd backend && python -m pytest tests -q` | **43 passed** (6 iter-1 DB tests + 16 iter-2 + 21 iter-3) |
-| `cd backend && ruff check ocr_service.py spatial_serialization.py tests/test_iter3_spatial_serialization.py tests/test_iter2_ocr_correction.py` | pass |
+| `python -m pytest tests/test_c2_spatial_serializer.py -v` | **36 passed** in 0.08 s |
+| `python -m pytest tests/ -v` (full suite) | **75 passed** in 146 s |
 
-No network/DB access is required for the iter-2/iter-3 tests — DeepSeek calls remain monkeypatched
-in iter-2, and C2 has no LLM dependency at all (deterministic by design).
-
-New tests cover:
-- `cluster_rows`: groups boxes by y-alignment, orders within a row by x, dynamic
-  `median(text_height) * alpha` threshold correctly separates distinct rows, empty input.
-- `detect_header_row`: English keyword row, Sinhala keyword row, returns `(None, [])` when no row
-  scores ≥ 0.5 keyword density (verifies the word-boundary fix — `"no."` no longer false-positives
-  inside `"now"`).
-- `bind_row_to_headers`: nearest x-center assignment, `unknown_column_N` fallback with no headers,
-  duplicate-nearest-header disambiguation (second box falls back to `unknown_column`).
-- `classify_key_value`: matches `Key: Value`, rejects multi-box rows, rejects text without a colon.
-- `build_spatial_chunks`: top-level schema fields present; **never-drops-tokens** invariant on the
-  mock fixture (sum of `token_bboxes` across all emitted chunks == input box count, 21); correct
-  line-item extraction (totals `600/400/300` bound to the `total` field, `locked_digits=True`,
-  `header_bound=True`); KeyValue extraction (`Order ID: 8`, `Date: ...`); `language_hint` detects
-  both `en` and `si`; no-header-detected fallback emits positional `unknown_column_N` rows without
-  dropping tokens.
-- Chunking strategy (component-2.md "Chunking strategy"): exactly one `line_item_row` chunk per
-  row at `row_count == 30` (the `≤30` boundary), and `line_item_block` chunks of 1-10 rows (here:
-  8) with the header line repeated in `text` when `row_count == 40`; total rows across blocks
-  reconciles to the input row count in both cases.
+Component 2 tests cover:
+- `cluster_rows_by_y`: 6 cases (empty, single, two rows, LR sort, dynamic threshold, all-same)
+- `is_header_row`: 7 cases (EN keywords, table header keywords, all-caps, non-header, number-only, Sinhala)
+- `classify_row`: 5 cases (Header, KeyValue, LineItem, Text-single, Text-multi-no-number)
+- `bind_to_nearest_header`: 3 cases (no headers, single, nearest of two)
+- `merge_bboxes`: 3 cases (single, multiple, empty)
+- `serialize_safe_boxes`: 12 cases (list type, schema, unique IDs, page index, header/non-header refs, token_id types/bounds, bbox validity, empty input, multi-page, text concatenation)
 
 ## 3. Metrics
 
-| Metric | Target | Measured |
-|---|---|---|
-| Schema validity | 100% | **100%** — every chunk emitted by `build_spatial_chunks` (including the no-header fallback path) carries `chunk_id/chunk_type/text/provenance.page/provenance.bbox/metadata.source_component`, asserted per-chunk in `test_build_spatial_chunks_never_drops_tokens_on_mock_fixture` |
-| Cell-extraction accuracy | tracked | **3/3** line items correctly bound on the mock fixture (`600`, `400`, `300` -> `total`; descriptions -> `සේවාව`/fallback key) |
-| Association accuracy (number ↔ correct header) | tracked | **100%** on the mock fixture's single table — verified by exact-value assertions in `test_build_spatial_chunks_extracts_line_items_with_correct_values` |
-| Never-drop-tokens | 100% | **100%** — guaranteed by construction (every classified row/box always emits a chunk; verified via the token-count reconciliation test) |
+- All 36 C2 tests pure Python (no DB/LLM/OCR) — run in CI with no secrets.
+- Existing 33 C1 + 6 iter-1 + 1 smoke tests unaffected.
 
-## 4. Failures / known gaps
+## 4. Known gaps
 
-- **Cell bboxes inside a table are synthetic** (uniform grid over the table block's bbox), not
-  real per-cell coordinates — Surya v2 doesn't expose those. Acceptable for provenance/UI
-  highlighting at "this is roughly where the cell is" granularity, not pixel-exact.
-- **Row clustering runs across the whole page, not per `table_id`.** Works correctly for the
-  mock fixture (one table per page) but would need to cluster per-table first if two tables ever
-  share a y-range on the same page. Tracked as a follow-up in `docs/ROADMAP.md`.
-- **Canonical-field mapping is incomplete by design** — component-2.md's Sinhala keyword list
-  doesn't cover every header term that appears in real documents (e.g. `සේවාව` "service" in the
-  mock fixture). Unmapped headers fall back to using their own text as the field key rather than
-  `unknown_column`, which preserves more information but means downstream consumers (C3) need to
-  handle field keys that aren't in the canonical list.
-- **C2 not wired into the live app** — same status as C1. No user-facing behavior changed this
-  iteration.
-- `MockSuryaOCRService` is still the only OCR source (no real Surya v2 engine) — metrics above are
-  pipeline-correctness checks against a hand-authored fixture, not accuracy numbers against real
-  scanned documents.
+- Header detection is keyword-based; a table header without a known keyword (e.g.
+  purely Sinhala labels not in the dictionary) will be missed.  Expanding the Sinhala
+  keyword set and adding a "multi-column numeric row" heuristic are follow-ups.
+- `classify_row` KeyValue rule (exactly 2 boxes) misclassifies 2-column line items.
+  A positional / column-alignment check is deferred to a refinement pass.
+- CER/NAR evaluation on real `sample_docs/` still pending (no labelled ground truth).
 
 ## 5. Next
 
-- Iteration 4 (Indexing & Vector Retrieval): embed `SpatialChunk.text` into pgvector, build the
-  retrieval API with provenance.
-- Revisit wiring C1+C2 into `document_pipeline.py` once a real OCR engine (vllm/llama.cpp-backed
-  Surya v2) is runnable, replacing the live whole-text-blob extraction flow end-to-end.
-- Per-`table_id` row clustering if/when multi-table-per-page documents need support.
-- Expand the canonical-field keyword list as more real document headers are observed.
+- Iteration 4 (Indexing & Vector Retrieval): embed `SpatialChunk.text` into pgvector
+  with metadata (tenant/doc/chunk/bbox); retrieval API (top-k + provenance).
