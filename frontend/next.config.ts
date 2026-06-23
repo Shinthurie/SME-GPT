@@ -1,13 +1,15 @@
-// Pure CJS — so __dirname is defined (ESM `import` makes it undefined in Next config)
-/** @type {import('next').NextConfig} */
-const nextConfig = {
+import type { NextConfig } from "next";
+import path from "path";
+
+const nextConfig: NextConfig = {
   reactCompiler: true,
   turbopack: {
-    // Pin Turbopack's root to this directory.  Without this, Turbopack walks
-    // up from frontend/ to the repo root and finds C:\Users\ASUS\package.json,
-    // which triggers a full monorepo scan that OOMs on Windows.
-    root: __dirname,
+    // Pin Turbopack's root to the frontend directory.
+    // Without this Next.js walks up from frontend/ looking for lockfiles and
+    // finds the stub package-lock.json at the repo root, treating the whole
+    // repo as the workspace root — causing OOM crashes on Windows.
+    root: path.resolve(__dirname),
   },
 };
 
-module.exports = nextConfig;
+export default nextConfig;
