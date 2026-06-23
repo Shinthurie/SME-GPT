@@ -110,9 +110,18 @@ export default function QueryPage() {
             className="mt-6 rounded-2xl p-5"
             style={{ background: "var(--surface)", border: "1px solid var(--border)" }}
           >
-            <p className="mb-2 text-[11px] font-bold uppercase tracking-[0.1em] text-[var(--text-3)]">
-              Company Context
-            </p>
+            <div className="mb-2 flex items-center gap-2">
+              <p className="text-[11px] font-bold uppercase tracking-[0.1em] text-[var(--text-3)]">
+                Company Context
+              </p>
+              <span
+                title="Enter the company name as it appears on your invoices or purchase orders. This scopes the AI search to only your documents — preventing answers from mixing up data across different companies."
+                className="flex h-4 w-4 cursor-help items-center justify-center rounded-full text-[10px] font-bold"
+                style={{ background: "var(--brand-tint)", color: "var(--brand-mid)" }}
+              >
+                ?
+              </span>
+            </div>
             <input
               value={companyName}
               onChange={(e) => setCompanyName(e.target.value)}

@@ -253,9 +253,18 @@ export default function UploadPage() {
 
           {/* OCR Language Engine selector */}
           <div className="mt-5">
-            <p className="mb-2 text-[11px] font-bold uppercase tracking-[0.1em] text-[var(--text-3)]">
-              OCR Language Engine
-            </p>
+            <div className="mb-2 flex items-center gap-2">
+              <p className="text-[11px] font-bold uppercase tracking-[0.1em] text-[var(--text-3)]">
+                OCR Language Engine
+              </p>
+              <span
+                title="English: best for typed/printed documents. Sinhala: best for Sinhala-primary or handwritten content. The engine always processes both scripts — this hint optimises the correction step."
+                className="flex h-4 w-4 cursor-help items-center justify-center rounded-full text-[10px] font-bold"
+                style={{ background: "var(--brand-tint)", color: "var(--brand-mid)" }}
+              >
+                ?
+              </span>
+            </div>
             <div className="flex gap-2">
               {(["en", "si"] as const).map((l) => (
                 <button
