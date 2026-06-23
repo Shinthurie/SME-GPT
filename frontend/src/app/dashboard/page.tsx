@@ -104,10 +104,20 @@ export default function DashboardPage() {
         const token = getStoredToken();
         if (!token) { setError("Missing login token. Please log in again."); return; }
 
-        const res = await fetch(`${BACKEND_URL}/dashboard-summary`, {
-          headers: { Authorization: `Bearer ${token}` },
-          cache: "no-store",
-        });
+        let res: Response;
+        try {
+          res = await fetch(`${BACKEND_URL}/dashboard-summary`, {
+            headers: { Authorization: `Bearer ${token}` },
+            cache: "no-store",
+          });
+        } catch {
+          // Network error — backend not reachable
+          setError(
+            "Cannot reach the backend server. Make sure it is running: " +
+            "cd backend && uvicorn app:app --reload --port 8000"
+          );
+          return;
+        }
 
         if (res.status === 401) {
           localStorage.removeItem("token");
@@ -116,7 +126,9 @@ export default function DashboardPage() {
         }
 
         const data = await res.json();
-        if (!res.ok || !data.success) throw new Error(data.message || "Failed to fetch summary.");
+        if (!res.ok || !data.success) {
+          throw new Error(data.message || `Server error ${res.status}`);
+        }
         setSummary(data);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to fetch dashboard summary.");
