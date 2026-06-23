@@ -18,7 +18,7 @@ load_dotenv()  # must run before any local module is imported so env vars are se
 
 import jwt
 import psycopg
-from fastapi import FastAPI, File, Header, HTTPException, Request, UploadFile
+from fastapi import Depends, FastAPI, File, Header, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -918,6 +918,10 @@ async def process_document_stream(
                 },
             }
 
+            # FR-33: audit log for streaming upload
+            _log_audit_event(user_id, "DOCUMENT_UPLOAD",
+                             f"Streamed upload processed: {str(raw_file)}")
+
             emit(
                 "done", 4, "Processing complete.",
                 session_id=session_id,
@@ -1131,7 +1135,12 @@ def delete_document(document_id: str, authorization: str = Header(default=None))
     }
 
 @app.get("/documents")
-def get_documents(authorization: str = Header(default=None)):
+def get_documents(
+    authorization: str = Header(default=None),
+    page: int = Query(default=1, ge=1),
+    limit: int = Query(default=50, ge=1, le=200),
+):
+    """NFR-02/03: supports ?page=N&limit=M for large result sets."""
     user_id = get_current_user_id(authorization)
     records = load_all_records(user_id=user_id)
 
@@ -1144,7 +1153,19 @@ def get_documents(authorization: str = Header(default=None)):
             "flow_type": effective_flow,
         })
 
-    return {"success": True, "documents": normalized_records}
+    total = len(normalized_records)
+    start = (page - 1) * limit
+    page_records = normalized_records[start:start + limit]
+
+    return {
+        "success": True,
+        "documents": page_records,
+        "pagination": {
+            "page": page, "limit": limit, "total": total,
+            "pages": max(1, (total + limit - 1) // limit),
+            "has_next": start + limit < total,
+        },
+    }
 
 
 @app.get("/documents/{document_id}")
@@ -1210,6 +1231,10 @@ def ask_query(payload: QueryRequest, authorization: str = Header(default=None)):
     except Exception as save_err:
         history_saved = False
         history_error = str(save_err)
+
+    # FR-33: log query event
+    _log_audit_event(user_id, "QUERY_EXECUTED",
+                     f"Q: {payload.question.strip()[:120]} | co: {payload.company_name.strip()}")
 
     return {
         "success": result.get("success", True),
@@ -1306,3 +1331,29 @@ def delete_user_account(authorization: str = Header(default=None)):
         conn.commit()
 
     return {"success": True, "message": "All document data deleted for this account."}
+
+
+@app.delete("/admin/audit-logs/prune")
+def prune_old_audit_logs(
+    authorization: str = Header(default=None),
+    days: int = Query(default=365, ge=30),
+):
+    """NFR-15 — Delete ActivityLog rows older than `days` days (default 365).
+    Admin-only via RBAC role check."""
+    user_id = get_current_user_id(authorization)
+    role = get_current_user_role(authorization)
+    if role not in {"admin"}:
+        raise HTTPException(status_code=403, detail="Admin access required.")
+
+    with get_db_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                'DELETE FROM "ActivityLog" WHERE "createdAt" < NOW() - INTERVAL \'%s days\'',
+                (days,),
+            )
+            deleted = cur.rowcount
+        conn.commit()
+
+    _log_audit_event(user_id, "AUDIT_LOGS_PRUNED",
+                     f"Deleted {deleted} rows older than {days} days")
+    return {"success": True, "deleted_rows": deleted, "retention_days": days}

@@ -1,3 +1,7 @@
+# root-level node_modules junction (created by setup-dev.ps1 for Turbopack CSS fix)
+node_modules/
+nginx/certs/
+
 # frontend
 frontend/node_modules
 frontend/.next
