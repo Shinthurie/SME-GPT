@@ -67,6 +67,8 @@ export default function AnswerPage() {
   const [showExplanation, setShowExplanation] = useState(false);
   const [showEvidence, setShowEvidence] = useState(false);
   const [showTrace, setShowTrace] = useState(false);
+  const [flagged, setFlagged] = useState(false);
+  const [notifyOpen, setNotifyOpen] = useState(false);
   const t = ui[lang];
 
   useEffect(() => {
@@ -216,12 +218,22 @@ export default function AnswerPage() {
             </div>
           </div>
 
-          <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#64748b]">
-            Explainable Financial Answer
-          </p>
-          <h1 className="text-[24px] font-extrabold text-[#0f172a]">
-            Query Result
-          </h1>
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#64748b]">
+                Insights &amp; Analysis
+              </p>
+              <h1 className="text-[24px] font-extrabold text-[#0f172a]">
+                AI Business Insight
+              </h1>
+            </div>
+            <span
+              className="rounded-xl px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider"
+              style={{ background: "rgba(34,82,181,0.08)", color: "#2252b5" }}
+            >
+              98% Accuracy
+            </span>
+          </div>
 
           {result.history_saved === false && (
             <div className="mt-4 rounded-[16px] border border-amber-200 bg-amber-50 px-4 py-3 text-[14px] text-amber-700">
@@ -254,6 +266,69 @@ export default function AnswerPage() {
   {result.answer}
 </p>
           </div>
+
+          {/* Action buttons — UI Design 6 */}
+          <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <button
+              onClick={() => {
+                const firstDoc = result.evidence?.[0];
+                if (firstDoc) router.push(`/analysis/${firstDoc.document_id}`);
+              }}
+              className="flex items-center justify-center gap-1.5 rounded-xl px-3 py-2.5 text-[12px] font-bold transition hover:opacity-80"
+              style={{ background: "rgba(34,82,181,0.08)", color: "#2252b5", border: "1px solid rgba(34,82,181,0.18)" }}
+            >
+              <span className="material-symbols-outlined text-[15px]">edit_note</span>
+              Adjust Total
+            </button>
+            <button
+              onClick={() => setNotifyOpen((p) => !p)}
+              className="flex items-center justify-center gap-1.5 rounded-xl px-3 py-2.5 text-[12px] font-bold transition hover:opacity-80"
+              style={{ background: "rgba(34,82,181,0.08)", color: "#2252b5", border: "1px solid rgba(34,82,181,0.18)" }}
+            >
+              <span className="material-symbols-outlined text-[15px]">mail</span>
+              Notify Supplier
+            </button>
+            <button
+              onClick={() => {
+                const blob = new Blob([JSON.stringify(result, null, 2)], { type: "application/json" });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = `query-result-${Date.now()}.json`;
+                a.click();
+                URL.revokeObjectURL(url);
+              }}
+              className="flex items-center justify-center gap-1.5 rounded-xl px-3 py-2.5 text-[12px] font-bold transition hover:opacity-80"
+              style={{ background: "rgba(22,163,74,0.08)", color: "#16a34a", border: "1px solid rgba(22,163,74,0.18)" }}
+            >
+              <span className="material-symbols-outlined text-[15px]">download</span>
+              Export
+            </button>
+            <button
+              onClick={() => setFlagged((p) => !p)}
+              className="flex items-center justify-center gap-1.5 rounded-xl px-3 py-2.5 text-[12px] font-bold transition hover:opacity-80"
+              style={
+                flagged
+                  ? { background: "rgba(220,38,38,0.1)", color: "#dc2626", border: "1px solid rgba(220,38,38,0.2)" }
+                  : { background: "#0f172a", color: "#fff" }
+              }
+            >
+              <span className="material-symbols-outlined text-[15px]">flag</span>
+              {flagged ? "Flagged ✓" : "Flag for Review"}
+            </button>
+          </div>
+
+          {notifyOpen && (
+            <div className="mt-3 rounded-[14px] border border-slate-200 bg-white p-4 text-[13px] text-[#334155]">
+              <p className="font-semibold text-[#0f172a]">Notify Supplier</p>
+              <p className="mt-1 text-[#64748b]">
+                Compose a message to the supplier regarding discrepancies or payment status. (Email integration coming soon.)
+              </p>
+              <button onClick={() => setNotifyOpen(false)} className="mt-2 text-[12px] font-bold text-[#2563ff]">
+                Dismiss
+              </button>
+            </div>
+          )}
 
           <div className="mt-6 rounded-[18px] border border-slate-200 bg-white shadow-sm">
             <button
@@ -331,9 +406,19 @@ export default function AnswerPage() {
                           <p className="text-[15px] font-bold text-[#0f172a]">
                             {item.document_id}
                           </p>
-                          <span className="rounded-xl bg-[#eef4ff] px-3 py-1.5 text-[11px] font-semibold text-[#2563ff]">
-                            {item.document_type}
-                          </span>
+                          <div className="flex items-center gap-2">
+                            <span className="rounded-xl bg-[#eef4ff] px-3 py-1.5 text-[11px] font-semibold text-[#2563ff]">
+                              {item.document_type?.toUpperCase()}
+                            </span>
+                            {item.document_type === "po" && (
+                              <button
+                                onClick={() => router.push(`/analysis/${item.document_id}`)}
+                                className="rounded-xl border border-[#2252b5] px-3 py-1 text-[11px] font-bold text-[#2252b5] hover:bg-[#eef4ff] transition"
+                              >
+                                GO TO PO →
+                              </button>
+                            )}
+                          </div>
                         </div>
 
                         <div className="mt-3 grid gap-2 sm:grid-cols-2">
@@ -365,9 +450,14 @@ export default function AnswerPage() {
           key={idx}
           className="rounded-[10px] bg-[#f8fafc] px-3 py-2 text-[12px] text-[#334155]"
         >
-          <p className="font-semibold">{formatValue(it.description)}</p>
-          <p>
-            Qty: {formatValue(it.quantity)} | Unit Price: {formatValue(it.unit_price)} | Line Total: {formatValue(it.line_total)}
+          <div className="flex items-center justify-between gap-2">
+            <p className="font-semibold">{formatValue(it.description)}</p>
+            <span className="shrink-0 rounded-md bg-slate-200 px-1.5 py-0.5 text-[10px] font-bold text-slate-600">
+              ROW {idx + 1}
+            </span>
+          </div>
+          <p className="mt-0.5">
+            Qty: {formatValue(it.quantity)} · Unit Price: {formatValue(it.unit_price)} · Line Total: {formatValue(it.line_total)}
           </p>
         </div>
       ))}
