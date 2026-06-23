@@ -19,7 +19,7 @@ from ai_helper import generate_explainable_answer
 from pal_answer import generate_pal_answer
 from pal_executor import execute_plan
 from pal_planner import plan_query
-from pal_scope import build_row_records, resolve_scope
+from pal_scope import build_row_records, resolve_scope, resolve_scope_with_rag
 from pal_validator import validate_plan
 
 MAX_RETRIES = 2
@@ -61,7 +61,8 @@ def answer_financial_question(question: str, company_name: str, user_id: str) ->
     if question_type in _NON_ARITHMETIC_INTENTS:
         return _legacy_answer(question, company_name, user_id)
 
-    documents_df, scope_error = resolve_scope(company_name, user_id)
+    # Iteration 15 — FR-19: hybrid RAG + SQL scope; degrades silently to SQL-only
+    documents_df, scope_error = resolve_scope_with_rag(question, company_name, user_id)
     if scope_error:
         return _empty_scope_answer(scope_error)
 

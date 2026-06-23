@@ -1,7 +1,7 @@
 version: "3.9"
 
-# SME-GPT — local development / single-server deployment.
-# Requires backend/.env and frontend/.env to be populated.
+# SME-GPT — production deployment with TLS termination (FR-30) via nginx.
+# For local dev: run `bash nginx/generate-certs.sh` first to create SSL certs.
 # Usage: docker compose up --build
 
 services:
@@ -9,8 +9,8 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    ports:
-      - "8000:8000"
+    expose:
+      - "8000"
     env_file:
       - ./backend/.env
     volumes:
@@ -18,7 +18,7 @@ services:
       - backend_temp:/app/temp_processing
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/docs"]
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -27,8 +27,8 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    ports:
-      - "3000:3000"
+    expose:
+      - "3000"
     env_file:
       - ./frontend/.env
     environment:
@@ -36,6 +36,20 @@ services:
     depends_on:
       backend:
         condition: service_healthy
+    restart: unless-stopped
+
+  # FR-30: TLS termination — run `bash nginx/generate-certs.sh` before first start
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/certs:/etc/nginx/certs:ro
+    depends_on:
+      - backend
+      - frontend
     restart: unless-stopped
 
 volumes:
