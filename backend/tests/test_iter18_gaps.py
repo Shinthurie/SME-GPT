@@ -1,7 +1,7 @@
 """Tests for Iteration 18 gaps: GAP-18A, GAP-18C, GAP-18D, GAP-18F, GAP-18G."""
 from __future__ import annotations
+import inspect
 import json
-from unittest.mock import MagicMock, patch
 
 
 # ──────────────────────────── GAP-18A: DB pagination ────────────────────────
@@ -123,35 +123,15 @@ def test_build_dashboard_summary_includes_pending_ready():
 
 # ──────────────────────────── GAP-18F: C4 entity index wiring ───────────────
 
-def test_index_document_called_on_confirm_save(monkeypatch):
-    """entity_index.index_document must be called during /confirm-save for new docs."""
-    called_with = []
-
+def test_index_document_present_in_confirm_save_source():
+    """
+    GAP-18F structural check: entity_index.index_document must be referenced
+    inside the confirm_save handler.  entity_index is imported inline (local
+    import inside a try/except) so we verify via source inspection rather than
+    trying to patch a module-level attribute that doesn't exist.
+    """
     import app as ap
-
-    fake_index = MagicMock(side_effect=lambda doc, tid: called_with.append((doc, tid)))
-
-    original_pop = ap.PROCESSING_SESSIONS.pop
-
-    session_id = "test-sess-c4"
-    ap.PROCESSING_SESSIONS[session_id] = {
-        "user_id": "user1",
-        "fields": {"document_id": "DOC1", "company_name": "TestCo"},
-        "preview": {},
-        "meta": {"uploaded_file": "x.pdf", "standard_image": "x.png",
-                 "selected_ocr_version": "P", "ocr_scores": {}, "ocr_failures": {},
-                 "safe_boxes": [], "rich_spatial_chunks_template": {}},
-    }
-
-    with patch("app.entity_index") as mock_mod:
-        mock_mod = None  # entity_index is imported inline in app.py
-        with patch.dict("sys.modules", {"entity_index": MagicMock(index_document=fake_index)}):
-            # entity_index is called inside a try/except so we just verify it's importable
-            # and the module structure is correct
-            pass
-
-    # Structural check: confirm the try/except block for C4 exists in the confirm-save handler
-    import inspect
     src = inspect.getsource(ap.confirm_save)
-    assert "index_document" in src or "entity_index" in src, \
-        "C4 entity_index.index_document call missing from confirm_save"
+    assert "index_document" in src or "entity_index" in src, (
+        "C4 entity_index.index_document call is missing from confirm_save"
+    )
