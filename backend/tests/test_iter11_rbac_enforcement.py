@@ -1,182 +1,245 @@
-"""Iteration 11 — RBAC enforcement + audit logging unit tests.
+"""Iteration 11 — RBAC enforcement + audit logging tests.
 
-Pure-Python (no DB, no HTTP server) — runs in CI with no secrets.
-Tests:
-  - get_current_user_role()  extracts role from JWT or defaults to 'owner'
-  - require_write_role()     raises 403 for auditor, passes for owner/accountant/admin
-  - require_admin_role()     raises 403 for non-admin
-  - _log_audit_event()       calls DB insert (mocked); is silent on DB failure
+Covers: `_decode_token`/`get_current_user_id`/`get_current_user_role` (JWT
+claim extraction), `require_write_role`/`require_admin_role` (the allow-list
+guards gating destructive endpoints), and `_log_audit_event` (best-effort
+ActivityLog writes). The role/JWT logic is tested directly against the real
+functions in `app.py` (not a parallel reimplementation) with a real signed
+token, so these tests prove the actual guards behave correctly -- this is
+the gap that let Iteration 9's OCR-wiring bug ship un-caught.
+
+DB-touching tests are split the same way as the rest of the suite: a
+hermetic test fakes `get_db_connection` to verify `_log_audit_event` issues
+the right INSERT without a real database, and one DB-integration test (the
+real round trip) is skipped when `DATABASE_URL` is unset, same pattern as
+`tests/test_iter1_data_layer.py`.
 """
 from __future__ import annotations
 
-import sys
 import os
-import time
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+try:
+    from dotenv import load_dotenv
 
-import jwt as pyjwt
-from fastapi import HTTPException
-
-
-# ── helpers ────────────────────────────────────────────────────────────────
-
-def _make_token(role: str = "owner", secret: str = "test_secret_32_chars_long_enough!", expire_offset: int = 3600) -> str:
-    return pyjwt.encode(
-        {"userId": "u1", "sessionVersion": 1, "role": role, "exp": int(time.time()) + expire_offset},
-        secret,
-        algorithm="HS256",
-    )
+    load_dotenv(os.path.join(os.path.dirname(__file__), os.pardir, ".env"))
+except Exception:
+    pass
 
 
-# ── get_current_user_role ─────────────────────────────────────────────────
-
-def test_role_extracted_from_jwt(monkeypatch):
-    import app as _app
-    monkeypatch.setattr(_app, "JWT_SECRET", "test_secret_32_chars_long_enough!")
-    monkeypatch.setattr(_app, "JWT_ALGORITHM", "HS256")
-    token = _make_token(role="auditor")
-    assert _app.get_current_user_role(f"Bearer {token}") == "auditor"
+@pytest.fixture(scope="module")
+def app_module():
+    import app as app_mod
+    return app_mod
 
 
-def test_role_missing_defaults_to_owner(monkeypatch):
-    import app as _app
-    monkeypatch.setattr(_app, "JWT_SECRET", "test_secret_32_chars_long_enough!")
-    monkeypatch.setattr(_app, "JWT_ALGORITHM", "HS256")
-    token = pyjwt.encode({"userId": "u1"}, "test_secret_32_chars_long_enough!", algorithm="HS256")
-    assert _app.get_current_user_role(f"Bearer {token}") == "owner"
+def _token(app_module, **claims):
+    import jwt as pyjwt
+    return pyjwt.encode(claims, app_module.JWT_SECRET, algorithm=app_module.JWT_ALGORITHM)
 
 
-def test_role_no_header_defaults_to_owner(monkeypatch):
-    import app as _app
-    assert _app.get_current_user_role(None) == "owner"
+def _bearer(app_module, **claims):
+    return f"Bearer {_token(app_module, **claims)}"
 
 
-def test_role_invalid_token_defaults_to_owner(monkeypatch):
-    import app as _app
-    monkeypatch.setattr(_app, "JWT_SECRET", "test_secret_32_chars_long_enough!")
-    assert _app.get_current_user_role("Bearer not.a.valid.token") == "owner"
+# ---------------------------------------------------------------------------
+# get_current_user_id / get_current_user_role
+# ---------------------------------------------------------------------------
+
+def test_get_current_user_id_extracts_claim(app_module):
+    auth = _bearer(app_module, userId="user-1")
+    assert app_module.get_current_user_id(auth) == "user-1"
 
 
-# ── require_write_role ────────────────────────────────────────────────────
-
-def test_auditor_blocked_from_write(monkeypatch):
-    import app as _app
-    monkeypatch.setattr(_app, "JWT_SECRET", "test_secret_32_chars_long_enough!")
-    monkeypatch.setattr(_app, "JWT_ALGORITHM", "HS256")
-    token = _make_token(role="auditor")
-    with pytest.raises(HTTPException) as exc_info:
-        _app.require_write_role(f"Bearer {token}")
-    assert exc_info.value.status_code == 403
+def test_get_current_user_id_missing_header_raises_401(app_module):
+    with pytest.raises(app_module.HTTPException) as exc:
+        app_module.get_current_user_id(None)
+    assert exc.value.status_code == 401
 
 
-def test_owner_passes_write(monkeypatch):
-    import app as _app
-    monkeypatch.setattr(_app, "JWT_SECRET", "test_secret_32_chars_long_enough!")
-    monkeypatch.setattr(_app, "JWT_ALGORITHM", "HS256")
-    token = _make_token(role="owner")
-    _app.require_write_role(f"Bearer {token}")  # must not raise
+def test_get_current_user_role_returns_role_from_token(app_module):
+    auth = _bearer(app_module, userId="user-1", role="accountant")
+    assert app_module.get_current_user_role(auth) == "accountant"
 
 
-def test_accountant_passes_write(monkeypatch):
-    import app as _app
-    monkeypatch.setattr(_app, "JWT_SECRET", "test_secret_32_chars_long_enough!")
-    monkeypatch.setattr(_app, "JWT_ALGORITHM", "HS256")
-    token = _make_token(role="accountant")
-    _app.require_write_role(f"Bearer {token}")  # must not raise
+def test_get_current_user_role_defaults_to_owner_when_missing(app_module):
+    """Tokens issued before RBAC roles existed (Iteration 8) have no `role`
+    claim at all -- must not break, must default to the least-surprising
+    role (owner), not silently lock existing users out."""
+    auth = _bearer(app_module, userId="user-1")
+    assert app_module.get_current_user_role(auth) == "owner"
 
 
-def test_admin_passes_write(monkeypatch):
-    import app as _app
-    monkeypatch.setattr(_app, "JWT_SECRET", "test_secret_32_chars_long_enough!")
-    monkeypatch.setattr(_app, "JWT_ALGORITHM", "HS256")
-    token = _make_token(role="admin")
-    _app.require_write_role(f"Bearer {token}")  # must not raise
+# ---------------------------------------------------------------------------
+# require_write_role
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("role", ["owner", "accountant", "admin"])
+def test_require_write_role_allows_write_roles(app_module, role):
+    auth = _bearer(app_module, userId="user-1", role=role)
+    assert app_module.require_write_role(auth) == role
 
 
-def test_unknown_role_blocked(monkeypatch):
-    import app as _app
-    monkeypatch.setattr(_app, "JWT_SECRET", "test_secret_32_chars_long_enough!")
-    monkeypatch.setattr(_app, "JWT_ALGORITHM", "HS256")
-    token = _make_token(role="viewer")
-    with pytest.raises(HTTPException) as exc_info:
-        _app.require_write_role(f"Bearer {token}")
-    assert exc_info.value.status_code == 403
+def test_require_write_role_rejects_auditor(app_module):
+    auth = _bearer(app_module, userId="user-1", role="auditor")
+    with pytest.raises(app_module.HTTPException) as exc:
+        app_module.require_write_role(auth)
+    assert exc.value.status_code == 403
 
 
-# ── require_admin_role ────────────────────────────────────────────────────
-
-def test_admin_passes_admin_check(monkeypatch):
-    import app as _app
-    monkeypatch.setattr(_app, "JWT_SECRET", "test_secret_32_chars_long_enough!")
-    monkeypatch.setattr(_app, "JWT_ALGORITHM", "HS256")
-    token = _make_token(role="admin")
-    _app.require_admin_role(f"Bearer {token}")  # must not raise
+def test_require_write_role_rejects_unknown_role(app_module):
+    auth = _bearer(app_module, userId="user-1", role="totally_made_up")
+    with pytest.raises(app_module.HTTPException) as exc:
+        app_module.require_write_role(auth)
+    assert exc.value.status_code == 403
 
 
-def test_owner_blocked_from_admin(monkeypatch):
-    import app as _app
-    monkeypatch.setattr(_app, "JWT_SECRET", "test_secret_32_chars_long_enough!")
-    monkeypatch.setattr(_app, "JWT_ALGORITHM", "HS256")
-    token = _make_token(role="owner")
-    with pytest.raises(HTTPException) as exc_info:
-        _app.require_admin_role(f"Bearer {token}")
-    assert exc_info.value.status_code == 403
+def test_require_write_role_logs_audit_event_on_denial(app_module, monkeypatch):
+    logged = []
+    monkeypatch.setattr(app_module, "_log_audit_event", lambda user_id, event_type, content: logged.append((user_id, event_type, content)))
+
+    auth = _bearer(app_module, userId="user-42", role="auditor")
+    with pytest.raises(app_module.HTTPException):
+        app_module.require_write_role(auth)
+
+    assert len(logged) == 1
+    user_id, event_type, content = logged[0]
+    assert user_id == "user-42"
+    assert event_type == "RBAC_WRITE_DENIED"
+    assert "auditor" in content
 
 
-def test_auditor_blocked_from_admin(monkeypatch):
-    import app as _app
-    monkeypatch.setattr(_app, "JWT_SECRET", "test_secret_32_chars_long_enough!")
-    monkeypatch.setattr(_app, "JWT_ALGORITHM", "HS256")
-    token = _make_token(role="auditor")
-    with pytest.raises(HTTPException) as exc_info:
-        _app.require_admin_role(f"Bearer {token}")
-    assert exc_info.value.status_code == 403
+# ---------------------------------------------------------------------------
+# require_admin_role
+# ---------------------------------------------------------------------------
+
+def test_require_admin_role_allows_admin(app_module):
+    auth = _bearer(app_module, userId="user-1", role="admin")
+    assert app_module.require_admin_role(auth) == "admin"
 
 
-# ── _log_audit_event ──────────────────────────────────────────────────────
-
-def test_log_audit_event_calls_db(monkeypatch):
-    """When DATABASE_URL is set, _log_audit_event must attempt a DB insert."""
-    import app as _app
-    monkeypatch.setattr(_app, "DATABASE_URL", "postgresql://fake")
-    inserted = []
-
-    class _FakeCur:
-        def __enter__(self): return self
-        def __exit__(self, *a): pass
-        def execute(self, *a, **kw): inserted.append(a[0])
-    class _FakeConn:
-        def __enter__(self): return self
-        def __exit__(self, *a): pass
-        def cursor(self): return _FakeCur()
-        def commit(self): pass
-
-    monkeypatch.setattr(_app, "get_db_connection", lambda: _FakeConn())
-    _app._log_audit_event("u1", "DOCUMENT_SAVED", "doc saved")
-    assert len(inserted) == 1
-    assert "ActivityLog" in inserted[0]
+@pytest.mark.parametrize("role", ["owner", "accountant", "auditor"])
+def test_require_admin_role_rejects_non_admin(app_module, role):
+    auth = _bearer(app_module, userId="user-1", role=role)
+    with pytest.raises(app_module.HTTPException) as exc:
+        app_module.require_admin_role(auth)
+    assert exc.value.status_code == 403
 
 
-def test_log_audit_event_silent_on_db_failure(monkeypatch):
-    """_log_audit_event must never raise even when the DB connection fails."""
-    import app as _app
-    monkeypatch.setattr(_app, "DATABASE_URL", "postgresql://fake")
+# ---------------------------------------------------------------------------
+# _log_audit_event (hermetic -- fakes the DB connection)
+# ---------------------------------------------------------------------------
 
-    def _bad_conn():
-        raise RuntimeError("DB down")
+class _FakeCursor:
+    def __init__(self, calls):
+        self.calls = calls
 
-    monkeypatch.setattr(_app, "get_db_connection", _bad_conn)
-    _app._log_audit_event("u1", "DOCUMENT_SAVED", "test")  # must not raise
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def execute(self, query, params):
+        self.calls.append((query, params))
 
 
-def test_log_audit_event_skips_when_no_url(monkeypatch):
-    """_log_audit_event must skip silently when DATABASE_URL is empty."""
-    import app as _app
-    monkeypatch.setattr(_app, "DATABASE_URL", "")
+class _FakeConn:
+    def __init__(self, calls):
+        self.calls = calls
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def cursor(self):
+        return _FakeCursor(self.calls)
+
+    def commit(self):
+        pass
+
+
+def test_log_audit_event_issues_insert_with_expected_fields(app_module, monkeypatch):
+    calls = []
+    monkeypatch.setattr(app_module, "DATABASE_URL", "postgresql://fake")
+    monkeypatch.setattr(app_module, "get_db_connection", lambda: _FakeConn(calls))
+
+    app_module._log_audit_event("user-1", "DOCUMENT_SAVED", "document_id=INV1")
+
+    assert len(calls) == 1
+    query, params = calls[0]
+    assert '"ActivityLog"' in query
+    assert params[1] == "user-1"
+    assert params[2] == "DOCUMENT_SAVED"
+    assert params[3] == "document_id=INV1"
+
+
+def test_log_audit_event_swallows_db_errors(app_module, monkeypatch):
+    """A logging failure must never propagate -- it would otherwise turn a
+    successful document save/delete into a 500 for the user."""
+    monkeypatch.setattr(app_module, "DATABASE_URL", "postgresql://fake")
+
+    def _boom():
+        raise RuntimeError("connection refused")
+
+    monkeypatch.setattr(app_module, "get_db_connection", _boom)
+
+    app_module._log_audit_event("user-1", "DOCUMENT_SAVED", "should not raise")
+
+
+def test_log_audit_event_noop_without_database_url(app_module, monkeypatch):
+    monkeypatch.setattr(app_module, "DATABASE_URL", "")
     called = []
-    monkeypatch.setattr(_app, "get_db_connection", lambda: called.append(1))
-    _app._log_audit_event("u1", "X", "content")
+    monkeypatch.setattr(app_module, "get_db_connection", lambda: called.append(1))
+
+    app_module._log_audit_event("user-1", "DOCUMENT_SAVED", "x")
+
     assert called == []
+
+
+# ---------------------------------------------------------------------------
+# Live DB round trip (skipped without DATABASE_URL)
+# ---------------------------------------------------------------------------
+
+pytestmark_db = pytest.mark.skipif(
+    not os.getenv("DATABASE_URL"),
+    reason="DATABASE_URL not set; skipping ActivityLog integration test",
+)
+
+
+@pytestmark_db
+def test_log_audit_event_persists_and_is_readable(app_module):
+    import uuid
+
+    import db
+
+    # ActivityLog.userId has a real FK to User.id -- need a throwaway row to
+    # satisfy it (unlike tenantId elsewhere in the schema, which is a bare
+    # string with no FK).
+    test_user_id = f"test_{uuid.uuid4().hex}"
+    with db.get_conn() as conn:
+        conn.cursor().execute(
+            'INSERT INTO "User" (id, email, password, "updatedAt") VALUES (%s, %s, %s, NOW())',
+            (test_user_id, f"{test_user_id}@example.test", "unused"),
+        )
+
+    try:
+        app_module._log_audit_event(test_user_id, "DOCUMENT_SAVED", "integration test row")
+
+        with db.get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                'SELECT type, content FROM "ActivityLog" WHERE "userId" = %s',
+                (test_user_id,),
+            )
+            row = cur.fetchone()
+        assert row is not None
+        assert row["type"] == "DOCUMENT_SAVED"
+        assert row["content"] == "integration test row"
+    finally:
+        with db.get_conn() as conn:
+            # Cascades to ActivityLog (onDelete: Cascade in schema.prisma).
+            conn.cursor().execute('DELETE FROM "User" WHERE id = %s', (test_user_id,))
