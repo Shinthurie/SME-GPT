@@ -28,6 +28,19 @@ export async function POST() {
       }
     }
 
+    // Log logout before clearing the token
+    const token = cookieStore.get("token")?.value;
+    if (token) {
+      try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET as string) as { userId: string };
+        await prisma.activityLog.create({
+          data: { userId: decoded.userId, type: "LOGOUT", content: "User logged out" },
+        });
+      } catch {
+        // expired / invalid token — still proceed with logout
+      }
+    }
+
     cookieStore.set("token", "", {
       httpOnly: true,
       expires: new Date(0),

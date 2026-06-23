@@ -46,17 +46,9 @@ export async function POST(req: Request) {
 
     console.log("PASSWORD UPDATED FOR:", user.email);
 
-    try {
-      await prisma.activityLog.create({
-        data: {
-          userId: user.id,
-          type: "PASSWORD_RESET",
-          content: `Password reset for ${user.email}`,
-        },
-      });
-    } catch (logError) {
-      console.error("PASSWORD_RESET AUDIT LOG ERROR:", logError);
-    }
+    await prisma.activityLog.create({
+      data: { userId: user.id, type: "PASSWORD_RESET", content: `Password reset for ${user.email}` },
+    }).catch(() => {});
 
     return NextResponse.json({
       success: true,
