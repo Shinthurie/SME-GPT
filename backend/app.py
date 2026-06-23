@@ -766,6 +766,7 @@ async def process_document_stream(
     user_id = get_current_user_id(authorization)
     require_write_role(authorization)
     content = await file.read()
+    file_size_kb = round(len(content) / 1024, 1)
     filename = file.filename or "document"
 
     ext = Path(filename).suffix.lower()
@@ -892,6 +893,7 @@ async def process_document_stream(
             arithmetic_validation = validate_arithmetic(extracted_json)
             extracted_json["arithmetic_validation"] = arithmetic_validation
             extracted_json["arithmetic_status"] = arithmetic_validation.get("status", "not_checked")
+            extracted_json["file_size_kb"] = file_size_kb
 
             recommended = arithmetic_validation.get("recommended", {}) or {}
             if extracted_json["arithmetic_status"] == "mismatch":
