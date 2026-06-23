@@ -51,10 +51,6 @@ export default function DerivationTrace({
   companyName,
 }: DerivationTraceProps) {
   const docCount = evidence.length;
-  const totalUsed = evidence.reduce(
-    (sum, e) => sum + Number(e.amount_used ?? e.final_total_amount ?? 0),
-    0
-  );
   const currencies = [...new Set(evidence.map((e) => e.currency || "LKR"))];
 
   // Derive arithmetic operation from questionType
@@ -82,7 +78,7 @@ export default function DerivationTrace({
           <StepBadge step={1} label="Scope Resolution" />
           <div className="ml-10 mt-2 rounded-[12px] border border-[#e2e8f0] bg-white px-4 py-3 text-[13px] text-[#334155]">
             Tenant-scoped query for company{" "}
-            <span className="font-semibold text-[#0f172a]">"{companyName}"</span>.{" "}
+            <span className="font-semibold text-[#0f172a]">&quot;{companyName}&quot;</span>.{" "}
             Found <span className="font-semibold">{docCount}</span> matching document
             {docCount !== 1 ? "s" : ""}.
           </div>
