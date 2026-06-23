@@ -6,6 +6,14 @@ datasource db {
   provider = "postgresql"
 }
 
+// Iteration 8 — RBAC: admin | accountant | owner | auditor (FR-32)
+enum UserRole {
+  owner
+  accountant
+  admin
+  auditor
+}
+
 model User {
   id                 String              @id @default(cuid())
   fullName           String?
@@ -24,6 +32,7 @@ model User {
   autoClassify       Boolean             @default(true)
   twoFactorEnabled   Boolean             @default(false)
   sessionVersion     Int                 @default(1)
+  role               UserRole            @default(owner)
   createdAt          DateTime            @default(now())
   updatedAt          DateTime            @updatedAt
   activityLogs       ActivityLog[]

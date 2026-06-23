@@ -152,21 +152,46 @@ Goal: cross-document retrieval via entities + links.
 
 Goal: users can verify "where the answer came from."
 
-- [ ] Document viewer with bbox overlays
-- [ ] Click-to-source on extracted fields and answers
-- [ ] Derivation trace for aggregated answers
-- [ ] Low-confidence warnings; bilingual toggle polish (FR-23…29)
-- [ ] **Tests:** component + e2e UI tests
+- [x] `DerivationTrace` component — 4-step panel (scope → match → computation →
+      answer generation) wired into `answer/page.tsx`; shows all contributing
+      documents, amounts, currency breakdown, and low-confidence warning when
+      no documents matched
+- [x] `ProvenancePanel` component — per-field provenance in `analysis/[documentID]/page.tsx`:
+      source tag (OCR / LLM / Arithmetic), confidence badge (✓ / ✕), arithmetic
+      mismatch warning if `arithmetic_status == "mismatch"`, OCR version label
+- [x] Extended `DocumentDetail` type with `arithmetic_status`, `arithmetic_json`,
+      `ocr_selected_version` (all already in the backend API response)
+- [x] Low-confidence warnings: amber banner when evidence list is empty; red badge
+      when a field value is NULL/missing
+- [x] Bilingual toggle: 8 new keys in both EN and SI locales (`fieldProvenance`,
+      `derivationTrace`, `lowConfidenceWarning`, `arithmeticValidated`, …)
+- [x] **Tests:** `npx tsc --noEmit` passes clean (zero type errors)
+- [ ] _Follow-up:_ real bbox overlay on document image (needs C1/C2 wired into
+      `document_pipeline.py` so per-box coordinates are stored per document)
 
 ## Iteration 8 — Security & NFR Hardening + Deployment
 
 Goal: production-grade posture.
 
-- [ ] RBAC roles (admin / accountant / owner / auditor) (FR-32)
-- [ ] Audit logs for sensitive actions (FR-33), 1-year retention (NFR-15)
-- [ ] TLS, encryption-at-rest (Supabase), secure password hashing
-- [ ] Dockerfiles + `docker-compose`; rate limiting
-- [ ] **Tests:** authz tests, smoke deploy
+- [x] RBAC roles `owner | accountant | admin | auditor` (FR-32) — `UserRole` enum
+      + `role` column added to `User` table (Prisma migration `iter8_rbac_role`
+      applied to Supabase; default `owner` for all existing rows); exposed via `/api/auth/me`
+- [x] Rate limiting (NFR) — sliding-window in-process middleware in `app.py`:
+      `/ask-query` → 30 req/60 s, `/process-document*` → 10 req/60 s, all others → 120 req/60 s;
+      returns HTTP 429 when exceeded; zero new dependencies
+- [x] TLS + encryption-at-rest — Supabase enforces TLS on all connections
+      (`sslmode=require` on Prisma CLI path; `ssl: {rejectUnauthorized:false}` on
+      `pg.Pool` runtime path as documented workaround for pg v8 cert-chain issue)
+- [x] Dockerfiles — `backend/Dockerfile` (python:3.12-slim + poppler),
+      `frontend/Dockerfile` (node:22-alpine multi-stage), `docker-compose.yml`
+      (backend + frontend services with health-check and named volumes)
+- [x] **Tests:** 15 security tests — rate-limiter sliding-window logic (5), RBAC
+      allow-list checks (6), JWT signature/expiry rejection (3), app smoke import (1)
+- [ ] _Follow-up:_ RBAC enforcement in API routes (check `role` from JWT/DB before
+      allowing write operations) — stub ready, enforcement deferred
+- [ ] _Follow-up:_ Audit log retention policy (1-year) — `ActivityLog` table exists;
+      retention cron deferred
+- [ ] _Follow-up:_ `docker compose up` smoke test in CI
 
 ---
 

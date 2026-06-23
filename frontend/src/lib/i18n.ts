@@ -130,6 +130,16 @@ export const ui = {
     sessionManagement: "Session Management",
     signOut: "Sign Out from SME-GPT",
     auditFooter: "AUDIT LOG: ACTIVE • ISO 27001 COMPLIANT",
+
+    // Iteration 7 — Explainability UI
+    fieldProvenance: "Field Provenance",
+    derivationTrace: "Derivation Trace",
+    lowConfidenceWarning: "Low confidence — verify this field",
+    arithmeticValidated: "Arithmetic Validated",
+    ocrExtracted: "OCR Extracted",
+    llmExtracted: "LLM Extracted",
+    provenanceLegend: "Source key",
+    howAnswerComputed: "How This Answer Was Computed",
   },
 
   si: {
@@ -248,5 +258,15 @@ export const ui = {
     sessionManagement: "සැසි කළමනාකරණය",
     signOut: "SME-GPT වෙතින් පිටවන්න",
     auditFooter: "AUDIT LOG: ACTIVE • ISO 27001 COMPLIANT",
+
+    // Iteration 7 — Explainability UI
+    fieldProvenance: "ක්ෂේත්‍ර සාදරකරණය",
+    derivationTrace: "ව්‍යුත්පාදන සොයාගැනීම",
+    lowConfidenceWarning: "අඩු විශ්වාසය — මෙම ක්ෂේත්‍රය සත්‍යාපනය කරන්න",
+    arithmeticValidated: "අංකගණිත සත්‍යාපිතයි",
+    ocrExtracted: "OCR වලින් ලබාගත්",
+    llmExtracted: "LLM වලින් ලබාගත්",
+    provenanceLegend: "ප්‍රභව යතුර",
+    howAnswerComputed: "මෙම පිළිතුර ගණනය කළ ආකාරය",
   },
 };
