@@ -168,6 +168,9 @@ export default function ProfilePage() {
   const [message, setMessage] = useState("");
   const [isEditing, setIsEditing] = useState(false);
   const [queryCount, setQueryCount] = useState<number | null>(null);
+  const [exporting, setExporting] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   useEffect(() => {
     const load = async () => {
@@ -293,6 +296,62 @@ export default function ProfilePage() {
     sessionStorage.removeItem("query_result");
     sessionStorage.removeItem("selected_query_history");
     router.push("/login");
+  };
+
+  const handleExportData = async () => {
+    setExporting(true);
+    setMessage("");
+    try {
+      const token = getStoredToken();
+      const res = await fetch(`${BACKEND_URL}/user/export`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        setMessage(data.message || "Failed to export data");
+        return;
+      }
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `sme-gpt-export-${session?.id || "user"}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      setMessage("Something went wrong while exporting your data");
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const handleDeleteAccount = async () => {
+    setDeleting(true);
+    setMessage("");
+    try {
+      const token = getStoredToken();
+      const [backendRes, frontendRes] = await Promise.all([
+        fetch(`${BACKEND_URL}/user/account`, {
+          method: "DELETE",
+          headers: { Authorization: `Bearer ${token}` },
+        }),
+        fetch("/api/user/delete", { method: "DELETE" }),
+      ]);
+
+      if (!frontendRes.ok || !backendRes.ok) {
+        setMessage("Failed to fully delete account. Please try again or contact support.");
+        return;
+      }
+
+      localStorage.removeItem("token");
+      sessionStorage.clear();
+      router.push("/login");
+    } catch {
+      setMessage("Something went wrong while deleting your account");
+    } finally {
+      setDeleting(false);
+      setConfirmDelete(false);
+    }
   };
 
   if (!session || loading) return null;
@@ -518,6 +577,61 @@ export default function ProfilePage() {
               onClick={() => router.push("/session-management")}
               right={<span className="material-symbols-outlined text-[var(--text-3)]">chevron_right</span>}
             />
+          </Card>
+
+          {/* ── Danger Zone (GDPR export/delete) ───────────────── */}
+          <SectionHeader icon="warning" title="Danger Zone" danger />
+          <Card>
+            <ActionRow
+              icon="download"
+              title="Export My Data"
+              subtitle="Download all your documents and query history as JSON"
+              iconBg="rgba(220,38,38,0.1)"
+              iconColor="#dc2626"
+              onClick={handleExportData}
+              right={
+                exporting ? (
+                  <span className="text-[12px] text-[var(--text-3)]">Exporting…</span>
+                ) : (
+                  <span className="material-symbols-outlined text-[var(--text-3)]">chevron_right</span>
+                )
+              }
+            />
+            <Divider />
+            {!confirmDelete ? (
+              <ActionRow
+                icon="delete_forever"
+                title="Delete Account"
+                subtitle="Permanently delete your account and all associated data"
+                iconBg="rgba(220,38,38,0.1)"
+                iconColor="#dc2626"
+                onClick={() => setConfirmDelete(true)}
+                right={<span className="material-symbols-outlined text-[var(--text-3)]">chevron_right</span>}
+              />
+            ) : (
+              <div className="px-5 py-4">
+                <p className="mb-3 text-[13px] font-medium text-[var(--text-1)]">
+                  This permanently deletes your account, documents, and query history. This cannot be undone.
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setConfirmDelete(false)}
+                    className="rounded-xl px-4 py-2 text-[13px] font-semibold transition hover:bg-[var(--surface-2)]"
+                    style={{ border: "1px solid var(--border)", color: "var(--text-2)" }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleDeleteAccount}
+                    disabled={deleting}
+                    className="rounded-xl px-4 py-2 text-[13px] font-bold text-white transition hover:opacity-90 disabled:opacity-60"
+                    style={{ background: "#dc2626" }}
+                  >
+                    {deleting ? "Deleting…" : "Confirm Delete"}
+                  </button>
+                </div>
+              </div>
+            )}
           </Card>
 
           {message && (
