@@ -7,6 +7,7 @@ import threading
 import time
 import uuid
 from collections import defaultdict
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from copy import deepcopy
 from pathlib import Path
@@ -150,10 +151,30 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
 # =========================
 # DB HELPERS
 # =========================
+@contextmanager
 def get_db_connection():
+    """Yield a psycopg connection that commits on success, rolls back on error,
+    and is always closed — safe with Supabase PgBouncer (transaction mode).
+
+    Two critical settings vs the old bare psycopg.connect() call:
+    - prepare_threshold=None  → disables server-side prepared statements which
+      PgBouncer in transaction mode resets between client calls, causing
+      DuplicatePreparedStatement errors and exhausting the connection pool.
+    - explicit conn.close()   → old code used the connection as a context
+      manager which only commits/rolls back but never closes, leaking one
+      Supabase connection per API call until GC eventually collected them.
+    """
     if not DATABASE_URL:
         raise RuntimeError("DATABASE_URL is not set.")
-    return psycopg.connect(DATABASE_URL)
+    conn = psycopg.connect(DATABASE_URL, prepare_threshold=None)
+    try:
+        yield conn
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 
 def ensure_query_history_table():
