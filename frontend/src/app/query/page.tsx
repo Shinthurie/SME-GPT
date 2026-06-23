@@ -87,6 +87,12 @@ export default function QueryPage() {
               Back
             </button>
             <div className="flex items-center gap-2">
+              <span
+                className="rounded-lg px-3 py-1 text-[10px] font-bold uppercase tracking-wider"
+                style={{ background: "var(--brand-tint)", color: "var(--brand-mid)" }}
+              >
+                Document AI
+              </span>
               <ThemeToggle />
               <LanguageSwitcher />
             </div>
@@ -96,7 +102,7 @@ export default function QueryPage() {
             {t.askQuestion}
           </h1>
           <p className="mt-1.5 text-[13px] leading-6 text-[var(--text-2)]">
-            Ask questions using only data from your saved financial documents.
+            Ask questions about your invoices, delivery notes, or purchase orders in English or Sinhala.
           </p>
 
           {/* Company context */}
@@ -132,11 +138,27 @@ export default function QueryPage() {
               className="min-h-[120px] w-full resize-none overflow-y-auto bg-transparent px-5 py-5 text-[17px] text-[var(--text-1)] outline-none placeholder:text-[var(--text-3)]"
             />
             <div
-              className="flex items-center justify-between px-5 py-3 text-[12px] text-[var(--text-3)]"
+              className="flex items-center justify-between px-5 py-3"
               style={{ borderTop: "1px solid var(--border)" }}
             >
-              <span>Source: your saved documents only</span>
-              <span>Explainable AI enabled</span>
+              <div className="flex items-center gap-4">
+                <button title="Attach document" className="transition hover:opacity-70" style={{ color: "var(--text-3)" }}>
+                  <span className="material-symbols-outlined text-[20px]">attach_file</span>
+                </button>
+                <button title="Voice input" className="transition hover:opacity-70" style={{ color: "var(--text-3)" }}>
+                  <span className="material-symbols-outlined text-[20px]">mic</span>
+                </button>
+                <button title="Auto-translate" className="transition hover:opacity-70" style={{ color: "var(--text-3)" }}>
+                  <span className="material-symbols-outlined text-[20px]">g_translate</span>
+                </button>
+              </div>
+              <span
+                className="flex items-center gap-1 text-[11px] font-semibold"
+                style={{ color: "var(--brand-mid)" }}
+              >
+                <span className="material-symbols-outlined text-[14px]">radio_button_checked</span>
+                Auto-Detection active
+              </span>
             </div>
           </div>
 
@@ -167,6 +189,26 @@ export default function QueryPage() {
               </>
             )}
           </button>
+          {/* OCR / NLP / XAI pipeline indicator */}
+          <div className="mt-6 flex items-center justify-center gap-6">
+            {[
+              { icon: "document_scanner", label: "OCR" },
+              { icon: "psychology", label: "NLP" },
+              { icon: "explain", label: "XAI" },
+            ].map(({ icon, label }) => (
+              <div key={label} className="flex flex-col items-center gap-1">
+                <div
+                  className="flex h-10 w-10 items-center justify-center rounded-xl"
+                  style={{ background: "var(--surface)", border: "1px solid var(--border)" }}
+                >
+                  <span className="material-symbols-outlined text-[18px]" style={{ color: "var(--brand-mid)" }}>
+                    {icon}
+                  </span>
+                </div>
+                <span className="text-[10px] font-bold text-[var(--text-3)]">{label}</span>
+              </div>
+            ))}
+          </div>
         </main>
 
         <BottomNav />

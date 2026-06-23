@@ -79,6 +79,7 @@ export default function UploadPage() {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [lang, setLang] = useState<AppLanguage>("en");
+  const [ocrLang, setOcrLang] = useState<"en" | "si">("en");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -129,6 +130,7 @@ export default function UploadPage() {
     try {
       const fd = new FormData();
       fd.append("file", selectedFile);
+      fd.append("ocr_language", ocrLang);
       const res = await fetch(`${BACKEND_URL}/process-document-stream`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
@@ -249,6 +251,32 @@ export default function UploadPage() {
           </h1>
           <p className="mt-1.5 text-[13px] leading-6 text-[var(--text-2)]">{t.uploadSubtitle}</p>
 
+          {/* OCR Language Engine selector */}
+          <div className="mt-5">
+            <p className="mb-2 text-[11px] font-bold uppercase tracking-[0.1em] text-[var(--text-3)]">
+              OCR Language Engine
+            </p>
+            <div className="flex gap-2">
+              {(["en", "si"] as const).map((l) => (
+                <button
+                  key={l}
+                  onClick={() => setOcrLang(l)}
+                  className="flex items-center gap-2 rounded-xl px-5 py-2.5 text-[13px] font-semibold transition"
+                  style={
+                    ocrLang === l
+                      ? { background: "var(--brand)", color: "#fff", boxShadow: "0 2px 8px var(--brand-ring)" }
+                      : { background: "var(--surface)", border: "1px solid var(--border)", color: "var(--text-2)" }
+                  }
+                >
+                  <span className="material-symbols-outlined text-[16px]">
+                    {l === "en" ? "language" : "translate"}
+                  </span>
+                  {l === "en" ? "English" : "Sinhala"}
+                </button>
+              ))}
+            </div>
+          </div>
+
           <input
             ref={fileInputRef} type="file"
             accept=".pdf,.png,.jpg,.jpeg,.webp"
@@ -363,6 +391,20 @@ export default function UploadPage() {
             </div>
           </div>
 
+          {/* Enterprise Security banner */}
+          <div
+            className="mt-5 flex items-center gap-3 rounded-xl px-4 py-3"
+            style={{ background: "rgba(26,53,96,0.06)", border: "1px solid rgba(26,53,96,0.12)" }}
+          >
+            <span className="material-symbols-outlined text-[18px]" style={{ color: "var(--brand)" }}>
+              shield
+            </span>
+            <p className="text-[12px] text-[var(--text-2)]">
+              <span className="font-bold" style={{ color: "var(--brand)" }}>Enterprise Security:</span>{" "}
+              All data is processed using AES-256 encryption. Our bilingual OCR system is optimised for SME document formats.
+            </p>
+          </div>
+
           {error && (
             <div className="mt-5 rounded-xl px-4 py-3 text-[13px] text-red-600"
               style={{ background: "rgba(220,38,38,0.08)", border: "1px solid rgba(220,38,38,0.2)" }}>
@@ -386,8 +428,8 @@ export default function UploadPage() {
             {isProcessing
               ? stageMessage || "Processing…"
               : preview
-              ? "Processing Done ✓"
-              : t.startProcessing}
+              ? "Extraction Done ✓"
+              : "Begin Extraction"}
           </button>
 
           {/* Preview */}
