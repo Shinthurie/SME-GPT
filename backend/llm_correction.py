@@ -228,6 +228,92 @@ def strip_llm_boilerplate(text: str) -> str:
     return text.strip()
 
 
+# ── Iteration 2: numeric safeguard + per-box correction ──────────────────────
+
+def extract_digit_sequences(text: str) -> list:
+    """Return all digit-only runs in order — used to verify numeric immutability."""
+    if not isinstance(text, str):
+        return []
+    return re.findall(r'\d+', text)
+
+
+def safe_correct(original: str, corrected: str) -> str:
+    """Return corrected text only if digit sequences are unchanged; else return original.
+
+    Research §9.2: a correction that alters any number is always rejected so that
+    amounts, dates, IDs, and quantities are never silently modified by the LLM.
+    """
+    if not isinstance(original, str):
+        return original
+    if not isinstance(corrected, str):
+        return original
+    if extract_digit_sequences(original) != extract_digit_sequences(corrected):
+        return original
+    return corrected
+
+
+def correct_box(box: dict) -> dict:
+    """Apply safe dictionary correction to one OCR text_line box.
+
+    Returns a new dict with the corrected text and provenance fields:
+      text          — corrected text (or original if digits would change)
+      bbox          — from original box
+      confidence    — from original box
+      locked_digits — digit sequences extracted from the original text
+      source        — 'dict' if dictionary correction changed anything, else 'original'
+      polygon       — from original box (pass-through)
+    """
+    text = box.get("text", "") or ""
+    locked_digits = extract_digit_sequences(text)
+
+    dict_corrected = dictionary_correct_text(text)
+    final_text = safe_correct(text, dict_corrected)
+
+    return {
+        "text": final_text,
+        "bbox": box.get("bbox"),
+        "confidence": box.get("confidence"),
+        "locked_digits": locked_digits,
+        "source": "dict" if final_text != text else "original",
+        "polygon": box.get("polygon"),
+    }
+
+
+def correct_boxes_for_page(text_lines: list) -> list:
+    """Apply box-level safe correction to all text lines of a page."""
+    return [correct_box(b) for b in (text_lines or [])]
+
+
+def _edit_distance(a: str, b: str) -> int:
+    n = len(b)
+    dp = list(range(n + 1))
+    for i, ca in enumerate(a, 1):
+        prev, dp[0] = dp[0], i
+        for j, cb in enumerate(b, 1):
+            prev, dp[j] = dp[j], min(prev + (ca != cb), dp[j] + 1, dp[j - 1] + 1)
+    return dp[n]
+
+
+def compute_cer(original: str, corrected: str) -> float:
+    """Character Error Rate = edit_distance / len(original). 0.0 is perfect."""
+    if not original:
+        return 0.0
+    return round(_edit_distance(original, corrected) / len(original), 4)
+
+
+def compute_nar(boxes: list) -> float:
+    """Numeric Accuracy Rate = fraction of boxes where digit sequences are preserved."""
+    if not boxes:
+        return 1.0
+    preserved = sum(
+        1 for b in boxes
+        if extract_digit_sequences(b.get("text", "")) == b.get("locked_digits", [])
+    )
+    return round(preserved / len(boxes), 4)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+
 def correct_english_token_with_symspell(word: str) -> str:
     if not word:
         return word
