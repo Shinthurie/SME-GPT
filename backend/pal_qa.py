@@ -30,14 +30,22 @@ SOURCE = "FinancialDocument + LineItem (Postgres)"
 _NON_ARITHMETIC_INTENTS = {"invoice_list", "receipt_list", "po_list", "dn_list"}
 
 
-def _legacy_answer(question: str, company_name: str, user_id: str, *, audit_extra: dict | None = None) -> dict:
+def _legacy_answer(
+    question: str,
+    company_name: str,
+    user_id: str,
+    *,
+    audit_extra: dict | None = None,
+    require_provenance: bool = True,
+) -> dict:
     analysis_result = dt.analyze_financial_query(question=question, company_name=company_name, user_id=user_id)
     evidence = analysis_result.get("evidence", [])
 
-    # FR-22: Only answer when provenance is available.  If the data layer found
-    # no grounding evidence at all, refuse rather than generating a potentially
-    # hallucinated answer via the LLM.
-    if not evidence:
+    # FR-22: Only answer when provenance is available for arithmetic/reasoning queries.
+    # Listing intents (invoice_list etc.) have a valid "no results found" answer that is
+    # NOT a hallucination — they simply report an empty set.  require_provenance=False is
+    # set by the _NON_ARITHMETIC_INTENTS path for exactly this reason.
+    if require_provenance and not evidence:
         refusal = (
             "I could not find any documents related to your query for the given company. "
             "Please upload relevant invoices or purchase orders first, or try a different company name."
@@ -78,7 +86,8 @@ def _empty_scope_answer(message: str) -> dict:
 def answer_financial_question(question: str, company_name: str, user_id: str) -> dict:
     question_type = dt.route_question(question)
     if question_type in _NON_ARITHMETIC_INTENTS:
-        return _legacy_answer(question, company_name, user_id)
+        # Listing queries report an empty set legitimately — don't apply FR-22 refusal.
+        return _legacy_answer(question, company_name, user_id, require_provenance=False)
 
     # Iteration 15 — FR-19: hybrid RAG + SQL scope; degrades silently to SQL-only
     documents_df, scope_error = resolve_scope_with_rag(question, company_name, user_id)
