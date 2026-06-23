@@ -135,11 +135,18 @@ Goal: hallucination-free financial answers.
 
 Goal: cross-document retrieval via entities + links.
 
-- [ ] Normalization (vendor/ref) + conservative fuzzy aliasing (research §7)
-- [ ] Edge creation with evidence JSON (page/bbox/chunk_id)
-- [ ] Query-time APIs: `expand_related_docs`, `filter_docs`
-- [ ] Wire into C3 scope resolver
-- [ ] **Tests:** cross-document recall on linked queries (e.g. "Did we pay for PO-101?")
+- [x] Normalization (vendor/ref) + conservative fuzzy aliasing (research §7) —
+      `normalize_entity_name` (corp-suffix stripping, punctuation removal) + `is_fuzzy_match`
+      (Jaccard ≥ 0.8 OR edit-distance ≤ 2 for short names)
+- [x] Edge creation with evidence JSON — `index_document()` upserts Entity + EntityAlias +
+      DocLink (`vendor_entity`, `customer_entity`, `order_ref`); idempotent
+- [x] Query-time APIs: `expand_related_docs` (entity-peer + order_ref graph traversal),
+      `filter_docs_by_entity` (canonical + LIKE alias lookup)
+- [x] Wire into C3 scope resolver — `pal_scope.resolve_scope_with_c4()` extends
+      `resolve_scope()` with graph expansion; degrades silently to SQL-only on error
+- [x] **Tests:** 25 tests — normalization corpus, fuzzy-match coverage, graceful-degrade
+      regression, DB integration (idempotency, entity+alias creation, vendor-peer expansion,
+      canonical/raw-alias filter)
 
 ## Iteration 7 — Explainability UI + Provenance Highlighting
 

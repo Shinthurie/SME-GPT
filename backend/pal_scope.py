@@ -14,8 +14,9 @@ validator, and executor only consume canonical-field row dicts and don't
 care where they came from, so swapping in chunk-based retrieval later is a
 contained change to this module alone.
 
-There's also no C4 graph expansion yet (docs/ROADMAP.md Iteration 6), so
-scope resolution here is the SQL part only: tenant + company-name match.
+Iteration 6: `resolve_scope_with_c4` extends `resolve_scope` with C4 graph
+expansion (entity_index.expand_related_docs) to find cross-document links
+(e.g. a PO linked to its invoice via a shared order_id or vendor entity).
 """
 from __future__ import annotations
 
@@ -37,6 +38,38 @@ def resolve_scope(company_name: str, user_id: str) -> tuple[pd.DataFrame, str | 
         return company_df, f"No records found for company '{company_name}' under the current user."
 
     return company_df, None
+
+
+def resolve_scope_with_c4(company_name: str, user_id: str) -> tuple[pd.DataFrame, str | None]:
+    """Tenant + company scoping + C4 graph expansion (Iteration 6).
+
+    Calls resolve_scope() first, then follows DocLink edges to pull in
+    additional documents that are linked to the initial result set (e.g.
+    a PO linked to its invoice via shared order_id, or documents from the
+    same vendor entity).  Degrades silently to the SQL-only path if the
+    entity index is unreachable.
+    """
+    df, err = resolve_scope(company_name, user_id)
+    if err or df.empty:
+        return df, err
+
+    try:
+        from entity_index import expand_related_docs
+        doc_ids = list(df["document_id"].dropna().astype(str).unique())
+        expanded: set[str] = set(doc_ids)
+
+        for did in doc_ids:
+            for related in expand_related_docs(did, user_id):
+                expanded.add(related)
+
+        if len(expanded) > len(doc_ids):
+            all_docs = dt.load_dataset(user_id=user_id)
+            user_docs = dt.filter_user_context(all_docs, user_id=user_id)
+            df = user_docs[user_docs["document_id"].astype(str).isin(expanded)].copy()
+    except Exception:
+        pass  # degrade to SQL-only scope if entity index is unavailable
+
+    return df, None
 
 
 def build_row_records(documents_df: pd.DataFrame) -> list[dict]:
