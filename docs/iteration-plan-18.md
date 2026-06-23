@@ -101,9 +101,20 @@
 
 ## Part B — Iteration 18 Plan
 
-**Goal:** Close the remaining 5 meaningful gaps. After Iter 18, SRS coverage reaches ~98%
-(the remaining ~2% are ops-level: HA/uptime, OCR speed SLA — no code can fix these without
-a different infrastructure).
+**Updated after post-Iter-17 code audit (2026-06-23).**  
+Two gaps were found that the original plan missed:
+
+- **GAP-18F (CRITICAL):** `entity_index.index_document()` exists and is complete, but is
+  NEVER called during document save. The `DocLink` table is always empty, so all
+  cross-document entity expansion in `pal_scope.resolve_scope_with_c4()` returns nothing.
+  Fix is a single function call in `confirm-save`.
+- **GAP-18G (SRS §2.6):** In-app help tooltips specified in SRS but not implemented.
+
+The **cross-document discrepancy detection** (SRS prime use case — comparing invoice vs PO
+line-item prices) depends on GAP-18F and is complex enough to be its own iteration (Iter 19).
+
+**Goal:** Close 7 gaps. After Iter 18, C4 entity linking is live and SRS coverage ~95%.
+Iter 19 adds the discrepancy detection use case on top of working DocLinks.
 
 ---
 
@@ -114,8 +125,10 @@ a different infrastructure).
 | GAP-18A | `load_all_records()` loads everything into memory | NFR-03 | S |
 | GAP-18B | 2FA toggle + session termination audit events | FR-33 | S |
 | GAP-18C | Field→chunk ID mapping for click-to-source in ProvenancePanel | FR-24, FR-26 | M |
-| GAP-18D | Dashboard "PENDING PROCESSING" counter + insight notification card | UI-D2 | S |
-| GAP-18E | Backfill `file_size_kb` + embeddings for pre-Iter9 documents | FR-14/15 | XS (script) |
+| GAP-18D | Dashboard "PENDING PROCESSING" + "READY" counts | UI-D2 | S |
+| GAP-18E | Backfill `file_size_kb` + embeddings for pre-Iter9 documents | FR-14/15 | XS |
+| GAP-18F | Wire `entity_index.index_document()` into `/confirm-save` | SRS §3.4/C4 | XS |
+| GAP-18G | In-app help tooltips (Upload OCR toggle, Query page) | SRS §2.6 | XS |
 
 ---
 
@@ -294,31 +307,169 @@ GAP-18D (dashboard)         — backend /dashboard-summary + frontend dashboard
 GAP-18E (backfill script)   — standalone script; depends on Iter 9 pipeline code (already done)
 ```
 
-All five gaps are **independent** and can be implemented in any order.
+All gaps are **independent** and can be implemented in any order.
+
+---
+
+### GAP-18F — Wire `entity_index.index_document()` into `/confirm-save` (SRS §3.4/C4)
+
+**Problem:** `backend/entity_index.py` has a fully built `index_document(doc, tenant_id)`
+function (Iteration 6). It creates `Entity`, `EntityAlias`, and `DocLink` rows so documents
+sharing the same vendor or order_id are linked. BUT it is **never called anywhere in app.py**.
+The `DocLink` table is always empty. `pal_scope.resolve_scope_with_c4()` calls
+`expand_related_docs()` which queries `DocLink` — and always gets nothing back, silently.
+
+**Fix — `backend/app.py` (in `/confirm-save`, after `upsert_chunk_embeddings`):**
+```python
+# C4 entity index — must run after document is fully saved
+try:
+    from entity_index import index_document as _index_doc
+    _index_doc(final_data, user_id)
+    print(f"[CONFIRM-SAVE] C4 entity index updated for {document_id}", flush=True)
+except Exception as _c4_err:
+    print(f"[CONFIRM-SAVE] C4 entity index failed (non-fatal): {_c4_err}", flush=True)
+```
+
+**New test:** `test_iter18_c4_wiring.py`
+- `test_index_document_called_on_save` — mock `index_document`; POST to `/confirm-save` with
+  a valid session; assert `index_document` was called with `(final_data, user_id)`.
+- `test_index_document_failure_does_not_block_save` — mock `index_document` to raise
+  `RuntimeError`; confirm `/confirm-save` still returns `{success: true}`.
+
+---
+
+### GAP-18G — In-app help tooltips (SRS §2.6)
+
+**Problem:** SRS §2.6 specifies "In-app tooltips and help icons" and "Error-message guidance
+for common issues (blurred images, corrupted PDF, etc.)". Nothing in the UI has a help
+icon today.
+
+**Fix — `frontend/src/app/upload/page.tsx`:**
+- Add a `?` icon button next to the OCR Language Engine label. On click, shows an inline
+  tooltip: "English: use for typed/printed documents. Sinhala: use for handwritten or
+  Sinhala-primary documents. The engine handles both automatically."
+- Add a help message to the error display when `error` contains "OCR returned empty text":
+  "Tip: ensure the document is not blurred or rotated more than 45°."
+
+**Fix — `frontend/src/app/query/page.tsx`:**
+- Add a `?` icon next to "Company Context" input. Tooltip: "Enter the company name as it
+  appears on your invoices to scope the search to your documents."
+
+**Size: XS**
 
 ---
 
 ### Exit criteria for Iteration 18
 
-1. `GET /documents?page=2&limit=10` queries DB directly; no `load_all_records` is called.
+1. `GET /documents?page=2&limit=10` queries DB directly; no Python-level slice used.
 2. Admin activity log shows `2FA_TOGGLED` after toggling 2FA on the profile page.
 3. Clicking a field label in ProvenancePanel highlights the correct bbox in BboxOverlayViewer.
-4. Dashboard shows Total / Pending / Ready counts.
+4. Dashboard shows Total / Pending Processing / Ready for Query counts.
 5. `backfill_iter9.py --dry-run` lists all documents missing chunks without erroring.
-6. `pytest tests/ -q` ≥ 265 passing (adds ~8 new tests).
-7. `tsc --noEmit` 0 errors.
+6. Upload a document → `DocLink` rows appear in DB for matching vendor/order_id.
+7. Help tooltip visible on Upload page OCR toggle.
+8. `pytest tests/ -q` ≥ 267 passing (adds ~10 new tests).
+9. `tsc --noEmit` 0 errors.
 
 ---
 
-## Part C — After Iteration 18
+## Part C — Iteration 19 Plan (Cross-Document Discrepancy)
 
-The only remaining items are **ops-level** (not resolvable by code in this prototype):
+**Goal:** Implement the SRS showcase use case: detect and display price discrepancies between
+a linked invoice and purchase order. Depends on GAP-18F (C4 entity wiring) being done first.
 
-| Item | Why not in code |
+**SRS reference:** UI-D6 mockup — "Check if unit price for 20kg Cement bags matches PO-882
+and highlight discrepancies in Sinhala." Answer shows "8.8% higher" with red highlighting.
+
+---
+
+### GAP-19A — Cross-document line-item price comparison (backend)
+
+**Problem:** When a user asks "does my invoice price match the PO?", PAL has no task type
+for comparing line-item unit prices across two linked documents.
+
+**Fix — `backend/data_tools.py`** (new function):
+```python
+def find_price_discrepancies(invoice_doc: dict, po_doc: dict) -> list[dict]:
+    """Compare line items between an invoice and its linked PO.
+    Returns list of {description, invoice_price, po_price, diff_pct, is_discrepancy}."""
+    discrepancies = []
+    inv_items = invoice_doc.get("items", [])
+    po_items  = po_doc.get("items", [])
+    for inv_item in inv_items:
+        desc = str(inv_item.get("description", "")).lower().strip()
+        inv_price = float(str(inv_item.get("unit_price", 0)).replace(",","") or 0)
+        for po_item in po_items:
+            po_desc  = str(po_item.get("description", "")).lower().strip()
+            po_price = float(str(po_item.get("unit_price", 0)).replace(",","") or 0)
+            if inv_price > 0 and po_price > 0 and _desc_similarity(desc, po_desc) >= 0.6:
+                diff_pct = ((inv_price - po_price) / po_price) * 100
+                discrepancies.append({
+                    "description": inv_item.get("description"),
+                    "invoice_price": inv_price, "po_price": po_price,
+                    "diff_pct": round(diff_pct, 1),
+                    "is_discrepancy": abs(diff_pct) > 2.0,
+                })
+    return discrepancies
+```
+
+**Fix — `backend/app.py` (`/ask-query` response):**
+- After PAL generates the answer, check if `evidence` contains both invoice + PO docs.
+- If so, call `find_price_discrepancies()` and include in the response payload as
+  `"discrepancies": [...]`.
+
+---
+
+### GAP-19B — Discrepancy display in Answer page (frontend)
+
+**Problem:** Answer page (UI-D6) should show the discrepancy block with red-highlighted
+prices and "8.8% HIGHER" indicator when discrepancies exist.
+
+**Fix — `frontend/src/app/answer/page.tsx`:**
+- Add `discrepancies?: DiscrepancyItem[]` to `QueryResult` type.
+- When `result.discrepancies?.length > 0`, render a "PRICE DISCREPANCY DETECTED" card
+  below the answer card:
+  ```
+  ┌──────────────────────────────────────────┐
+  │  ⚠ Price Discrepancy Found               │
+  │  Item: Portland Cement (20kg)            │
+  │  Invoice: LKR 2,450 · PO: LKR 2,250     │
+  │  +8.8% HIGHER  ──────────────────────── │
+  └──────────────────────────────────────────┘
+  ```
+- Use `diff_pct > 0` → red/orange colour; `diff_pct < 0` → green (invoice is cheaper).
+
+---
+
+### GAP-19C — Bilingual discrepancy answer (SRS UI-D6 Sinhala block)
+
+The SRS mockup shows the discrepancy explanation in both English and Sinhala. When
+`lang === "si"` and discrepancies exist, the PAL answer generator should include a
+Sinhala translation of the discrepancy summary. This can be added to the DeepSeek
+prompt in `pal_answer.py`.
+
+---
+
+### Exit criteria for Iteration 19
+
+1. Upload an invoice + a PO that share a vendor/order_id → `DocLink` exists between them.
+2. Ask "does the invoice price match PO-882?" → answer includes discrepancy data.
+3. Answer page shows "⚠ Price Discrepancy Found" card when discrepancy exists.
+4. `diff_pct` is correct to 1 decimal place.
+5. `pytest tests/ -q` ≥ 272 passing.
+6. `tsc --noEmit` 0 errors.
+
+---
+
+## Part D — After Iteration 19
+
+Remaining ops-level items (no code can fix these without different infrastructure):
+
+| Item | Why |
 |---|---|
-| NFR-05: 99% uptime | Requires HA infrastructure (load balancer, DB replicas). Out of prototype scope. |
-| NFR-01: OCR speed SLA | Colab OCR round-trip is 10–30s by nature. Would require a co-located GPU server. |
-| FR-30: TLS in prod | `nginx/generate-certs.sh` exists. Blocked on running it on the deployment server. |
-| FR-31: AES-256 documented | Supabase provides this. Add a line to README/profile page footer. |
+| NFR-05: 99% uptime | Requires HA (load balancer + DB replicas). Out of prototype scope. |
+| NFR-01: OCR speed SLA | Colab OCR is 10–30s by nature. Needs co-located GPU. |
+| FR-30: TLS in prod | `nginx/generate-certs.sh` exists; run on deployment server. |
+| FR-31: AES-256 note | Supabase provides this. Note in README + profile page already has "SME-GPT v3.1.0" footer. |
 
-These should be noted in the project handoff documentation rather than tracked as code tasks.
+**After Iter 19: SRS coverage ≈ 97%.** The remaining 3% is all infrastructure/ops.
