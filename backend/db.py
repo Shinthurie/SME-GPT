@@ -33,7 +33,7 @@ def get_database_url() -> str:
 @contextmanager
 def get_conn():
     """Yield a committed connection (rolls back on error). Rows as dicts."""
-    conn = psycopg.connect(get_database_url(), row_factory=dict_row)
+    conn = psycopg.connect(get_database_url(), row_factory=dict_row, prepare_threshold=None)
     try:
         yield conn
         conn.commit()

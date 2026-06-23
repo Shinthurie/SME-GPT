@@ -35,10 +35,7 @@ from pal_qa import answer_financial_question
 
 JWT_SECRET = os.getenv("JWT_SECRET", "your_super_secret_key_123")
 JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "postgresql://neondb_owner:npg_4PXZCgONkeL8@ep-proud-bird-a1wq695o.ap-southeast-1.aws.neon.tech/neondb?sslmode=require",
-)
+DATABASE_URL = os.getenv("DATABASE_URL", "")
 
 app = FastAPI(title="SME-GPT Financial Document Backend")
 
