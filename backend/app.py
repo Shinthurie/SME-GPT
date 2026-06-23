@@ -282,6 +282,15 @@ def clear_query_history_for_user(user_id: str):
 # =========================
 # AUTH HELPERS
 # =========================
+def _get_session_version(user_id: str) -> Optional[int]:
+    """Current `User.sessionVersion`, or None if the user no longer exists."""
+    with get_db_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute('SELECT "sessionVersion" FROM "User" WHERE id = %s', (str(user_id),))
+            row = cur.fetchone()
+    return row[0] if row else None
+
+
 def _decode_token(authorization: str | None) -> dict:
     if not authorization:
         raise HTTPException(status_code=401, detail="Missing Authorization header.")
@@ -292,11 +301,31 @@ def _decode_token(authorization: str | None) -> dict:
     token = authorization.replace("Bearer ", "").strip()
 
     try:
-        return jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token expired.")
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Invalid token.")
+
+    # Mirrors the frontend's getAuthenticatedUser() sessionVersion check
+    # (frontend/src/lib/auth-server.ts) so a password reset invalidates this
+    # token for the backend too, not just Next.js page guards -- otherwise a
+    # leaked Bearer token would keep working here for up to 7 days after a
+    # reset even though the cookie-based frontend session was invalidated.
+    # Only enforced when the token actually carries both claims (every
+    # current login path does); fails closed -- in doubt, deny.
+    user_id = payload.get("userId") or payload.get("id") or payload.get("sub")
+    token_session_version = payload.get("sessionVersion")
+    if user_id is not None and token_session_version is not None:
+        try:
+            current_version = _get_session_version(str(user_id))
+        except Exception as e:
+            print(f"[AUTH] session version check failed for user {user_id}: {e}", flush=True)
+            raise HTTPException(status_code=401, detail="Unable to verify session.")
+        if current_version is None or current_version != token_session_version:
+            raise HTTPException(status_code=401, detail="Session invalidated. Please log in again.")
+
+    return payload
 
 
 def get_current_user_id(authorization: str = Header(default=None)) -> str:

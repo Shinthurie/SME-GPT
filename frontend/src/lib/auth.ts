@@ -53,6 +53,19 @@ export async function getSession(): Promise<SessionUser | null> {
   if (!res.ok) return null;
 
   const data = await res.json();
+
+  // The httpOnly cookie (checked server-side by /api/auth/me) is the source
+  // of truth for whether you're logged in. localStorage is a separate copy
+  // used for direct Bearer-token calls to the FastAPI backend, and can be
+  // empty even with a valid cookie session (e.g. the login page redirects
+  // straight to /dashboard when the cookie is still valid, skipping the
+  // login form that would normally set it). Re-sync it here whenever the
+  // server hands back a token, so it never falls out of sync with the
+  // cookie that's actually authenticating you.
+  if (typeof window !== "undefined" && data.token) {
+    localStorage.setItem("token", data.token);
+  }
+
   const token =
     typeof window !== "undefined"
       ? localStorage.getItem("token") || sessionStorage.getItem("token") || ""

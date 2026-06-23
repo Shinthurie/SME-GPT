@@ -41,6 +41,12 @@ export async function POST(req: Request) {
         password: hashedPassword,
         resetToken: null,
         resetTokenExpiry: null,
+        // Invalidate every existing session/JWT (cookie or localStorage) --
+        // getAuthenticatedUser() rejects any token whose sessionVersion
+        // claim doesn't match the current value. Without this, resetting
+        // your password (e.g. because you suspected someone else had
+        // access) would leave their session logged in.
+        sessionVersion: { increment: 1 },
       },
     });
 

@@ -94,3 +94,38 @@ New tests cover:
 - Iteration 12 (Admin Panel + GDPR) can now build on `require_admin_role`.
 - Iteration 13's standardized error handler should also normalize the 401/403 shape from routes
   that check auth before their `try` block.
+
+## 6. Follow-up fix (same area, post-merge): session sync + invalidation
+
+Found while manually testing forgot-password → reset → log in:
+
+- **Bug:** the dashboard showed "Missing login token." The login page auto-redirects to
+  `/dashboard` whenever the `token` cookie is already valid (e.g. a 7-day-old cookie surviving a
+  password reset), skipping the login form entirely — and only the login form's submit handler
+  ever wrote the bearer token into `localStorage`. Cookie-based session (Next.js page guards) and
+  localStorage-based bearer token (direct FastAPI calls) could fall out of sync.
+  - **Fix:** `/api/auth/me` now also returns the cookie's token value; `getSession()`
+    (`frontend/src/lib/auth.ts`) re-syncs `localStorage` from it on every call. Since every
+    token-consuming page calls `getSession()` first, this self-heals regardless of which login path
+    (password, 2FA) set the cookie.
+- **Related gap:** password reset didn't invalidate existing sessions. `User.sessionVersion`
+  exists and is checked by the frontend's `getAuthenticatedUser()`, but `reset-password/route.ts`
+  never bumped it, and the **backend never checked it at all** — a leaked `localStorage` token
+  would keep working against FastAPI for up to 7 days after a reset even though the Next.js cookie
+  session was otherwise fine.
+  - **Fix:** `reset-password/route.ts` now does `sessionVersion: { increment: 1 }` in the same
+    update. `app.py::_decode_token` now looks up the user's current `sessionVersion` and rejects
+    (401, fail-closed on any DB error) any token whose claim doesn't match — mirrors
+    `auth-server.ts`'s existing check, so a reset invalidates a token everywhere, not just on
+    Next.js pages.
+  - Also added the `role` claim to `complete-login/route.ts`'s JWT (the 2FA path), which had been
+    missed when `login/route.ts` got it in the main Iteration 11 change.
+
+**Tests:** 6 new cases in `test_iter11_rbac_enforcement.py` (24 total) — matching/stale/missing-user
+`sessionVersion`, fail-closed on a DB error, skip-when-claim-absent, and a live round trip that
+bumps a real user's `sessionVersion` mid-test and confirms the previously-valid token is rejected.
+
+**Unrelated incident, same window:** a direct push to `main` re-implemented this entire iteration
+from scratch, with a duplicate `const token` declaration in `logout/route.ts` that failed CI's
+type check, and dropped the `RBAC_WRITE_DENIED` audit logging this iteration added. Reverted via
+`git revert` (clean, no conflicts) rather than force-pushing over it.
