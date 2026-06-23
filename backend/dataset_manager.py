@@ -51,6 +51,8 @@ DATASET_COLUMNS = [
     "arithmetic_status",
     "arithmetic_json",
     "ocr_selected_version",
+    "safe_boxes_json",
+    "spatial_chunks_json",
 ]
 
 # record key -> DB column (Prisma camelCase). items_json is handled separately.
@@ -81,6 +83,9 @@ RECORD_TO_DB = {
     "arithmetic_status": "arithmeticStatus",
     "arithmetic_json": "arithmeticJson",
     "ocr_selected_version": "ocrSelectedVersion",
+    # Iteration 9 — spatial blobs (stored as TEXT, not JSONB)
+    "safe_boxes_json": "safeboxJson",
+    "spatial_chunks_json": "spatialChunksJson",
 }
 
 MONEY_FIELDS = {"raw_total_amount", "final_total_amount", "payable_amount", "cash_return"}
@@ -257,6 +262,9 @@ def normalize_record(data: dict, user_id: str, force_generate_document_id: bool 
         "arithmetic_status": nullify_text(data.get("arithmetic_status", "not_checked")),
         "arithmetic_json": arithmetic_json if arithmetic_json.strip() else "NULL",
         "ocr_selected_version": nullify_text(data.get("ocr_selected_version", None)),
+        # Iteration 9 — spatial blobs (large TEXT strings; NULL until doc is confirmed)
+        "safe_boxes_json": nullify_text(data.get("safe_boxes_json", None)),
+        "spatial_chunks_json": nullify_text(data.get("spatial_chunks_json", None)),
     }
 
 
