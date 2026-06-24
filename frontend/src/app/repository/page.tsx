@@ -25,7 +25,7 @@ type RepoDocument = {
   file_size_kb?: number | null;
 };
 
-type TabType = "all" | "invoice" | "po" | "dn" | "receipt";
+type TabType = "all" | "invoice" | "po" | "dn" | "receipt" | "archived";
 
 function getAuthToken() {
   if (typeof window === "undefined") return "";
@@ -97,7 +97,14 @@ export default function RepositoryPage() {
   useEffect(() => { loadDocuments(); }, [router]);
 
   const filtered = useMemo(() => {
-    const byTab = tab === "all" ? documents : documents.filter((d) => d.document_type === tab);
+    let byTab: RepoDocument[];
+    if (tab === "archived") {
+      byTab = documents.filter((d) => String(d.status).toLowerCase() === "archived");
+    } else if (tab === "all") {
+      byTab = documents.filter((d) => String(d.status).toLowerCase() !== "archived");
+    } else {
+      byTab = documents.filter((d) => d.document_type === tab && String(d.status).toLowerCase() !== "archived");
+    }
     if (!searchQuery.trim()) return byTab;
     const q = searchQuery.toLowerCase();
     return byTab.filter(
@@ -110,9 +117,9 @@ export default function RepositoryPage() {
 
   const tabLabel = (v: TabType) => {
     if (lang === "si") {
-      return { all: "සියල්ල", invoice: "ඉන්වොයිස්", po: "PO", dn: "DN", receipt: "රිසිට්" }[v];
+      return { all: "සියල්ල", invoice: "ඉන්වොයිස්", po: "PO", dn: "DN", receipt: "රිසිට්", archived: "සංරක්ෂිත" }[v];
     }
-    return { all: "All", invoice: "Invoice", po: "PO", dn: "DN", receipt: "Receipt" }[v];
+    return { all: "All", invoice: "Invoice", po: "PO", dn: "DN", receipt: "Receipt", archived: "Archived" }[v];
   };
 
   const formatAmount = (item: RepoDocument) => {
@@ -190,7 +197,7 @@ export default function RepositoryPage() {
 
           {/* Tabs */}
           <div className="mb-5 flex flex-wrap gap-2">
-            {(["all", "invoice", "po", "dn", "receipt"] as TabType[]).map((v) => (
+            {(["all", "invoice", "po", "dn", "receipt", "archived"] as TabType[]).map((v) => (
               <button
                 key={v}
                 onClick={() => setTab(v)}
@@ -271,17 +278,11 @@ export default function RepositoryPage() {
                           </span>
                           <div className="flex items-center gap-3">
                             <button
-                              onClick={() => {
-                                if (archivingId === item.document_id) {
-                                  setArchivingId(null);
-                                } else {
-                                  setArchivingId(item.document_id);
-                                }
-                              }}
+                              onClick={() => setArchivingId(archivingId === item.document_id ? null : item.document_id)}
                               className="text-[12px] font-bold transition hover:opacity-75"
-                              style={{ color: "var(--text-3)" }}
+                              style={{ color: String(item.status).toLowerCase() === "archived" ? "var(--brand-mid)" : "var(--text-3)" }}
                             >
-                              ARCHIVE
+                              {String(item.status).toLowerCase() === "archived" ? "UNARCHIVE" : "ARCHIVE"}
                             </button>
                             <button
                               onClick={() => router.push(`/analysis/${item.document_id}`)}
@@ -296,9 +297,35 @@ export default function RepositoryPage() {
                         {archivingId === item.document_id && (
                           <div className="mt-3 rounded-xl px-3 py-2.5 text-[12px]"
                             style={{ background: "rgba(26,53,96,0.06)", border: "1px solid rgba(26,53,96,0.12)", color: "var(--text-2)" }}>
-                            <span className="font-semibold">Archive:</span> This feature is coming soon. Documents will be moved to a long-term archive and excluded from active queries.
-                            <button className="ml-3 font-bold" style={{ color: "var(--brand-mid)" }}
-                              onClick={() => setArchivingId(null)}>Dismiss</button>
+                            <span className="font-semibold">
+                              {String(item.status).toLowerCase() === "archived" ? "Restore document?" : "Archive this document?"}
+                            </span>{" "}
+                            {String(item.status).toLowerCase() === "archived"
+                              ? "It will reappear in your active documents."
+                              : "It will be hidden from active queries and moved to the Archived tab."}
+                            <div className="mt-2 flex gap-2">
+                              <button
+                                className="rounded-lg px-3 py-1 text-[11px] font-bold text-white transition hover:opacity-80"
+                                style={{ background: "var(--brand)" }}
+                                onClick={async () => {
+                                  const token = getAuthToken();
+                                  const newStatus = String(item.status).toLowerCase() === "archived" ? "ready" : "archived";
+                                  try {
+                                    await fetch(`${BACKEND_URL}/documents/${item.document_id}`, {
+                                      method: "PUT",
+                                      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+                                      body: JSON.stringify({ status: newStatus }),
+                                    });
+                                    setArchivingId(null);
+                                    loadDocuments();
+                                  } catch { setArchivingId(null); }
+                                }}
+                              >
+                                {String(item.status).toLowerCase() === "archived" ? "Restore" : "Archive"}
+                              </button>
+                              <button className="text-[11px] font-bold" style={{ color: "var(--text-3)" }}
+                                onClick={() => setArchivingId(null)}>Cancel</button>
+                            </div>
                           </div>
                         )}
                       </div>

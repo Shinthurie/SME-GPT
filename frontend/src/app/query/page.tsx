@@ -18,11 +18,14 @@ function getAuthToken() {
 export default function QueryPage() {
   const router = useRouter();
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [lang, setLang] = useState<AppLanguage>("en");
   const [companyName, setCompanyName] = useState("");
   const [question, setQuestion] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [attachedFile, setAttachedFile] = useState<string | null>(null);
+  const [isListening, setIsListening] = useState(false);
 
   useEffect(() => {
     setLang(getStoredLanguage());
@@ -37,6 +40,43 @@ export default function QueryPage() {
   }, [question]);
 
   const t = ui[lang];
+
+  const handleVoice = () => {
+    type SR = { new(): {
+      lang: string; interimResults: boolean; continuous: boolean;
+      onresult: ((e: { results: { [i: number]: { [j: number]: { transcript: string } } } }) => void) | null;
+      onend: (() => void) | null;
+      onerror: (() => void) | null;
+      start: () => void;
+    }};
+    const w = window as unknown as Record<string, unknown>;
+    const SRClass = (w.SpeechRecognition || w.webkitSpeechRecognition) as SR | undefined;
+    if (!SRClass) { setError("Voice input is not supported in this browser. Use Chrome or Edge."); return; }
+    const recognition = new SRClass();
+    recognition.lang = lang === "si" ? "si-LK" : "en-US";
+    recognition.interimResults = true;
+    recognition.continuous = false;
+    setIsListening(true);
+    recognition.onresult = (e) => {
+      const transcript = Array.from({ length: (e.results as unknown as ArrayLike<unknown>).length },
+        (_, i) => (e.results[i][0] as {transcript: string}).transcript).join("");
+      setQuestion(transcript);
+    };
+    recognition.onend = () => setIsListening(false);
+    recognition.onerror = () => { setIsListening(false); setError("Voice input failed. Please try again."); };
+    recognition.start();
+  };
+
+  const handleAttach = () => fileInputRef.current?.click();
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setAttachedFile(file.name);
+    // Append file context to question
+    setQuestion(prev => prev ? `${prev}\n[Attached document: ${file.name}]` : `[Attached document: ${file.name}]`);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
 
   const handleAsk = async () => {
     setError("");
@@ -105,6 +145,15 @@ export default function QueryPage() {
             Ask questions about your invoices, delivery notes, or purchase orders in English or Sinhala.
           </p>
 
+          {/* Hidden file input for attach */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".pdf,.png,.jpg,.jpeg,.webp"
+            className="hidden"
+            onChange={handleFileChange}
+          />
+
           {/* Company context */}
           <div
             className="mt-6 rounded-2xl p-5"
@@ -151,13 +200,30 @@ export default function QueryPage() {
               style={{ borderTop: "1px solid var(--border)" }}
             >
               <div className="flex items-center gap-4">
-                <button title="Attach document" className="transition hover:opacity-70" style={{ color: "var(--text-3)" }}>
+                <button
+                  onClick={handleAttach}
+                  title="Attach a document as context"
+                  className="transition hover:opacity-70"
+                  style={{ color: attachedFile ? "var(--brand-mid)" : "var(--text-3)" }}
+                >
                   <span className="material-symbols-outlined text-[20px]">attach_file</span>
                 </button>
-                <button title="Voice input" className="transition hover:opacity-70" style={{ color: "var(--text-3)" }}>
-                  <span className="material-symbols-outlined text-[20px]">mic</span>
+                <button
+                  onClick={handleVoice}
+                  title={isListening ? "Listening… speak now" : "Voice input"}
+                  className="transition hover:opacity-70"
+                  style={{ color: isListening ? "#dc2626" : "var(--text-3)" }}
+                >
+                  <span className="material-symbols-outlined text-[20px]">
+                    {isListening ? "stop_circle" : "mic"}
+                  </span>
                 </button>
-                <button title="Auto-translate" className="transition hover:opacity-70" style={{ color: "var(--text-3)" }}>
+                <button
+                  onClick={() => setQuestion(prev => prev)}
+                  title={`Language: ${lang === "si" ? "Sinhala" : "English"} (auto-detected)`}
+                  className="transition hover:opacity-70"
+                  style={{ color: "var(--brand-mid)" }}
+                >
                   <span className="material-symbols-outlined text-[20px]">g_translate</span>
                 </button>
               </div>
@@ -170,6 +236,26 @@ export default function QueryPage() {
               </span>
             </div>
           </div>
+
+          {attachedFile && (
+            <div className="mt-2 flex items-center gap-2 rounded-xl px-3 py-2 text-[12px]"
+              style={{ background: "var(--brand-tint)", color: "var(--brand-mid)" }}>
+              <span className="material-symbols-outlined text-[14px]">attach_file</span>
+              <span className="font-semibold">{attachedFile}</span>
+              <button onClick={() => { setAttachedFile(null); setQuestion(q => q.replace(/\n?\[Attached document:.*?\]/g, "").trim()); }}
+                className="ml-auto text-[var(--text-3)] hover:text-red-500">
+                <span className="material-symbols-outlined text-[14px]">close</span>
+              </button>
+            </div>
+          )}
+
+          {isListening && (
+            <div className="mt-2 flex items-center gap-2 rounded-xl px-3 py-2 text-[12px] text-red-600"
+              style={{ background: "rgba(220,38,38,0.06)", border: "1px solid rgba(220,38,38,0.2)" }}>
+              <span className="material-symbols-outlined text-[14px] animate-pulse">mic</span>
+              Listening… speak your question now
+            </div>
+          )}
 
           {error && (
             <div
@@ -193,7 +279,7 @@ export default function QueryPage() {
               </>
             ) : (
               <>
-                <span className="material-symbols-outlined text-[20px]">psychology</span>
+                <span className="material-symbols-outlined text-[20px]">search</span>
                 Ask Question
               </>
             )}
@@ -202,8 +288,8 @@ export default function QueryPage() {
           <div className="mt-6 flex items-center justify-center gap-6">
             {[
               { icon: "document_scanner", label: "OCR" },
-              { icon: "psychology", label: "NLP" },
-              { icon: "explain", label: "XAI" },
+              { icon: "chat",             label: "NLP" },
+              { icon: "lightbulb",        label: "XAI" },
             ].map(({ icon, label }) => (
               <div key={label} className="flex flex-col items-center gap-1">
                 <div

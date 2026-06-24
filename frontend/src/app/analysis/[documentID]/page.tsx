@@ -443,9 +443,17 @@ export default function AnalysisDetailPage() {
                     </span>
                     <span
                       className="rounded-lg px-3 py-1.5 text-[11px] font-bold"
-                      style={{ background: "rgba(22,163,74,0.08)", color: "#16a34a" }}
+                      style={
+                        target.arithmetic_status === "matched"
+                          ? { background: "rgba(22,163,74,0.08)", color: "#16a34a" }
+                          : target.arithmetic_status === "mismatch"
+                          ? { background: "rgba(220,38,38,0.08)", color: "#dc2626" }
+                          : { background: "rgba(100,116,139,0.08)", color: "#64748b" }
+                      }
                     >
-                      {target.arithmetic_status === "valid" ? "99% CONFIDENCE" : "OCR PROCESSED"}
+                      {target.arithmetic_status === "matched" ? "99% CONFIDENCE"
+                        : target.arithmetic_status === "mismatch" ? "VERIFY TOTALS"
+                        : "OCR PROCESSED"}
                     </span>
                   </div>
                 </div>
