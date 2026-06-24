@@ -291,7 +291,17 @@ export default function AnswerPage() {
               Adjust Total
             </button>
             <button
-              onClick={() => setNotifyOpen((p) => !p)}
+              onClick={() => {
+                const supplier = result.evidence?.[0]?.supplier_name || result.company_name || "";
+                const subject = encodeURIComponent(`Document Query: ${result.question}`);
+                const body = encodeURIComponent(
+                  `Dear ${supplier || "Supplier"},\n\n` +
+                  `We have the following query regarding our documents:\n\n` +
+                  `Question: ${result.question}\n\nAnswer: ${result.answer}\n\n` +
+                  `Please respond at your earliest convenience.\n\nRegards`
+                );
+                window.open(`mailto:?subject=${subject}&body=${body}`);
+              }}
               className="flex items-center justify-center gap-1.5 rounded-xl px-3 py-2.5 text-[12px] font-bold transition hover:opacity-80"
               style={{ background: "rgba(34,82,181,0.08)", color: "#2252b5", border: "1px solid rgba(34,82,181,0.18)" }}
             >
@@ -315,7 +325,20 @@ export default function AnswerPage() {
               Export
             </button>
             <button
-              onClick={() => setFlagged((p) => !p)}
+              onClick={() => {
+                const next = !flagged;
+                setFlagged(next);
+                try {
+                  const stored = JSON.parse(localStorage.getItem("flagged_queries") || "[]") as object[];
+                  if (next) {
+                    stored.push({ question: result.question, answer: result.answer, company: result.company_name, date: new Date().toISOString() });
+                  } else {
+                    const idx = stored.findIndex((f: unknown) => (f as {question:string}).question === result.question);
+                    if (idx !== -1) stored.splice(idx, 1);
+                  }
+                  localStorage.setItem("flagged_queries", JSON.stringify(stored));
+                } catch {}
+              }}
               className="flex items-center justify-center gap-1.5 rounded-xl px-3 py-2.5 text-[12px] font-bold transition hover:opacity-80"
               style={
                 flagged
@@ -328,17 +351,6 @@ export default function AnswerPage() {
             </button>
           </div>
 
-          {notifyOpen && (
-            <div className="mt-3 rounded-[14px] border border-slate-200 bg-white p-4 text-[13px] text-[#334155]">
-              <p className="font-semibold text-[#0f172a]">Notify Supplier</p>
-              <p className="mt-1 text-[#64748b]">
-                Compose a message to the supplier regarding discrepancies or payment status. (Email integration coming soon.)
-              </p>
-              <button onClick={() => setNotifyOpen(false)} className="mt-2 text-[12px] font-bold text-[#2563ff]">
-                Dismiss
-              </button>
-            </div>
-          )}
 
           {/* GAP-19B: Price discrepancy card (Iter 19 — SRS UI-D6 use case) */}
           {result.discrepancies && result.discrepancies.length > 0 && (
