@@ -7,6 +7,7 @@ import threading
 import time
 import uuid
 from collections import defaultdict
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from copy import deepcopy
 from pathlib import Path
@@ -150,10 +151,17 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
 # =========================
 # DB HELPERS
 # =========================
+@contextmanager
 def get_db_connection():
-    if not DATABASE_URL:
-        raise RuntimeError("DATABASE_URL is not set.")
-    return psycopg.connect(DATABASE_URL)
+    """Yield a pooled dict-row connection (commits on success, rolls back on error).
+
+    Delegates to db.get_conn() so all 20 call sites share one connection pool —
+    no new TCP+SSL handshake per API call once the pool is warm.
+    Note: rows are now dicts (use row["column"] not row[0]).
+    """
+    from db import get_conn as _pool_get_conn
+    with _pool_get_conn() as conn:
+        yield conn
 
 
 def ensure_query_history_table():
@@ -249,18 +257,20 @@ def load_query_history_for_user(user_id: str):
             cur.execute(query, (str(user_id),))
             rows = cur.fetchall()
 
+    cols = ["id","company_name","question","answer","explanation","metrics","evidence","source_file","created_at"]
     history = []
     for row in rows:
+        r = row if isinstance(row, dict) else dict(zip(cols, row))
         history.append({
-            "id": str(row[0]),
-            "company_name": row[1] or "",
-            "question": row[2] or "",
-            "answer": row[3] or "",
-            "explanation": row[4] or "",
-            "metrics": row[5] or {},
-            "evidence": row[6] or [],
-            "source_file": row[7] or "",
-            "created_at": row[8].isoformat() if row[8] else "",
+            "id": str(r["id"]),
+            "company_name": r["company_name"] or "",
+            "question": r["question"] or "",
+            "answer": r["answer"] or "",
+            "explanation": r["explanation"] or "",
+            "metrics": r["metrics"] or {},
+            "evidence": r["evidence"] or [],
+            "source_file": r["source_file"] or "",
+            "created_at": r["created_at"].isoformat() if r["created_at"] else "",
         })
     return history
 
@@ -281,16 +291,18 @@ def get_query_history_item_for_user(user_id: str, history_id: str):
     if not row:
         return None
 
+    cols = ["id","company_name","question","answer","explanation","metrics","evidence","source_file","created_at"]
+    r = row if isinstance(row, dict) else dict(zip(cols, row))
     return {
-        "id": str(row[0]),
-        "company_name": row[1] or "",
-        "question": row[2] or "",
-        "answer": row[3] or "",
-        "explanation": row[4] or "",
-        "metrics": row[5] or {},
-        "evidence": row[6] or [],
-        "source_file": row[7] or "",
-        "created_at": row[8].isoformat() if row[8] else "",
+        "id": str(r["id"]),
+        "company_name": r["company_name"] or "",
+        "question": r["question"] or "",
+        "answer": r["answer"] or "",
+        "explanation": r["explanation"] or "",
+        "metrics": r["metrics"] or {},
+        "evidence": r["evidence"] or [],
+        "source_file": r["source_file"] or "",
+        "created_at": r["created_at"].isoformat() if r["created_at"] else "",
     }
 
 
@@ -333,7 +345,9 @@ def _get_session_version(user_id: str) -> Optional[int]:
         with conn.cursor() as cur:
             cur.execute('SELECT "sessionVersion" FROM "User" WHERE id = %s', (str(user_id),))
             row = cur.fetchone()
-    return row[0] if row else None
+    if not row:
+        return None
+    return row["sessionVersion"] if isinstance(row, dict) else row[0]
 
 
 def _decode_token(authorization: str | None) -> dict:
@@ -1234,8 +1248,21 @@ def get_document_by_id(document_id: str, authorization: str = Header(default=Non
 @app.get("/dashboard-summary")
 def dashboard_summary(authorization: str = Header(default=None)):
     user_id = get_current_user_id(authorization)
-    records = load_all_records(user_id=user_id)
+
+    # NFR-03: load only the most recent 200 docs for summary (avoids full table scan)
+    records = load_records(user_id=user_id, limit=200, offset=0)
+    from dataset_manager import parse_record_for_output
+    records = [parse_record_for_output(r) for r in records]
     summary = build_dashboard_summary(records)
+
+    # UI-D2: "Invoice Insights Ready" — surface arithmetic mismatches in recent docs
+    mismatch_docs = [
+        {"document_id": r.get("document_id"), "company_name": r.get("company_name"),
+         "date": r.get("date"), "document_type": r.get("document_type")}
+        for r in records
+        if str(r.get("arithmetic_status", "")).lower() == "mismatch"
+    ][:3]
+
     return {
         "success": True,
         "total": summary.get("total_documents", 0),
@@ -1246,6 +1273,9 @@ def dashboard_summary(authorization: str = Header(default=None)):
         "recent_documents": records[:5] if records else [],
         "total_payable_amount": summary.get("total_payable_amount", 0.0),
         "total_receivable_amount": summary.get("total_receivable_amount", 0.0),
+        "pending_processing_count": summary.get("pending_processing_count", 0),
+        "ready_for_query_count": summary.get("ready_for_query_count", 0),
+        "mismatch_alerts": mismatch_docs,
     }
 
 
@@ -1288,6 +1318,20 @@ def ask_query(payload: QueryRequest, authorization: str = Header(default=None)):
     from data_tools import detect_discrepancies_in_evidence
     discrepancies = detect_discrepancies_in_evidence(result.get("evidence", []))
 
+    # GAP-19C: append bilingual discrepancy note to the answer text when applicable
+    answer_text = result.get("direct_answer", "")
+    if discrepancies and any(d.get("is_discrepancy") for d in discrepancies):
+        from pal_answer import build_discrepancy_bilingual_note
+        try:
+            from llm_correction import count_sinhala_chars
+            q = payload.question.strip()
+            lang = "si" if count_sinhala_chars(q) >= max(3, len(q) // 4) else "en"
+        except Exception:
+            lang = "en"
+        note = build_discrepancy_bilingual_note(discrepancies, lang=lang)
+        if note:
+            answer_text = f"{answer_text}\n\n{note}"
+
     # FR-33: log query event
     _log_audit_event(user_id, "QUERY_EXECUTED",
                      f"Q: {payload.question.strip()[:120]} | co: {payload.company_name.strip()}")
@@ -1296,7 +1340,7 @@ def ask_query(payload: QueryRequest, authorization: str = Header(default=None)):
         "success": result.get("success", True),
         "company_name": payload.company_name.strip(),
         "question": payload.question.strip(),
-        "answer": result.get("direct_answer", ""),
+        "answer": answer_text,
         "explanation": result.get("explanation", ""),
         "evidence": result.get("evidence", []),
         "metrics": result.get("metrics", {}),
@@ -1357,6 +1401,7 @@ def clear_query_history(authorization: str = Header(default=None)):
 def export_user_data(authorization: str = Header(default=None)):
     user_id = get_current_user_id(authorization)
 
+    # GDPR export intentionally returns ALL records — load_all_records is correct here.
     documents = load_all_records(user_id=user_id)
     query_history = load_query_history_for_user(user_id)
 
@@ -1386,6 +1431,9 @@ def delete_user_account(authorization: str = Header(default=None)):
             cur.execute('DELETE FROM "FinancialDocument" WHERE "tenantId" = %s', (user_id,))  # cascades LineItem
             cur.execute('DELETE FROM query_history WHERE user_id = %s', (user_id,))
         conn.commit()
+
+    # FR-33: audit the account deletion (Fix 4 — this event was previously missing)
+    _log_audit_event(user_id, "ACCOUNT_DELETED", "All tenant data purged via /user/account")
 
     return {"success": True, "message": "All document data deleted for this account."}
 

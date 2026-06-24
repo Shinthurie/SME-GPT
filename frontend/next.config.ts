@@ -1,9 +1,15 @@
 import type { NextConfig } from "next";
+import path from "path";
 
 const nextConfig: NextConfig = {
-  /* config options here */
   reactCompiler: true,
+  turbopack: {
+    // Pin Turbopack's root to the frontend directory.
+    // Without this Next.js walks up from frontend/ looking for lockfiles and
+    // finds the stub package-lock.json at the repo root, treating the whole
+    // repo as the workspace root — causing OOM crashes on Windows.
+    root: path.resolve(__dirname),
+  },
 };
 
 export default nextConfig;
-
