@@ -153,28 +153,15 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
 # =========================
 @contextmanager
 def get_db_connection():
-    """Yield a psycopg connection that commits on success, rolls back on error,
-    and is always closed — safe with Supabase PgBouncer (transaction mode).
+    """Yield a pooled dict-row connection (commits on success, rolls back on error).
 
-    Two critical settings vs the old bare psycopg.connect() call:
-    - prepare_threshold=None  → disables server-side prepared statements which
-      PgBouncer in transaction mode resets between client calls, causing
-      DuplicatePreparedStatement errors and exhausting the connection pool.
-    - explicit conn.close()   → old code used the connection as a context
-      manager which only commits/rolls back but never closes, leaking one
-      Supabase connection per API call until GC eventually collected them.
+    Delegates to db.get_conn() so all 20 call sites share one connection pool —
+    no new TCP+SSL handshake per API call once the pool is warm.
+    Note: rows are now dicts (use row["column"] not row[0]).
     """
-    if not DATABASE_URL:
-        raise RuntimeError("DATABASE_URL is not set.")
-    conn = psycopg.connect(DATABASE_URL, prepare_threshold=None)
-    try:
+    from db import get_conn as _pool_get_conn
+    with _pool_get_conn() as conn:
         yield conn
-        conn.commit()
-    except Exception:
-        conn.rollback()
-        raise
-    finally:
-        conn.close()
 
 
 def ensure_query_history_table():
@@ -270,18 +257,20 @@ def load_query_history_for_user(user_id: str):
             cur.execute(query, (str(user_id),))
             rows = cur.fetchall()
 
+    cols = ["id","company_name","question","answer","explanation","metrics","evidence","source_file","created_at"]
     history = []
     for row in rows:
+        r = row if isinstance(row, dict) else dict(zip(cols, row))
         history.append({
-            "id": str(row[0]),
-            "company_name": row[1] or "",
-            "question": row[2] or "",
-            "answer": row[3] or "",
-            "explanation": row[4] or "",
-            "metrics": row[5] or {},
-            "evidence": row[6] or [],
-            "source_file": row[7] or "",
-            "created_at": row[8].isoformat() if row[8] else "",
+            "id": str(r["id"]),
+            "company_name": r["company_name"] or "",
+            "question": r["question"] or "",
+            "answer": r["answer"] or "",
+            "explanation": r["explanation"] or "",
+            "metrics": r["metrics"] or {},
+            "evidence": r["evidence"] or [],
+            "source_file": r["source_file"] or "",
+            "created_at": r["created_at"].isoformat() if r["created_at"] else "",
         })
     return history
 
@@ -302,16 +291,18 @@ def get_query_history_item_for_user(user_id: str, history_id: str):
     if not row:
         return None
 
+    cols = ["id","company_name","question","answer","explanation","metrics","evidence","source_file","created_at"]
+    r = row if isinstance(row, dict) else dict(zip(cols, row))
     return {
-        "id": str(row[0]),
-        "company_name": row[1] or "",
-        "question": row[2] or "",
-        "answer": row[3] or "",
-        "explanation": row[4] or "",
-        "metrics": row[5] or {},
-        "evidence": row[6] or [],
-        "source_file": row[7] or "",
-        "created_at": row[8].isoformat() if row[8] else "",
+        "id": str(r["id"]),
+        "company_name": r["company_name"] or "",
+        "question": r["question"] or "",
+        "answer": r["answer"] or "",
+        "explanation": r["explanation"] or "",
+        "metrics": r["metrics"] or {},
+        "evidence": r["evidence"] or [],
+        "source_file": r["source_file"] or "",
+        "created_at": r["created_at"].isoformat() if r["created_at"] else "",
     }
 
 
@@ -354,7 +345,9 @@ def _get_session_version(user_id: str) -> Optional[int]:
         with conn.cursor() as cur:
             cur.execute('SELECT "sessionVersion" FROM "User" WHERE id = %s', (str(user_id),))
             row = cur.fetchone()
-    return row[0] if row else None
+    if not row:
+        return None
+    return row["sessionVersion"] if isinstance(row, dict) else row[0]
 
 
 def _decode_token(authorization: str | None) -> dict:
