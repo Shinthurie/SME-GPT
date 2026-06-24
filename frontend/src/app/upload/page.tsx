@@ -78,6 +78,7 @@ const READONLY_FIELDS = new Set(["raw_total_amount", "final_total_amount", "paya
 export default function UploadPage() {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const previewRef  = useRef<HTMLDivElement | null>(null);
   const [lang, setLang] = useState<AppLanguage>("en");
   const [ocrLang, setOcrLang] = useState<"en" | "si">("en");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -186,11 +187,14 @@ export default function UploadPage() {
     }
 
     setIsSaving(true); setError("");
+    const controller = new AbortController();
+    const saveTimeout = setTimeout(() => controller.abort(), 60_000);
     try {
       const res = await fetch(`${BACKEND_URL}/confirm-save`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({ session_id: sessionId, edited_preview: preview, force_save: force }),
+        signal: controller.signal,
       });
       if (res.status === 401) { localStorage.removeItem("token"); router.push("/login"); return; }
       const data = await res.json();
@@ -207,22 +211,33 @@ export default function UploadPage() {
       setSuccessMessage(`Saved successfully. Document ID: ${data.document_id}`);
       resetForm();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong while saving.");
+      if (err instanceof Error && err.name === "AbortError") {
+        setError("Save timed out after 60 s. Please check your connection and try again.");
+      } else {
+        setError(err instanceof Error ? err.message : "Something went wrong while saving.");
+      }
     } finally {
+      clearTimeout(saveTimeout);
       setIsSaving(false);
     }
   };
 
   const pipelineSteps = [
-    { title: t.pdfToPages,    desc: t.pdfToPagesDesc,                    step: 1 },
-    { title: t.ocrExtraction, desc: t.ocrExtractionDesc,                 step: 2 },
-    { title: t.textChunking,  desc: t.textChunkingDesc ?? "LLM correction & structuring", step: 3 },
-    { title: t.vectorIndexing,desc: t.vectorIndexingDesc ?? "Field extraction & validation", step: 4 },
+    {
+      title: t.pdfToPages ?? "PDF to Pages",
+      desc:  t.pdfToPagesDesc ?? "Structure analysis & layout parsing",
+      step: 1,
+    },
+    {
+      title: "Reading Documents",
+      desc:  "Optical character recognition active...",
+      step: 2,
+    },
   ].map((s) => ({
     ...s,
-    done:    activeStep > s.step || !!preview,
-    current: isProcessing && activeStep === s.step,
-    liveMsg: isProcessing && activeStep === s.step ? stageMessage : "",
+    done:    s.step === 1 ? (activeStep > 1 || !!preview) : !!preview,
+    current: isProcessing && (s.step === 1 ? activeStep === 1 : activeStep >= 2),
+    liveMsg: isProcessing && (s.step === 1 ? activeStep === 1 : activeStep >= 2) ? stageMessage : "",
   }));
 
   return (
@@ -379,7 +394,7 @@ export default function UploadPage() {
                         <span style={{ fontSize: 13, lineHeight: 1 }}>⟳</span>
                       ) : i + 1}
                     </div>
-                    {i < 3 && <div className="mt-1 h-full w-px" style={{ background: "var(--border)" }} />}
+                    {i < 1 && <div className="mt-1 h-full w-px" style={{ background: "var(--border)" }} />}
                   </div>
                   <div
                     className="flex-1 rounded-2xl p-4 transition-all"
@@ -429,21 +444,25 @@ export default function UploadPage() {
           )}
 
           <button
-            onClick={handleProcess}
+            onClick={
+              preview
+                ? () => previewRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
+                : handleProcess
+            }
             disabled={!selectedFile || isProcessing}
             className="mt-6 w-full rounded-2xl py-4 text-[15px] font-bold text-white transition hover:opacity-90 disabled:opacity-50"
-            style={{ background: "var(--brand)" }}
+            style={{ background: preview ? "#16a34a" : "var(--brand)" }}
           >
             {isProcessing
               ? stageMessage || "Processing…"
               : preview
-              ? "Extraction Done ✓"
+              ? "Extraction Done ✓  — View Results ↓"
               : "Begin Extraction"}
           </button>
 
           {/* Preview */}
           {preview && (
-            <div className="mt-8 rounded-2xl p-5" style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
+            <div ref={previewRef} className="mt-8 rounded-2xl p-5" style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
               <h2 className="text-[19px] font-extrabold text-[var(--text-1)]">Extracted Preview</h2>
               <p className="mt-1 text-[13px] text-[var(--text-2)]">Review and edit before saving.</p>
 
