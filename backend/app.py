@@ -1255,6 +1255,15 @@ def get_document_by_id(document_id: str, authorization: str = Header(default=Non
 @app.get("/dashboard-summary")
 def dashboard_summary(authorization: str = Header(default=None)):
     user_id = get_current_user_id(authorization)
+
+    # Diagnostic: raw DB count for this user_id (catches tenantId mismatch)
+    raw_db_count = 0
+    try:
+        raw_db_count = count_records(user_id=user_id)
+        print(f"[DASHBOARD] user_id={user_id!r}  raw_db_count={raw_db_count}", flush=True)
+    except Exception as e:
+        print(f"[DASHBOARD] count_records failed for user_id={user_id!r}: {e}", flush=True)
+
     # NFR-03: load only the most recent 200 docs for summary (avoids full table scan)
     records = load_records(user_id=user_id, limit=200, offset=0)
     from dataset_manager import parse_record_for_output
@@ -1282,6 +1291,8 @@ def dashboard_summary(authorization: str = Header(default=None)):
         "pending_processing_count": summary.get("pending_processing_count", 0),
         "ready_for_query_count": summary.get("ready_for_query_count", 0),
         "mismatch_alerts": mismatch_docs,
+        "_debug_user_id": user_id,
+        "_debug_raw_count": raw_db_count,
     }
 
 
