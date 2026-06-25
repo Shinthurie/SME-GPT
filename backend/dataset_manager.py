@@ -500,6 +500,22 @@ def _insert_line_items(cur, doc_pk: str, tenant_id, currency, items: list):
         )
 
 
+def _get_existing_columns(conn) -> set:
+    """Return the column names that actually exist in FinancialDocument.
+    Cached per-process so we only query pg_attribute once per restart."""
+    if not hasattr(_get_existing_columns, "_cache"):
+        try:
+            cur = conn.cursor()
+            cur.execute(
+                """SELECT column_name FROM information_schema.columns
+                   WHERE table_name = 'FinancialDocument'"""
+            )
+            _get_existing_columns._cache = {row["column_name"] for row in (cur.fetchall() or [])}
+        except Exception:
+            _get_existing_columns._cache = set()
+    return _get_existing_columns._cache
+
+
 def upsert_confirmed_record(data: dict, user_id: str):
     duplicate = find_duplicate_record(data, user_id=user_id)
     if duplicate:
@@ -508,19 +524,30 @@ def upsert_confirmed_record(data: dict, user_id: str):
     record = normalize_record(data, user_id=user_id, force_generate_document_id=True)
     doc_pk = new_id("fd")
 
-    db_values = {"id": doc_pk}
+    all_values: dict = {"id": doc_pk}
     for rec_key, db_col in RECORD_TO_DB.items():
-        db_values[db_col] = _record_to_db_value(rec_key, record.get(rec_key))
-
-    columns = list(db_values.keys())
-    col_sql = ", ".join(f'"{c}"' for c in columns) + ', "updatedAt"'
-    placeholders = ", ".join(["%s"] * len(columns)) + ", NOW()"
-    sql = f'INSERT INTO "FinancialDocument" ({col_sql}) VALUES ({placeholders})'
+        all_values[db_col] = _record_to_db_value(rec_key, record.get(rec_key))
 
     items = normalize_items(json.loads(record.get("items_json", "[]") or "[]"))
 
     with get_conn() as conn:
         cur = conn.cursor()
+
+        # Only include columns that actually exist in the DB.
+        # This prevents "column X does not exist" errors when new columns are
+        # added to RECORD_TO_DB before the Supabase migration is run.
+        existing_cols = _get_existing_columns(conn)
+        if existing_cols:
+            db_values = {k: v for k, v in all_values.items()
+                         if k == "id" or k in existing_cols}
+        else:
+            db_values = all_values  # fallback: try full insert
+
+        columns = list(db_values.keys())
+        col_sql = ", ".join(f'"{c}"' for c in columns) + ', "updatedAt"'
+        placeholders = ", ".join(["%s"] * len(columns)) + ", NOW()"
+        sql = f'INSERT INTO "FinancialDocument" ({col_sql}) VALUES ({placeholders})'
+
         cur.execute(sql, list(db_values.values()))
         _insert_line_items(cur, doc_pk, record["user_id"], record.get("currency"), items)
 
