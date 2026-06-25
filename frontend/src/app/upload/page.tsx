@@ -79,6 +79,8 @@ export default function UploadPage() {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const previewRef  = useRef<HTMLDivElement | null>(null);
+  const videoRef    = useRef<HTMLVideoElement | null>(null);
+  const canvasRef   = useRef<HTMLCanvasElement | null>(null);
   const [lang, setLang] = useState<AppLanguage>("en");
   const [ocrLang, setOcrLang] = useState<"en" | "si">("en");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -94,6 +96,8 @@ export default function UploadPage() {
   const [duplicateMessage, setDuplicateMessage] = useState("");
   const [existingDocumentId, setExistingDocumentId] = useState("");
   const [showAmountMismatch, setShowAmountMismatch] = useState(false);
+  const [showCamera, setShowCamera] = useState(false);
+  const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
 
   useEffect(() => { setLang(getStoredLanguage()); }, []);
 
@@ -118,6 +122,46 @@ export default function UploadPage() {
     setShowDuplicateWarning(false); setDuplicateMessage(""); setExistingDocumentId("");
     setShowAmountMismatch(false); setError(""); setActiveStep(0); setStageMessage("");
     if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  // ── Camera helpers ───────────────────────────────────────────────────────
+  const openCamera = async () => {
+    setError("");
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "environment", width: { ideal: 1920 }, height: { ideal: 1080 } },
+      });
+      setCameraStream(stream);
+      setShowCamera(true);
+      // Attach stream to video element after the modal renders
+      setTimeout(() => {
+        if (videoRef.current) { videoRef.current.srcObject = stream; videoRef.current.play(); }
+      }, 100);
+    } catch {
+      setError("Camera access denied. Please allow camera permission and try again.");
+    }
+  };
+
+  const closeCamera = () => {
+    cameraStream?.getTracks().forEach(t => t.stop());
+    setCameraStream(null);
+    setShowCamera(false);
+  };
+
+  const capturePhoto = () => {
+    if (!videoRef.current || !canvasRef.current) return;
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    canvas.width  = video.videoWidth;
+    canvas.height = video.videoHeight;
+    canvas.getContext("2d")?.drawImage(video, 0, 0);
+    canvas.toBlob(blob => {
+      if (!blob) return;
+      const file = new File([blob], `photo_${Date.now()}.jpg`, { type: "image/jpeg" });
+      setSelectedFile(file);
+      setPreview(null); setError(""); setSessionId("");
+      closeCamera();
+    }, "image/jpeg", 0.92);
   };
 
   const handleProcess = async () => {
@@ -340,13 +384,23 @@ export default function UploadPage() {
                 ? `${(selectedFile.size / 1024).toFixed(0)} KB · Ready for OCR`
                 : t.maxFileSize}
             </p>
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              className="mt-5 rounded-xl px-6 py-2.5 text-[13px] font-semibold transition hover:opacity-80"
-              style={{ background: "var(--brand-tint)", color: "var(--brand-mid)" }}
-            >
-              {selectedFile ? "Choose Another File" : t.selectDevice}
-            </button>
+            <div className="mt-5 flex flex-wrap items-center justify-center gap-3">
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="rounded-xl px-5 py-2.5 text-[13px] font-semibold transition hover:opacity-80"
+                style={{ background: "var(--brand-tint)", color: "var(--brand-mid)" }}
+              >
+                {selectedFile ? "Choose Another File" : t.selectDevice}
+              </button>
+              <button
+                onClick={openCamera}
+                className="flex items-center gap-2 rounded-xl px-5 py-2.5 text-[13px] font-semibold transition hover:opacity-80"
+                style={{ background: "var(--surface)", border: "1px solid var(--border)", color: "var(--text-2)" }}
+              >
+                <span className="material-symbols-outlined text-[17px]">photo_camera</span>
+                {lang === "si" ? "කැමරා" : "Take Photo"}
+              </button>
+            </div>
           </div>
 
           {selectedFile && (
@@ -572,6 +626,73 @@ export default function UploadPage() {
         </main>
 
         <BottomNav />
+
+        {/* Hidden canvas for photo capture */}
+        <canvas ref={canvasRef} className="hidden" />
+
+        {/* Camera modal */}
+        {showCamera && (
+          <div
+            className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black"
+            style={{ background: "rgba(0,0,0,0.95)" }}
+          >
+            <div className="relative w-full max-w-[640px]">
+              {/* Header */}
+              <div className="flex items-center justify-between px-4 py-3">
+                <p className="text-[15px] font-bold text-white">
+                  {lang === "si" ? "ලේඛනය ඡායාරූප ගන්න" : "Take a photo of your document"}
+                </p>
+                <button onClick={closeCamera} className="text-white/70 hover:text-white">
+                  <span className="material-symbols-outlined text-[26px]">close</span>
+                </button>
+              </div>
+
+              {/* Viewfinder */}
+              <video
+                ref={videoRef}
+                autoPlay
+                playsInline
+                muted
+                className="w-full rounded-xl"
+                style={{ maxHeight: "65vh", objectFit: "cover", background: "#111" }}
+              />
+
+              {/* Guide overlay */}
+              <div
+                className="pointer-events-none absolute inset-0 m-auto rounded-xl"
+                style={{
+                  width: "90%", height: "70%",
+                  top: "15%", left: "5%",
+                  border: "2px solid rgba(255,255,255,0.5)",
+                  borderRadius: "8px",
+                }}
+              />
+
+              {/* Capture button */}
+              <div className="flex items-center justify-center gap-6 py-6">
+                <button
+                  onClick={closeCamera}
+                  className="rounded-full px-5 py-2 text-[13px] font-semibold text-white/70 hover:text-white"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={capturePhoto}
+                  className="flex h-16 w-16 items-center justify-center rounded-full bg-white shadow-lg transition hover:scale-105 active:scale-95"
+                >
+                  <span className="material-symbols-outlined text-[32px]" style={{ color: "var(--brand)" }}>
+                    photo_camera
+                  </span>
+                </button>
+                <div className="w-20" />
+              </div>
+
+              <p className="pb-4 text-center text-[12px] text-white/50">
+                {lang === "si" ? "ලේඛනය රාමුව තුළ ස්ථාන කර ශූල් ඔබන්න" : "Place the document inside the frame then tap the button"}
+              </p>
+            </div>
+          </div>
+        )}
       </div>
     </MobileShell>
   );
