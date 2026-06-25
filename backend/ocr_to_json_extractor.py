@@ -263,15 +263,16 @@ def normalize_root_fields(parsed: dict, source_text: str) -> dict:
 
 def retry_extract_json_only(raw_text: str) -> str:
     retry_prompt = f"""
-Return ONLY one valid JSON object.
+Return ONLY one valid JSON object — no markdown, no explanations, no notes.
 
-Do not write explanations.
-Do not write notes.
-Do not write markdown.
-Do not ask for more input.
-Do not rewrite the OCR.
+Extract ALL line items. For each item row extract:
+- description (item name)
+- quantity (Qty/QTY/Nos/Pcs/Units/ප්‍රමාණය)
+- unit_price (Rate/Price/Unit Rate/Unit Price/ඒකක මිල)
+- line_total (Amount/Total/රු.)
 
-Use this exact structure:
+Use "" for any missing field. Do NOT skip item rows.
+Default currency to "LKR" if not stated.
 
 {{
   "document_id": "",
@@ -281,7 +282,7 @@ Use this exact structure:
   "company_name": "",
   "supplier_name": "",
   "date": "",
-  "currency": "",
+  "currency": "LKR",
   "raw_total_amount": "",
   "final_total_amount": "",
   "payable_amount": "",
@@ -309,47 +310,57 @@ def extract_structured_json_from_text(raw_text: str) -> dict:
     cleaned_text = clean_ocr_text(raw_text)
 
     prompt = f"""
-You are an extraction engine for OCR text from financial documents.
+You are a precise financial document extraction engine. Extract structured data from OCR text.
 
-Return ONLY one valid JSON object.
+Return ONLY one valid JSON object — no explanations, no notes.
 
-STRICT RULES:
-- Do NOT write explanations
-- Do NOT write notes
-- Do NOT rewrite the OCR
-- Do NOT ask for more text
-- Copy values exactly from OCR
-- Preserve Sinhala text in Sinhala script
-- Do NOT translate Sinhala to English
-- Do NOT transliterate Sinhala into English letters
-- Do NOT calculate new numbers
-- Do NOT invent missing values
-- Use empty string "" for missing values
+CRITICAL RULES:
+- Copy values EXACTLY from the OCR text
+- Preserve ALL Sinhala characters in Sinhala Unicode script
+- Do NOT translate, transliterate, or replace Sinhala text
+- Do NOT calculate or invent numbers
+- Do NOT add values not present in the text
+- Use "" for any field not found in the text
 
-DOCUMENT TYPE RULES:
-- "invoice" if the text clearly says invoice
-- "receipt" for shop bills, salon bills, cash bills, or short retail receipts
-- "po" for purchase orders
-- "dn" for delivery notes
-- otherwise "unknown"
+DOCUMENT TYPE (pick one):
+- "invoice"  → document header says Invoice/Bill/Tax Invoice
+- "receipt"  → short shop bill, cash receipt, POS receipt, salon/restaurant bill
+- "po"       → Purchase Order / PO
+- "dn"       → Delivery Note / Goods Received Note
+- "unknown"  → if none of the above
 
-FLOW TYPE RULES:
-- "expense" for salon/shop/service purchase receipts paid by the business/customer
-- "income" if it is clearly money received by the business
-- otherwise "unknown" unless clearly payable/receivable
+FLOW TYPE (pick one):
+- "payable"    → we owe money to a supplier (we are the buyer)
+- "receivable" → a customer owes us money (we are the seller)
+- "expense"    → already paid retail bill / cash purchase
+- "income"     → money already received from a customer
+- "unknown"    → when unclear
 
-LAYOUT RULES:
-- Top lines usually contain business/shop name
-- Header area often contains phone number, date, and order id
-- Middle lines often contain numbered item rows
-- Bottom area usually contains total and cash return
-- If only one total is visible, use it for raw_total_amount, final_total_amount, and payable_amount
-- If cash return is visible, copy it exactly
-- Extract visible item rows only
-- Preserve item row order
+FIELD EXTRACTION GUIDE:
+- company_name: the business that ISSUED this document (top of page, usually largest text)
+- supplier_name: the party on the other side (buyer for invoices, seller for receipts)
+- order_id: any invoice number, receipt number, PO number, bill number, reference number
+- date: the document date in any format found
 
-Return JSON in exactly this structure:
+LINE ITEMS — THIS IS CRITICAL:
+Each item row in the document must be a separate object in "items".
+For EACH item look for these columns (they may use different labels):
+  - description: item name/product/service (required — always extract)
+  - quantity: amount/count (also labeled as: Qty, QTY, Nos, No., Pcs, Units, Count, ප්‍රමාණය)
+  - unit_price: price per unit (also labeled as: Rate, Unit Rate, Price, U/Price, Unit Price, ඒකක මිල, මිල)
+  - line_total: row total / amount (also labeled as: Amount, Total, Line Total, Sub, රු.)
+If a column is missing from a row, use "" — do NOT skip the item row entirely.
+For receipts with no explicit qty column: assume quantity = 1 if only price and total are given.
+Extract ALL item rows visible in the document — do not skip any.
 
+AMOUNT FIELDS:
+- raw_total_amount: the grand total as it appears in the OCR
+- final_total_amount: same as raw_total_amount unless a discount is applied
+- payable_amount: amount the buyer must pay (after discount, if any)
+- cash_return: change given back to customer (if shown)
+- currency: LKR, USD, EUR etc. (default LKR if not stated)
+
+Return this JSON structure:
 {{
   "document_id": "",
   "document_type": "unknown",
@@ -358,7 +369,7 @@ Return JSON in exactly this structure:
   "company_name": "",
   "supplier_name": "",
   "date": "",
-  "currency": "",
+  "currency": "LKR",
   "raw_total_amount": "",
   "final_total_amount": "",
   "payable_amount": "",
