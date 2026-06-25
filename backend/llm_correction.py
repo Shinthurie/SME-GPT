@@ -314,6 +314,26 @@ def compute_nar(boxes: list) -> float:
 
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _looks_like_proper_noun(word: str) -> bool:
+    """Return True for tokens that should be left uncorrected.
+
+    Covers company names, brand names, abbreviations, and mixed-case identifiers
+    that SymSpell would otherwise mangle (e.g. "Keells" → "Keels").
+    """
+    if not word:
+        return False
+    # All-caps abbreviations or acronyms (e.g. LKR, PVT, LTD, GST, VAT, PLC)
+    if word.isupper() and len(word) >= 2:
+        return True
+    # Title-case words ≥ 5 chars are likely proper nouns / company names
+    if word.istitle() and len(word) >= 5:
+        return True
+    # CamelCase or mixed-case identifiers (e.g. iPhone, LinkedIn, McDonalds)
+    if len(word) >= 3 and not word.islower() and not word.isupper() and not word.istitle():
+        return True
+    return False
+
+
 def correct_english_token_with_symspell(word: str) -> str:
     if not word:
         return word
@@ -335,6 +355,10 @@ def correct_english_token_with_symspell(word: str) -> str:
     original = word
     lower_word = word.lower()
 
+    # Never correct proper nouns, company names, brand names, or abbreviations
+    if _looks_like_proper_noun(original):
+        return prefix + original + suffix
+
     if lower_word in CUSTOM_ENGLISH_TERMS:
         corrected = lower_word
     elif lower_word in ENGLISH_CORRECTIONS:
@@ -345,7 +369,13 @@ def correct_english_token_with_symspell(word: str) -> str:
             Verbosity.CLOSEST,
             max_edit_distance=2
         )
-        corrected = suggestions[0].term if suggestions else lower_word
+        # Only accept suggestions with high confidence (≤1 edit for short words)
+        if suggestions:
+            best = suggestions[0]
+            max_dist = 1 if len(lower_word) <= 5 else 2
+            corrected = best.term if best.distance <= max_dist else lower_word
+        else:
+            corrected = lower_word
 
     if original.istitle():
         corrected = corrected.title()
@@ -419,21 +449,19 @@ def llm_refine_text(raw_text: str) -> str:
     masked, placeholders = preserve_sensitive_tokens(dictionary_fixed)
 
     prompt = f"""
-You are correcting OCR text from a financial document.
+You are correcting OCR text from a financial document (invoice, receipt, or purchase order).
 
 STRICT RULES:
-- Correct OCR spelling mistakes only
-- Preserve all numbers, prices, totals, dates, times, phone numbers, IDs, and order numbers exactly
-- Preserve Sinhala text in Sinhala script
-- Do NOT translate Sinhala to English
-- Do NOT transliterate Sinhala into English letters
-- Do NOT rewrite the document
-- Do NOT add notes, explanations, or extra words
-- Do NOT merge separate lines into one paragraph
-- Keep the same line order
-- Keep the same line breaks as much as possible
-- If unsure, keep the original word unchanged
-- Return ONLY corrected OCR text
+- Fix OCR spelling mistakes in COMMON words only (e.g. "invoce" → "invoice", "recept" → "receipt")
+- Do NOT correct company names, brand names, shop names, or proper nouns — leave them exactly as they appear
+- Do NOT correct product names, item descriptions, or model numbers
+- Preserve ALL numbers, prices, totals, dates, phone numbers, IDs, and order numbers exactly
+- Preserve Sinhala text in Sinhala Unicode script — do NOT translate or transliterate
+- Do NOT rewrite, summarise, or reorganise the text
+- Do NOT add explanations, notes, or extra words
+- Keep the same line order and line breaks
+- If a word looks like a name, brand, or abbreviation — leave it unchanged
+- Return ONLY the corrected OCR text, nothing else
 
 OCR text:
 {masked}
