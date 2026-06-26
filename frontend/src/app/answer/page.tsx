@@ -191,12 +191,12 @@ export default function AnswerPage() {
                 onClick={handleStartNewChat}
                 className="rounded-xl bg-[#2563ff] px-4 py-2 text-[13px] font-bold text-white"
               >
-                Start New Chat
+                {t.startNewChat}
               </button>
             </div>
 
             <div className="mt-8 rounded-[18px] border border-slate-200 bg-white p-6 text-center text-[14px] text-[#64748b] shadow-sm">
-              No query result found.
+              {t.noQueryResult}
             </div>
           </main>
           <BottomNav />
@@ -223,7 +223,7 @@ export default function AnswerPage() {
                 onClick={handleStartNewChat}
                 className="rounded-xl bg-[#2563ff] px-4 py-2 text-[13px] font-bold text-white"
               >
-                Start New Chat
+                {t.startNewChat}
               </button>
             </div>
           </div>
@@ -231,17 +231,17 @@ export default function AnswerPage() {
           <div className="flex items-center justify-between gap-3">
             <div>
               <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#64748b]">
-                Insights &amp; Analysis
+                {t.insightsAnalysis}
               </p>
               <h1 className="text-[24px] font-extrabold text-[#0f172a]">
-                AI Business Insight
+                {t.businessInsight}
               </h1>
             </div>
             <span
               className="rounded-xl px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider"
               style={{ background: "rgba(34,82,181,0.08)", color: "#2252b5" }}
             >
-              98% Accuracy
+              {t.accuracy}
             </span>
           </div>
 
@@ -254,7 +254,7 @@ export default function AnswerPage() {
 
           <div className="mt-6 rounded-[18px] border border-slate-200 bg-white p-5 shadow-sm">
             <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#64748b]">
-              Company Context
+              {t.companyContextLabel}
             </p>
             <p className="mt-3 text-[14px] font-semibold text-[#0f172a]">
               {result.company_name}
@@ -263,14 +263,14 @@ export default function AnswerPage() {
 
           <div className="mt-6 rounded-[18px] border border-slate-200 bg-white p-5 shadow-sm">
             <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#64748b]">
-              Question
+              {t.questionLabel}
             </p>
             <p className="mt-2 text-[14px] text-[#0f172a]">{result.question}</p>
           </div>
 
           <div className="mt-6 rounded-[18px] border border-[#c8d7ff] bg-[#eef4ff] p-5">
             <p className="text-[12px] font-bold uppercase tracking-[0.08em] text-[#2563ff]">
-              Answer
+              {t.answerLabel}
             </p>
             <p className="mt-3 whitespace-pre-line text-[16px] font-semibold leading-7 text-[#0f172a]">
   {result.answer}
@@ -288,7 +288,7 @@ export default function AnswerPage() {
               style={{ background: "rgba(34,82,181,0.08)", color: "#2252b5", border: "1px solid rgba(34,82,181,0.18)" }}
             >
               <span className="material-symbols-outlined text-[15px]">edit_note</span>
-              Adjust Total
+              {t.adjustTotal}
             </button>
             <button
               onClick={() => {
@@ -306,7 +306,7 @@ export default function AnswerPage() {
               style={{ background: "rgba(34,82,181,0.08)", color: "#2252b5", border: "1px solid rgba(34,82,181,0.18)" }}
             >
               <span className="material-symbols-outlined text-[15px]">mail</span>
-              Notify Supplier
+              {t.notifySupplier}
             </button>
             <button
               onClick={() => {
@@ -322,7 +322,7 @@ export default function AnswerPage() {
               style={{ background: "rgba(22,163,74,0.08)", color: "#16a34a", border: "1px solid rgba(22,163,74,0.18)" }}
             >
               <span className="material-symbols-outlined text-[15px]">download</span>
-              Export
+              {t.export}
             </button>
             <button
               onClick={() => {
@@ -347,7 +347,7 @@ export default function AnswerPage() {
               }
             >
               <span className="material-symbols-outlined text-[15px]">flag</span>
-              {flagged ? "Flagged ✓" : "Flag for Review"}
+              {flagged ? t.flaggedDone : t.flagForReview}
             </button>
           </div>
 
@@ -358,7 +358,7 @@ export default function AnswerPage() {
               <div className="flex items-center gap-2">
                 <span className="material-symbols-outlined text-[18px] text-amber-600">warning</span>
                 <p className="text-[13px] font-bold text-amber-800 uppercase tracking-wide">
-                  Price Discrepancy Found
+                  {t.priceDiscrepancyFound}
                 </p>
               </div>
               <div className="mt-3 space-y-3">
@@ -394,7 +394,7 @@ export default function AnswerPage() {
               className="flex w-full items-center justify-between px-5 py-4 text-left"
             >
               <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#64748b]">
-                Explanation
+                {t.explanationLabel}
               </span>
               <span className="material-symbols-outlined text-[#64748b]">
                 {showExplanation ? "expand_less" : "expand_more"}
@@ -413,7 +413,7 @@ export default function AnswerPage() {
 
     <div className="mt-4">
       <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#64748b]">
-        Metrics
+        {t.metricsLabel}
       </p>
 
       <div className="mt-3 grid gap-3 sm:grid-cols-2">
@@ -444,7 +444,7 @@ export default function AnswerPage() {
               className="flex w-full items-center justify-between px-5 py-4 text-left"
             >
               <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#64748b]">
-                Evidence Documents
+                {t.evidenceLabel}
               </span>
               <span className="material-symbols-outlined text-[#64748b]">
                 {showEvidence ? "expand_less" : "expand_more"}
@@ -561,7 +561,7 @@ export default function AnswerPage() {
 
           <div className="mt-6 rounded-[18px] border border-slate-200 bg-white p-5 shadow-sm">
             <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#64748b]">
-              Ask a Follow-up
+              {t.askFollowUpTitle}
             </p>
 
             <textarea
@@ -584,14 +584,14 @@ export default function AnswerPage() {
                 disabled={asking}
                 className="rounded-xl bg-[#2563ff] px-4 py-2 text-[13px] font-bold text-white disabled:opacity-60"
               >
-                {asking ? "Analyzing..." : "Ask Follow-up"}
+                {asking ? t.analyzing : t.askFollowUpBtn}
               </button>
 
               <button
                 onClick={handleStartNewChat}
                 className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-[13px] font-bold text-[#64748b]"
               >
-                Start New Chat
+                {t.startNewChat}
               </button>
             </div>
           </div>
