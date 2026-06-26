@@ -12,7 +12,6 @@ from deskew import determine_skew
 from pdf2image import convert_from_path
 
 from colab_ocr_client import send_images_to_colab_ocr
-from local_surya_ocr_client import run_local_surya_ocr
 from ocr_selector import select_best_ocr_version
 from llm_correction import llm_refine_text, clean_ocr_text, correct_boxes_for_page
 from spatial_serializer import serialize_safe_boxes
@@ -23,6 +22,22 @@ from correction_engine import correct_extracted_fields
 
 COLAB_OCR_URL = os.getenv("COLAB_OCR_URL", "").strip()
 POPPLER_PATH = os.getenv("POPPLER_PATH", "")
+
+
+class OCREngineUnavailableError(Exception):
+    """Raised when Colab OCR can't be reached. Colab is the only supported
+    OCR engine (per user decision -- no local fallback): the local Surya
+    path required a model install we don't ship, and silently falling back
+    to it just turned a clear "Colab is down" signal into a content-free
+    500 from the global exception handler. The message here is fixed and
+    safe to show to users -- it never wraps the raw connection error."""
+
+    def __init__(self):
+        super().__init__(
+            "OCR engine unavailable. The Colab OCR server isn't reachable "
+            "-- make sure the notebook is running and COLAB_OCR_URL is set "
+            "to its current ngrok URL, then try again."
+        )
 
 # Image preprocessing constants
 _TARGET_WIDTH_PX      = 1600
@@ -239,28 +254,20 @@ def _normalize_multi_page_ocr_result(ocr_result: dict) -> dict:
 def build_preview_from_versions(version_paths: list[dict]) -> dict:
     final_colab_url = COLAB_OCR_URL or os.getenv("COLAB_OCR_URL", "").strip()
 
-    # Iteration 9 (Shinthurie) tried wiring this through ocr_service.get_ocr_service(),
-    # but that factory only ever returns MockSuryaOCRService (real Surya v2 needs a
-    # vllm/llama.cpp backend we don't have, see docs/components/component-1.md) and
-    # there's no LocalSuryaOCRService class in ocr_service.py at all -- every upload
-    # crashed. Reverted to the working v1 colab/local clients (untouched since
-    # Iteration 2) until C1's OCRService has a real, live-capable implementation.
-    if final_colab_url:
-        try:
-            print("[PIPELINE] Trying Colab OCR...", flush=True)
-            ocr_result = send_images_to_colab_ocr(
-                processed_pages=version_paths,
-                colab_url=final_colab_url,
-            )
-            print("[PIPELINE] Colab OCR completed", flush=True)
-        except Exception as e:
-            print(f"[PIPELINE] Colab OCR failed: {e}", flush=True)
-            print("[PIPELINE] Falling back to local Surya OCR...", flush=True)
-            ocr_result = run_local_surya_ocr(version_paths)
-            print("[PIPELINE] Local Surya OCR completed", flush=True)
-    else:
-        print("[PIPELINE] No COLAB_OCR_URL set — using local Surya OCR...", flush=True)
-        ocr_result = run_local_surya_ocr(version_paths)
+    if not final_colab_url:
+        print("[PIPELINE] No COLAB_OCR_URL set — OCR unavailable", flush=True)
+        raise OCREngineUnavailableError()
+
+    try:
+        print("[PIPELINE] Trying Colab OCR...", flush=True)
+        ocr_result = send_images_to_colab_ocr(
+            processed_pages=version_paths,
+            colab_url=final_colab_url,
+        )
+        print("[PIPELINE] Colab OCR completed", flush=True)
+    except Exception as e:
+        print(f"[PIPELINE] Colab OCR failed: {e}", flush=True)
+        raise OCREngineUnavailableError() from e
 
     normalized_ocr = _normalize_multi_page_ocr_result(ocr_result)
     versions = normalized_ocr.get("versions", {})
