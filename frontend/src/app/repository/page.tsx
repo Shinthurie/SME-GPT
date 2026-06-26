@@ -6,7 +6,7 @@ import MobileShell from "@/components/layout/MobileShell";
 import BottomNav from "@/components/layout/BottomNav";
 import LanguageSwitcher from "@/components/layout/LanguageSwitcher";
 import ThemeToggle from "@/components/layout/ThemeToggle";
-import { AppLanguage, getStoredLanguage } from "@/lib/i18n";
+import { AppLanguage, getStoredLanguage, ui } from "@/lib/i18n";
 
 const BACKEND_URL = "http://127.0.0.1:8000";
 
@@ -56,9 +56,10 @@ function statusBadge(status: string) {
 }
 
 function formatFileSize(kb?: number | null) {
-  if (kb == null) return null;
-  if (kb >= 1024) return `${(kb / 1024).toFixed(1)} MB`;
-  return `${Math.round(kb)} KB`;
+  if (kb == null || isNaN(Number(kb)) || Number(kb) <= 0) return null;
+  const n = Number(kb);
+  if (n >= 1024) return `${(n / 1024).toFixed(1)} MB`;
+  return `${Math.round(n)} KB`;
 }
 
 export default function RepositoryPage() {
@@ -70,8 +71,23 @@ export default function RepositoryPage() {
   const [error, setError] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [archivingId, setArchivingId] = useState<string | null>(null);
+  const [autoClassify, setAutoClassify] = useState(true);
 
-  useEffect(() => { setLang(getStoredLanguage()); }, []);
+  useEffect(() => {
+    setLang(getStoredLanguage());
+    // Fetch the user's autoClassify setting to control which tabs are shown
+    fetch("/api/profile")
+      .then(r => r.json())
+      .then(d => {
+        if (typeof d?.user?.autoClassify === "boolean") {
+          setAutoClassify(d.user.autoClassify);
+          if (!d.user.autoClassify) setTab("all");
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const t = ui[lang];
 
   const loadDocuments = async () => {
     const token = getAuthToken();
@@ -116,10 +132,12 @@ export default function RepositoryPage() {
   }, [tab, documents, searchQuery]);
 
   const tabLabel = (v: TabType) => {
-    if (lang === "si") {
-      return { all: "සියල්ල", invoice: "ඉන්වොයිස්", po: "PO", dn: "DN", receipt: "රිසිට්", archived: "සංරක්ෂිත" }[v];
-    }
-    return { all: "All", invoice: "Invoice", po: "PO", dn: "DN", receipt: "Receipt", archived: "Archived" }[v];
+    const labels: Record<TabType, string> = {
+      all: t.documentsAll, invoice: lang === "si" ? "ඉන්වොයිස්" : "Invoice",
+      po: "PO", dn: "DN", receipt: lang === "si" ? "රිසිට්" : "Receipt",
+      archived: lang === "si" ? "සංරක්ෂිත" : "Archived",
+    };
+    return labels[v];
   };
 
   const formatAmount = (item: RepoDocument) => {
@@ -130,7 +148,7 @@ export default function RepositoryPage() {
       : isUsable(item.raw_total_amount)
       ? item.raw_total_amount
       : null;
-    if (!amt) return "No Amount";
+    if (!amt) return t.noAmount;
     const cur = item.currency && item.currency !== "NULL" ? item.currency : "LKR";
     return `${cur} ${amt}`;
   };
@@ -158,10 +176,10 @@ export default function RepositoryPage() {
           <div className="mb-5 flex items-start justify-between gap-4">
             <div>
               <h1 className="text-[22px] font-extrabold tracking-tight text-[var(--text-1)] sm:text-[26px]">
-                Repository
+                {t.repositoryTitle}
               </h1>
               <p className="mt-0.5 text-[12px] text-[var(--text-3)]">
-                {lang === "si" ? "SME-ව්‍යාපාර ලේඛන" : "SME business documents"}
+                {t.repoSubtitle}
               </p>
             </div>
             <div className="flex items-center gap-2">
@@ -185,7 +203,7 @@ export default function RepositoryPage() {
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder={lang === "si" ? "ලේඛන සොයන්න…" : "Search by document ID, company, or supplier…"}
+              placeholder={t.searchPlaceholder}
               className="flex-1 bg-transparent text-[14px] text-[var(--text-1)] outline-none placeholder:text-[var(--text-3)]"
             />
             {searchQuery && (
@@ -197,7 +215,10 @@ export default function RepositoryPage() {
 
           {/* Tabs */}
           <div className="mb-5 flex flex-wrap gap-2">
-            {(["all", "invoice", "po", "dn", "receipt", "archived"] as TabType[]).map((v) => (
+            {(autoClassify
+              ? (["all", "invoice", "po", "dn", "receipt", "archived"] as TabType[])
+              : (["all", "archived"] as TabType[])
+            ).map((v) => (
               <button
                 key={v}
                 onClick={() => setTab(v)}
@@ -217,7 +238,7 @@ export default function RepositoryPage() {
           {loading ? (
             <div className="rounded-2xl px-4 py-8 text-center text-[14px] text-[var(--text-2)]"
               style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
-              Loading documents…
+              {t.loading}
             </div>
           ) : error ? (
             <div className="rounded-2xl px-4 py-6 text-center text-[14px] text-red-600"
@@ -227,7 +248,7 @@ export default function RepositoryPage() {
           ) : filtered.length === 0 ? (
             <div className="rounded-2xl px-4 py-8 text-center text-[14px] text-[var(--text-2)]"
               style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
-              No documents found.
+              {t.noDocumentsFound}
             </div>
           ) : (
             <>
@@ -282,14 +303,14 @@ export default function RepositoryPage() {
                               className="text-[12px] font-bold transition hover:opacity-75"
                               style={{ color: String(item.status).toLowerCase() === "archived" ? "var(--brand-mid)" : "var(--text-3)" }}
                             >
-                              {String(item.status).toLowerCase() === "archived" ? "UNARCHIVE" : "ARCHIVE"}
+                              {String(item.status).toLowerCase() === "archived" ? t.unarchive : t.archive}
                             </button>
                             <button
                               onClick={() => router.push(`/analysis/${item.document_id}`)}
                               className="text-[12px] font-bold transition hover:opacity-75"
                               style={{ color: "var(--brand-mid)" }}
                             >
-                              OPEN →
+                              {t.openDoc}
                             </button>
                           </div>
                         </div>
@@ -298,11 +319,9 @@ export default function RepositoryPage() {
                           <div className="mt-3 rounded-xl px-3 py-2.5 text-[12px]"
                             style={{ background: "rgba(26,53,96,0.06)", border: "1px solid rgba(26,53,96,0.12)", color: "var(--text-2)" }}>
                             <span className="font-semibold">
-                              {String(item.status).toLowerCase() === "archived" ? "Restore document?" : "Archive this document?"}
+                              {String(item.status).toLowerCase() === "archived" ? t.restoreConfirm : t.archiveConfirm}
                             </span>{" "}
-                            {String(item.status).toLowerCase() === "archived"
-                              ? "It will reappear in your active documents."
-                              : "It will be hidden from active queries and moved to the Archived tab."}
+                            {String(item.status).toLowerCase() === "archived" ? t.restoreDesc : t.archiveDesc}
                             <div className="mt-2 flex gap-2">
                               <button
                                 className="rounded-lg px-3 py-1 text-[11px] font-bold text-white transition hover:opacity-80"
@@ -321,10 +340,10 @@ export default function RepositoryPage() {
                                   } catch { setArchivingId(null); }
                                 }}
                               >
-                                {String(item.status).toLowerCase() === "archived" ? "Restore" : "Archive"}
+                                {String(item.status).toLowerCase() === "archived" ? t.restore : t.archive}
                               </button>
                               <button className="text-[11px] font-bold" style={{ color: "var(--text-3)" }}
-                                onClick={() => setArchivingId(null)}>Cancel</button>
+                                onClick={() => setArchivingId(null)}>{t.cancel}</button>
                             </div>
                           </div>
                         )}
@@ -353,7 +372,7 @@ export default function RepositoryPage() {
                 style={{ background: "var(--surface)", border: "1px solid var(--border)", color: "var(--brand-mid)" }}
               >
                 <span className="material-symbols-outlined text-[16px]">refresh</span>
-                {lang === "si" ? "ලැයිස්තුව යාවත්කාලීන කරන්න" : "REFRESH LIST"}
+                {t.refreshList}
               </button>
             </div>
             </>

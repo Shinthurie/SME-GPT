@@ -819,6 +819,7 @@ class UpdateDocumentRequest(BaseModel):
     cash_outflowed: Optional[Any] = None
     received_status: Optional[str] = None
     paid_status: Optional[str] = None
+    status: Optional[str] = None
     language: Optional[str] = None
     items: Optional[List[dict]] = None
 

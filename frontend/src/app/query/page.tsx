@@ -7,6 +7,7 @@ import BottomNav from "@/components/layout/BottomNav";
 import LanguageSwitcher from "@/components/layout/LanguageSwitcher";
 import ThemeToggle from "@/components/layout/ThemeToggle";
 import { AppLanguage, getStoredLanguage, setStoredLanguage, ui } from "@/lib/i18n";
+import { getSession } from "@/lib/auth";
 
 const BACKEND_URL = "http://127.0.0.1:8000";
 
@@ -29,7 +30,15 @@ export default function QueryPage() {
 
   useEffect(() => {
     setLang(getStoredLanguage());
-    setCompanyName(localStorage.getItem("query_company_name") || "");
+    // Auto-populate company name from user profile session
+    getSession().then(s => {
+      if (s?.companyName) {
+        setCompanyName(s.companyName);
+      } else {
+        // Fall back to last-used value if session has no company
+        setCompanyName(localStorage.getItem("query_company_name") || "");
+      }
+    });
   }, []);
 
   useEffect(() => {
@@ -90,7 +99,7 @@ export default function QueryPage() {
 
   const handleAsk = async () => {
     setError("");
-    if (!companyName.trim()) { setError("Please enter your company name first."); return; }
+    if (!companyName.trim()) { setError("Company name not found. Please update your profile with your company name."); return; }
     if (!question.trim()) { setError("Please enter a question."); return; }
 
     const token = getAuthToken();
@@ -155,41 +164,23 @@ export default function QueryPage() {
             Ask questions about your invoices, delivery notes, or purchase orders in English or Sinhala.
           </p>
 
-          {/* Hidden file input for attach */}
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".pdf,.png,.jpg,.jpeg,.webp"
-            className="hidden"
-            onChange={handleFileChange}
-          />
-
           {/* Company context */}
+          {/* Company context — auto-filled from user profile, read-only */}
           <div
-            className="mt-6 rounded-2xl p-5"
+            className="mt-6 flex items-center gap-3 rounded-2xl px-5 py-4"
             style={{ background: "var(--surface)", border: "1px solid var(--border)" }}
           >
-            <div className="mb-2 flex items-center gap-2">
-              <p className="text-[11px] font-bold uppercase tracking-[0.1em] text-[var(--text-3)]">
-                Company Context
+            <span className="material-symbols-outlined text-[20px]" style={{ color: "var(--brand-mid)" }}>
+              domain
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-[var(--text-3)]">
+                {lang === "si" ? "සමාගම" : "Company"}
               </p>
-              <span
-                title="Enter the company name as it appears on your invoices or purchase orders. This scopes the AI search to only your documents — preventing answers from mixing up data across different companies."
-                className="flex h-4 w-4 cursor-help items-center justify-center rounded-full text-[10px] font-bold"
-                style={{ background: "var(--brand-tint)", color: "var(--brand-mid)" }}
-              >
-                ?
-              </span>
+              <p className="mt-0.5 truncate text-[15px] font-semibold text-[var(--text-1)]">
+                {companyName || (lang === "si" ? "පූරණය වෙමින්…" : "Loading…")}
+              </p>
             </div>
-            <input
-              value={companyName}
-              onChange={(e) => setCompanyName(e.target.value)}
-              placeholder="Enter your company name (e.g. AIESEC)"
-              className="field-input w-full rounded-xl border px-4 py-3 text-[15px] transition"
-            />
-            <p className="mt-2 text-[12px] text-[var(--text-3)]">
-              Used as context scope when searching your documents.
-            </p>
           </div>
 
           {/* Question input */}
@@ -211,14 +202,6 @@ export default function QueryPage() {
             >
               <div className="flex items-center gap-4">
                 <button
-                  onClick={handleAttach}
-                  title="Attach a document as context"
-                  className="transition hover:opacity-70"
-                  style={{ color: attachedFile ? "var(--brand-mid)" : "var(--text-3)" }}
-                >
-                  <span className="material-symbols-outlined text-[20px]">attach_file</span>
-                </button>
-                <button
                   onClick={handleVoice}
                   title={isListening ? "Listening… speak now" : "Voice input"}
                   className="transition hover:opacity-70"
@@ -237,27 +220,11 @@ export default function QueryPage() {
                   <span className="material-symbols-outlined text-[20px]">g_translate</span>
                 </button>
               </div>
-              <span
-                className="flex items-center gap-1 text-[11px] font-semibold"
-                style={{ color: "var(--brand-mid)" }}
-              >
-                <span className="material-symbols-outlined text-[14px]">radio_button_checked</span>
-                Auto-Detection active
+              <span className="text-[11px] text-[var(--text-3)]">
+                {lang === "si" ? "සිංහල" : "English"}
               </span>
             </div>
           </div>
-
-          {attachedFile && (
-            <div className="mt-2 flex items-center gap-2 rounded-xl px-3 py-2 text-[12px]"
-              style={{ background: "var(--brand-tint)", color: "var(--brand-mid)" }}>
-              <span className="material-symbols-outlined text-[14px]">attach_file</span>
-              <span className="font-semibold">{attachedFile}</span>
-              <button onClick={() => { setAttachedFile(null); setQuestion(q => q.replace(/\n?\[Attached document:.*?\]/g, "").trim()); }}
-                className="ml-auto text-[var(--text-3)] hover:text-red-500">
-                <span className="material-symbols-outlined text-[14px]">close</span>
-              </button>
-            </div>
-          )}
 
           {isListening && (
             <div className="mt-2 flex items-center gap-2 rounded-xl px-3 py-2 text-[12px] text-red-600"
