@@ -8,6 +8,7 @@ import LanguageSwitcher from "@/components/layout/LanguageSwitcher";
 import { getSession, logoutUser, SessionUser, getStoredToken } from "@/lib/auth";
 import { AppLanguage, getStoredLanguage, ui, setStoredLanguage } from "@/lib/i18n";
 import { useTheme } from "@/lib/theme";
+import * as XLSX from "xlsx";
 
 const BACKEND_URL = "http://127.0.0.1:8000";
 
@@ -172,6 +173,12 @@ export default function ProfilePage() {
   const [deleting, setDeleting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
+  // Password confirmation modal state
+  const [pwModalAction, setPwModalAction] = useState<"export" | "delete" | null>(null);
+  const [pwInput, setPwInput] = useState("");
+  const [pwError, setPwError] = useState("");
+  const [pwLoading, setPwLoading] = useState(false);
+
   useEffect(() => {
     const load = async () => {
       setLang(getStoredLanguage());
@@ -230,6 +237,18 @@ export default function ProfilePage() {
 
   const update = (key: keyof ProfileData, val: string | boolean) =>
     setForm((p) => ({ ...p, [key]: val }));
+
+  const handleToggleAutoClassify = async () => {
+    const next = !form.autoClassify;
+    setForm((p) => ({ ...p, autoClassify: next }));
+    try {
+      await fetch("/api/profile", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ autoClassify: next }),
+      });
+    } catch { /* revert on error */ setForm((p) => ({ ...p, autoClassify: !next })); }
+  };
 
   const handleSave = async () => {
     setSaving(true);
@@ -303,26 +322,92 @@ export default function ProfilePage() {
     setMessage("");
     try {
       const token = getStoredToken();
-      const res = await fetch(`${BACKEND_URL}/user/export`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        setMessage(data.message || "Failed to export data");
-        return;
+      if (!token) { setMessage("Login token missing. Please sign in again."); return; }
+
+      // Paginate through all documents (backend max limit=200 per page)
+      const docs: Record<string, unknown>[] = [];
+      let page = 1;
+      let hasNext = true;
+      while (hasNext) {
+        const res = await fetch(`${BACKEND_URL}/documents?page=${page}&limit=200`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) { setMessage(`Failed to fetch documents (HTTP ${res.status})`); return; }
+        const data = await res.json();
+        if (!data.success) { setMessage(data.message || "Failed to fetch documents"); return; }
+        docs.push(...(data.documents || []));
+        hasNext = data.pagination?.has_next ?? false;
+        page++;
+        if (page > 20) break; // safety cap at 4000 docs
       }
-      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `sme-gpt-export-${session?.id || "user"}.json`;
-      a.click();
-      URL.revokeObjectURL(url);
+
+      // Sheet 1 — Document Summary
+      const summaryRows = docs.map((d) => ({
+        "Document ID":      d.document_id ?? "",
+        "Type":             d.document_type ?? "",
+        "Company":          d.company_name ?? "",
+        "Supplier":         d.supplier_name ?? "",
+        "Date":             d.date ?? "",
+        "Currency":         d.currency ?? "LKR",
+        "Raw Total":        d.raw_total_amount ?? "",
+        "Final Total":      d.final_total_amount ?? "",
+        "Payable Amount":   d.payable_amount ?? "",
+        "Flow Type":        d.flow_type ?? "",
+        "Received Status":  d.received_status ?? "",
+        "Paid Status":      d.paid_status ?? "",
+        "Status":           d.status ?? "ready",
+        "Language":         d.language ?? "en",
+      }));
+
+      // Sheet 2 — Line Items
+      const itemRows: Record<string, unknown>[] = [];
+      docs.forEach((d) => {
+        const items = d.items as Record<string, unknown>[] | undefined;
+        (items || []).forEach((item) => {
+          itemRows.push({
+            "Document ID":  d.document_id ?? "",
+            "Description":  item.description ?? "",
+            "Quantity":     item.quantity ?? "",
+            "Unit Price":   item.unit_price ?? "",
+            "Line Total":   item.line_total ?? "",
+          });
+        });
+      });
+
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(summaryRows), "Documents");
+      if (itemRows.length > 0) {
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(itemRows), "Line Items");
+      }
+
+      XLSX.writeFile(wb, `sme-gpt-documents-${new Date().toISOString().slice(0,10)}.xlsx`);
     } catch {
-      setMessage("Something went wrong while exporting your data");
+      setMessage("Something went wrong while exporting your documents");
     } finally {
       setExporting(false);
     }
+  };
+
+  // Password modal confirm handler
+  const handlePasswordConfirm = async () => {
+    if (!pwInput.trim()) { setPwError(t.passwordConfirmHint); return; }
+    setPwLoading(true);
+    setPwError("");
+    try {
+      const res = await fetch("/api/auth/verify-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: pwInput }),
+      });
+      const data = await res.json();
+      if (!data.valid) { setPwError(t.incorrectPassword); return; }
+      // Password verified — run the action
+      const action = pwModalAction;
+      setPwModalAction(null); setPwInput(""); setPwError("");
+      if (action === "export") await handleExportData();
+      if (action === "delete") await handleDeleteAccount();
+    } catch { setPwError(t.incorrectPassword); }
+    finally { setPwLoading(false); }
   };
 
   const handleDeleteAccount = async () => {
@@ -425,7 +510,7 @@ export default function ProfilePage() {
                   className="rounded-xl px-4 py-2 text-[13px] font-bold text-white transition hover:opacity-90"
                   style={{ background: "var(--brand)" }}
                 >
-                  Edit Profile
+                  {t.editProfileBtn}
                 </button>
               ) : (
                 <div className="flex gap-2">
@@ -499,12 +584,12 @@ export default function ProfilePage() {
                 <p className="text-[13px] font-medium text-[var(--text-1)]">{t.autoClassify}</p>
                 <p className="text-[12px] text-[var(--text-3)]">Invoice / PO / DN</p>
               </div>
-              <Toggle enabled={form.autoClassify} onClick={() => update("autoClassify", !form.autoClassify)} />
+              <Toggle enabled={form.autoClassify} onClick={handleToggleAutoClassify} />
             </div>
           </Card>
 
           {/* ── Appearance ────────────────────────────────────── */}
-          <SectionHeader icon="palette" title="Appearance" />
+          <SectionHeader icon="palette" title={t.appearanceSection} />
           <Card>
             <div className="flex items-center justify-between px-5 py-4">
               <div className="flex items-center gap-4">
@@ -517,9 +602,9 @@ export default function ProfilePage() {
                   </span>
                 </div>
                 <div>
-                  <p className="text-[14px] font-medium text-[var(--text-1)]">Night Mode</p>
+                  <p className="text-[14px] font-medium text-[var(--text-1)]">{t.nightMode}</p>
                   <p className="text-[12px] text-[var(--text-3)]">
-                    {theme === "dark" ? "Dark theme active" : "Light theme active"}
+                    {theme === "dark" ? t.darkThemeActive : t.lightThemeActive}
                   </p>
                 </div>
               </div>
@@ -528,12 +613,12 @@ export default function ProfilePage() {
           </Card>
 
           {/* ── Query history ─────────────────────────────────── */}
-          <SectionHeader icon="history" title="Activity" />
+          <SectionHeader icon="history" title={t.activitySection} />
           <Card>
             <ActionRow
               icon="query_stats"
-              title="Query History"
-              subtitle={queryCount !== null ? `${queryCount} saved queries` : "Loading…"}
+              title={t.queryHistoryTitle}
+              subtitle={queryCount !== null ? `${queryCount} ${t.savedQueriesCount}` : t.loading}
               onClick={() => router.push("/profile/query-history")}
               right={<span className="material-symbols-outlined text-[var(--text-3)]">chevron_right</span>}
             />
@@ -542,13 +627,13 @@ export default function ProfilePage() {
           {/* ── Security ──────────────────────────────────────── */}
           <SectionHeader icon="security" title={t.corporateSecurity} danger />
           <p className="mb-1 text-[11px] text-[var(--text-3)]">
-            All stored documents are encrypted at rest using AES-256 (database infrastructure level).
+            {t.aes256Note}
           </p>
           <Card>
             <ActionRow
               icon="key"
               title={t.changePassword}
-              subtitle="Reset password via email"
+              subtitle={t.resetPasswordSubtitle}
               iconBg="rgba(220,38,38,0.1)"
               iconColor="#dc2626"
               onClick={() => router.push("/forgot-password")}
@@ -565,7 +650,7 @@ export default function ProfilePage() {
                 </div>
                 <div>
                   <p className="text-[14px] font-medium text-[var(--text-1)]">{t.twoFactor}</p>
-                  <p className="text-[12px] text-[var(--text-3)]">Email confirmation on new devices</p>
+                  <p className="text-[12px] text-[var(--text-3)]">{t.twoFactorSubtitle}</p>
                 </div>
               </div>
               <Toggle enabled={form.twoFactorEnabled} onClick={handleToggle2FA} />
@@ -574,7 +659,7 @@ export default function ProfilePage() {
             <ActionRow
               icon="admin_panel_settings"
               title={t.sessionManagement}
-              subtitle="Trusted devices and active sessions"
+              subtitle={t.sessionSubtitle}
               iconBg="rgba(217,119,6,0.1)"
               iconColor="#d97706"
               onClick={() => router.push("/session-management")}
@@ -582,60 +667,83 @@ export default function ProfilePage() {
             />
           </Card>
 
-          {/* ── Danger Zone (GDPR export/delete) ───────────────── */}
-          <SectionHeader icon="warning" title="Danger Zone" danger />
+          {/* ── Data Management ──────────────────────────────────── */}
+          <SectionHeader icon="database" title={t.dangerZoneTitle} />
           <Card>
             <ActionRow
-              icon="download"
-              title="Export My Data"
-              subtitle="Download all your documents and query history as JSON"
-              iconBg="rgba(220,38,38,0.1)"
-              iconColor="#dc2626"
-              onClick={handleExportData}
+              icon="table_view"
+              title={t.exportMyData}
+              subtitle={t.exportSubtitle}
+              iconBg="rgba(34,82,181,0.1)"
+              iconColor="#2252b5"
+              onClick={() => { setPwModalAction("export"); setPwInput(""); setPwError(""); }}
               right={
                 exporting ? (
-                  <span className="text-[12px] text-[var(--text-3)]">Exporting…</span>
+                  <span className="text-[12px] text-[var(--text-3)]">{t.exportingMsg}</span>
                 ) : (
                   <span className="material-symbols-outlined text-[var(--text-3)]">chevron_right</span>
                 )
               }
             />
             <Divider />
-            {!confirmDelete ? (
-              <ActionRow
-                icon="delete_forever"
-                title="Delete Account"
-                subtitle="Permanently delete your account and all associated data"
-                iconBg="rgba(220,38,38,0.1)"
-                iconColor="#dc2626"
-                onClick={() => setConfirmDelete(true)}
-                right={<span className="material-symbols-outlined text-[var(--text-3)]">chevron_right</span>}
-              />
-            ) : (
-              <div className="px-5 py-4">
-                <p className="mb-3 text-[13px] font-medium text-[var(--text-1)]">
-                  This permanently deletes your account, documents, and query history. This cannot be undone.
+            <ActionRow
+              icon="delete_forever"
+              title={t.deleteAccount}
+              subtitle={t.deleteSubtitle}
+              iconBg="rgba(220,38,38,0.1)"
+              iconColor="#dc2626"
+              onClick={() => { setPwModalAction("delete"); setPwInput(""); setPwError(""); }}
+              right={<span className="material-symbols-outlined text-[var(--text-3)]">chevron_right</span>}
+            />
+          </Card>
+
+          {/* Password confirmation modal */}
+          {pwModalAction && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+              <div className="w-full max-w-[380px] rounded-2xl p-6 shadow-xl"
+                style={{ background: "var(--surface)" }}>
+                <p className="text-[16px] font-extrabold text-[var(--text-1)]">
+                  {t.passwordConfirmTitle}
                 </p>
-                <div className="flex gap-2">
+                <p className="mt-1 text-[13px] text-[var(--text-2)]">
+                  {t.passwordConfirmHint}
+                </p>
+                <input
+                  type="password"
+                  value={pwInput}
+                  onChange={(e) => { setPwInput(e.target.value); setPwError(""); }}
+                  onKeyDown={(e) => { if (e.key === "Enter") handlePasswordConfirm(); }}
+                  placeholder="••••••••"
+                  className="field-input mt-4 w-full rounded-xl border px-4 py-3 text-[15px] transition"
+                  autoFocus
+                />
+                {pwError && (
+                  <p className="mt-2 text-[12px] text-red-600">{pwError}</p>
+                )}
+                <div className="mt-4 flex gap-3">
                   <button
-                    onClick={() => setConfirmDelete(false)}
-                    className="rounded-xl px-4 py-2 text-[13px] font-semibold transition hover:bg-[var(--surface-2)]"
+                    onClick={() => { setPwModalAction(null); setPwInput(""); setPwError(""); }}
+                    className="flex-1 rounded-xl py-2.5 text-[13px] font-semibold transition hover:opacity-80"
                     style={{ border: "1px solid var(--border)", color: "var(--text-2)" }}
                   >
-                    Cancel
+                    {t.cancel}
                   </button>
                   <button
-                    onClick={handleDeleteAccount}
-                    disabled={deleting}
-                    className="rounded-xl px-4 py-2 text-[13px] font-bold text-white transition hover:opacity-90 disabled:opacity-60"
-                    style={{ background: "#dc2626" }}
+                    onClick={handlePasswordConfirm}
+                    disabled={pwLoading || !pwInput.trim()}
+                    className="flex-1 rounded-xl py-2.5 text-[13px] font-bold text-white transition hover:opacity-90 disabled:opacity-50"
+                    style={{ background: pwModalAction === "delete" ? "#dc2626" : "var(--brand)" }}
                   >
-                    {deleting ? "Deleting…" : "Confirm Delete"}
+                    {pwLoading
+                      ? (lang === "si" ? "සත්‍යාපනය..." : "Verifying...")
+                      : pwModalAction === "export"
+                      ? t.downloadExcel
+                      : t.deleteAccount}
                   </button>
                 </div>
               </div>
-            )}
-          </Card>
+            </div>
+          )}
 
           {message && (
             <p

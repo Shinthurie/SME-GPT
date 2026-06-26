@@ -275,8 +275,8 @@ export default function UploadPage() {
       step: 1,
     },
     {
-      title: "Reading Documents",
-      desc:  "Optical character recognition active...",
+      title: t.ocrExtraction,
+      desc:  t.ocrExtractionDesc,
       step: 2,
     },
   ].map((s) => ({
@@ -341,7 +341,7 @@ export default function UploadPage() {
                   <span className="material-symbols-outlined text-[16px]">
                     {l === "en" ? "language" : "translate"}
                   </span>
-                  {l === "en" ? "English" : "Sinhala"}
+                  {l === "en" ? t.english : t.sinhala}
                 </button>
               ))}
             </div>
@@ -392,7 +392,7 @@ export default function UploadPage() {
                 className="rounded-xl px-5 py-2.5 text-[13px] font-semibold transition hover:opacity-80"
                 style={{ background: "var(--brand-tint)", color: "var(--brand-mid)" }}
               >
-                {selectedFile ? "Choose Another File" : t.selectDevice}
+                {selectedFile ? t.chooseAnother : t.selectDevice}
               </button>
               <button
                 onClick={openCamera}
@@ -400,7 +400,7 @@ export default function UploadPage() {
                 style={{ background: "var(--surface)", border: "1px solid var(--border)", color: "var(--text-2)" }}
               >
                 <span className="material-symbols-outlined text-[17px]">photo_camera</span>
-                {lang === "si" ? "කැමරා" : "Take Photo"}
+                {t.takePhoto}
               </button>
             </div>
           </div>
@@ -480,8 +480,10 @@ export default function UploadPage() {
               shield
             </span>
             <p className="text-[12px] text-[var(--text-2)]">
-              <span className="font-bold" style={{ color: "var(--brand)" }}>Enterprise Security:</span>{" "}
-              All data is processed using AES-256 encryption. Our bilingual OCR system is optimised for SME document formats.
+              <span className="font-bold" style={{ color: "var(--brand)" }}>
+                {lang === "si" ? "ව්‍යාපාරික ආරක්ෂාව:" : "Enterprise Security:"}
+              </span>{" "}
+              {t.securityBanner}
             </p>
           </div>
 
@@ -512,15 +514,15 @@ export default function UploadPage() {
             {isProcessing
               ? stageMessage || "Processing…"
               : preview
-              ? "Extraction Done ✓  — View Results ↓"
-              : "Begin Extraction"}
+              ? t.extractionDone
+              : t.beginExtraction}
           </button>
 
           {/* Preview */}
           {preview && (
             <div ref={previewRef} className="mt-8 rounded-2xl p-5" style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
-              <h2 className="text-[19px] font-extrabold text-[var(--text-1)]">Extracted Preview</h2>
-              <p className="mt-1 text-[13px] text-[var(--text-2)]">Review and edit before saving.</p>
+              <h2 className="text-[19px] font-extrabold text-[var(--text-1)]">{t.extractedPreview}</h2>
+              <p className="mt-1 text-[13px] text-[var(--text-2)]">{t.reviewBeforeSaving}</p>
 
               <div className="mt-5 grid gap-4 sm:grid-cols-2">
                 {FIELD_ROWS.map(([field, label]) => {
@@ -554,7 +556,7 @@ export default function UploadPage() {
               {/* Items */}
               {preview.items && preview.items.length > 0 && (
                 <div className="mt-6">
-                  <p className="mb-3 text-[11px] font-bold uppercase tracking-[0.08em] text-[var(--text-3)]">Items</p>
+                  <p className="mb-3 text-[11px] font-bold uppercase tracking-[0.08em] text-[var(--text-3)]">{t.itemsLabel}</p>
                   <div className="space-y-3">
                     {preview.items.map((item, idx) => (
                       <div key={idx} className="grid gap-3 rounded-xl p-4 sm:grid-cols-3"
@@ -589,10 +591,10 @@ export default function UploadPage() {
                     <button onClick={() => { setShowAmountMismatch(false); handleSave(true); }}
                       disabled={isSaving}
                       className="rounded-xl px-4 py-2 text-[13px] font-bold text-white"
-                      style={{ background: "#d97706" }}>Save Anyway</button>
+                      style={{ background: "#d97706" }}>{t.saveAnyway}</button>
                     <button onClick={() => setShowAmountMismatch(false)}
                       className="rounded-xl px-4 py-2 text-[13px] font-semibold"
-                      style={{ border: "1px solid rgba(217,119,6,0.4)", color: "#92400e" }}>Cancel</button>
+                      style={{ border: "1px solid rgba(217,119,6,0.4)", color: "#92400e" }}>{t.cancel}</button>
                   </div>
                 </div>
               )}
@@ -610,7 +612,7 @@ export default function UploadPage() {
                     </button>
                     <button onClick={() => { setShowDuplicateWarning(false); setDuplicateMessage(""); }}
                       className="rounded-xl px-4 py-2 text-[13px] font-semibold"
-                      style={{ border: "1px solid rgba(217,119,6,0.4)", color: "#92400e" }}>Cancel</button>
+                      style={{ border: "1px solid rgba(217,119,6,0.4)", color: "#92400e" }}>{t.cancel}</button>
                   </div>
                 </div>
               )}
@@ -621,7 +623,7 @@ export default function UploadPage() {
                 className="mt-6 w-full rounded-2xl py-4 text-[15px] font-bold text-white transition hover:opacity-90 disabled:opacity-60"
                 style={{ background: "#16a34a" }}
               >
-                {isSaving ? "Saving…" : "Confirm and Save"}
+                {isSaving ? t.saving : t.confirmAndSave}
               </button>
             </div>
           )}
