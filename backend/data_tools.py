@@ -169,11 +169,18 @@ def route_question(question: str):
         return "dn_list"
     
 
-    if any(term in q for term in ["expense", "expenses", "expence", "spent", "cost"]):
-        return "expense"
+    if any(term in q for term in ["cash inflow", "cash_inflow", "inflow"]):
+        return "cash_inflow"
 
-    if any(term in q for term in ["income", "revenue", "earned"]):
-        return "income"
+    if any(term in q for term in ["cash outflow", "cash_outflow", "outflow"]):
+        return "cash_outflow"
+
+    if any(term in q for term in ["expense", "expenses", "expence", "spent", "cost", "expenditure"]):
+        return "expenses"
+
+    if any(term in q for term in ["income", "revenue", "earned", "earning", "revenues"]):
+        return "revenue"
+
     return "summary"
 
 
@@ -181,16 +188,16 @@ def normalize_flow(value):
     if not value:
         return "unknown"
 
-    v = str(value).strip().lower()
+    v = str(value).strip().lower().replace(" ", "_")
 
-    if v in ["receivable", "receive"]:
+    if v in ("receivable", "receive"):
         return "receivable"
-    if v in ["payable", "pay"]:
+    if v in ("payable", "pay"):
         return "payable"
-    if v in ["income"]:
-        return "income"
-    if v in ["expense", "expence"]:
-        return "expense"
+    if v in ("cash_inflow", "income", "inflow"):
+        return "cash_inflow"
+    if v in ("cash_outflow", "expense", "expence", "outflow"):
+        return "cash_outflow"
 
     return "unknown"
 
@@ -321,16 +328,19 @@ def build_direct_answer(records: pd.DataFrame, question_type: str, company_name:
             else:
                 lines.append("  - No item details found for this document.")
 
-    if question_type == "receivable":
-        lines.append(f"Total Receivable: LKR {total}")
-    elif question_type == "payable":
-        lines.append(f"Total Payable: LKR {total}")
-    elif question_type == "expense":
-        lines.append(f"Total Expense: LKR {total}")
-    elif question_type == "income":
-        lines.append(f"Total Income: LKR {total}")
-    else:
-        lines.append(f"Total: LKR {total}")
+    labels = {
+        "receivable":  "Total Receivable",
+        "payable":     "Total Payable",
+        "revenue":     "Total Revenue",
+        "expenses":    "Total Expenses",
+        "cash_inflow": "Total Cash Inflow",
+        "cash_outflow":"Total Cash Outflow",
+        # legacy aliases
+        "income":  "Total Income",
+        "expense": "Total Expense",
+    }
+    label = labels.get(question_type, "Total")
+    lines.append(f"{label}: LKR {total}")
 
     return "\n".join(lines)
 
@@ -372,33 +382,96 @@ def analyze_financial_query(question: str, company_name: str, user_id: str):
             filtered_df = candidate_df
             entity_filter_applied = True
 
-    if question_type in ["expense", "income"]:
+    # Revenue = receivable + cash_inflow
+    if question_type == "revenue":
         result_df = filtered_df[
-            filtered_df["flow_type"].apply(normalize_flow) == question_type
+            filtered_df["flow_type"].apply(normalize_flow).isin(["receivable", "cash_inflow"])
         ].copy()
-
         total_amount = sum_amounts(result_df)
-
-        reason = f"Included because current user matched, company matched, and flow_type is {question_type}."
-        if entity_filter_applied:
-            reason = f"Included because current user matched, company matched, flow_type is {question_type}, and entity matched '{entity_name}'."
-
+        reason = "Included because flow_type is receivable or cash_inflow (Revenue category)."
         return {
             "success": True,
-            "question_type": question_type,
-            "direct_answer": build_direct_answer(result_df, question_type, company_name, question),
-            "explanation": (
-                f"Computed {question_type} records for company '{company_name}' using only the current user's matching documents."
-                + (f" Applied extra entity filter for '{entity_name}'." if entity_filter_applied else "")
-            ),
+            "question_type": "revenue",
+            "direct_answer": build_direct_answer(result_df, "revenue", company_name, question),
+            "explanation": f"Total revenue (receivable + cash inflow) for '{company_name}'." + (f" Entity filter: '{entity_name}'." if entity_filter_applied else ""),
             "evidence": build_evidence(result_df, reason),
             "metrics": {
                 "company_name": company_name,
                 "matching_records": int(len(result_df)),
-                "filtered_records": int(len(result_df)),
-                f"{question_type}_documents": int(len(result_df)),
+                "revenue_documents": int(len(result_df)),
                 "entity_filter": entity_name if entity_filter_applied else "",
-                f"total_{question_type}_amount": total_amount,
+                "total_revenue_amount": total_amount,
+            },
+            "source_file": DATASET_PATH,
+        }
+
+    # Expenses = payable + cash_outflow
+    if question_type == "expenses":
+        result_df = filtered_df[
+            filtered_df["flow_type"].apply(normalize_flow).isin(["payable", "cash_outflow"])
+        ].copy()
+        total_amount = sum_amounts(result_df)
+        reason = "Included because flow_type is payable or cash_outflow (Expenses category)."
+        return {
+            "success": True,
+            "question_type": "expenses",
+            "direct_answer": build_direct_answer(result_df, "expenses", company_name, question),
+            "explanation": f"Total expenses (payable + cash outflow) for '{company_name}'." + (f" Entity filter: '{entity_name}'." if entity_filter_applied else ""),
+            "evidence": build_evidence(result_df, reason),
+            "metrics": {
+                "company_name": company_name,
+                "matching_records": int(len(result_df)),
+                "expense_documents": int(len(result_df)),
+                "entity_filter": entity_name if entity_filter_applied else "",
+                "total_expenses_amount": total_amount,
+            },
+            "source_file": DATASET_PATH,
+        }
+
+    # Cash inflow = cash_inflow docs + receivable with cash_inflowed > 0
+    if question_type == "cash_inflow":
+        inflow_df = filtered_df[filtered_df["flow_type"].apply(normalize_flow) == "cash_inflow"].copy()
+        partial_df = filtered_df[
+            (filtered_df["flow_type"].apply(normalize_flow) == "receivable") &
+            (filtered_df.get("cash_inflowed", pd.Series(dtype=float)).fillna(0) > 0)
+        ].copy() if "cash_inflowed" in filtered_df.columns else filtered_df.iloc[0:0].copy()
+        result_df = pd.concat([inflow_df, partial_df], ignore_index=True).drop_duplicates(subset=["document_id"])
+        total_amount = sum_amounts(result_df)
+        reason = "Included because flow_type is cash_inflow or has partial cash inflowed amount."
+        return {
+            "success": True,
+            "question_type": "cash_inflow",
+            "direct_answer": build_direct_answer(result_df, "cash_inflow", company_name, question),
+            "explanation": f"Total cash inflow for '{company_name}' (fully received + partially received receivables).",
+            "evidence": build_evidence(result_df, reason),
+            "metrics": {
+                "company_name": company_name,
+                "cash_inflow_documents": int(len(result_df)),
+                "total_cash_inflow_amount": total_amount,
+            },
+            "source_file": DATASET_PATH,
+        }
+
+    # Cash outflow = cash_outflow docs + payable with cash_outflowed > 0
+    if question_type == "cash_outflow":
+        outflow_df = filtered_df[filtered_df["flow_type"].apply(normalize_flow) == "cash_outflow"].copy()
+        partial_df = filtered_df[
+            (filtered_df["flow_type"].apply(normalize_flow) == "payable") &
+            (filtered_df.get("cash_outflowed", pd.Series(dtype=float)).fillna(0) > 0)
+        ].copy() if "cash_outflowed" in filtered_df.columns else filtered_df.iloc[0:0].copy()
+        result_df = pd.concat([outflow_df, partial_df], ignore_index=True).drop_duplicates(subset=["document_id"])
+        total_amount = sum_amounts(result_df)
+        reason = "Included because flow_type is cash_outflow or has partial cash outflowed amount."
+        return {
+            "success": True,
+            "question_type": "cash_outflow",
+            "direct_answer": build_direct_answer(result_df, "cash_outflow", company_name, question),
+            "explanation": f"Total cash outflow for '{company_name}' (fully paid + partially paid payables).",
+            "evidence": build_evidence(result_df, reason),
+            "metrics": {
+                "company_name": company_name,
+                "cash_outflow_documents": int(len(result_df)),
+                "total_cash_outflow_amount": total_amount,
             },
             "source_file": DATASET_PATH,
         }
