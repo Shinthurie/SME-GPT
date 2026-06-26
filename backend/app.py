@@ -36,39 +36,54 @@ from dataset_manager import (
     get_record_by_id_for_user,
     update_record_for_user,
     delete_record_for_user,
+    invalidate_column_cache,
 )
 from pal_qa import answer_financial_question
 
-JWT_SECRET = os.getenv("JWT_SECRET", "your_super_secret_key_123")
+JWT_SECRET = os.getenv("JWT_SECRET", "")
+if not JWT_SECRET or JWT_SECRET == "your_super_secret_key_123":
+    raise RuntimeError(
+        "JWT_SECRET must be set to a strong random secret in backend/.env. "
+        "The app will not start with an empty or default secret."
+    )
 JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
 DATABASE_URL = os.getenv("DATABASE_URL", "")
 
 app = FastAPI(title="SME-GPT Financial Document Backend")
 
+# Always allow local dev origins; extend with CORS_ALLOW_ORIGINS env var for production
+_ALWAYS_ALLOW = [
+    "http://localhost:3000",
+    "http://localhost:3001",
+    "http://127.0.0.1:3000",
+    "http://192.168.56.1:3000",
+]
+_env_extra = [
+    o.strip()
+    for o in os.getenv("CORS_ALLOW_ORIGINS", "").split(",")
+    if o.strip()
+]
+CORS_ORIGINS = list(dict.fromkeys(_ALWAYS_ALLOW + _env_extra))  # dedup, preserve order
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-        "http://192.168.56.1:3000",
-    ],
+    allow_origins=CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 # ── Iteration 8: in-process rate limiter ────────────────────────────────────
-# Sliding-window counter per IP. Limits:
-#   /ask-query  → 30 requests / 60 s   (LLM calls are expensive)
-#   /process-*  → 10 requests / 60 s   (OCR pipeline is heavy)
-#   all others  → 120 requests / 60 s
-_RATE_WINDOW = 60          # seconds
+# Sliding-window counter per IP. Configure via environment variables.
+_RATE_WINDOW    = int(os.getenv("RATE_LIMIT_WINDOW_SECS",    "60"))
+_RATE_ASK_QUERY = int(os.getenv("RATE_LIMIT_ASK_QUERY",      "30"))
+_RATE_PROCESS   = int(os.getenv("RATE_LIMIT_PROCESS_DOC",    "10"))
+_RATE_DEFAULT   = int(os.getenv("RATE_LIMIT_DEFAULT",        "120"))
 _RATE_LIMITS: Dict[str, int] = {
-    "/ask-query":            30,
-    "/process-document":     10,
-    "/process-document-stream": 10,
+    "/ask-query":               _RATE_ASK_QUERY,
+    "/process-document":        _RATE_PROCESS,
+    "/process-document-stream": _RATE_PROCESS,
 }
-_RATE_DEFAULT = 120
 _rate_buckets: Dict[str, list] = defaultdict(list)  # key → [timestamps]
 _rate_lock = threading.Lock()
 
@@ -85,21 +100,40 @@ async def rate_limit_middleware(request: Request, call_next):
     bucket_key = f"{client_ip}:{path}"
 
     with _rate_lock:
-        timestamps = _rate_buckets[bucket_key]
         # drop entries older than the window
-        _rate_buckets[bucket_key] = [t for t in timestamps if now - t < _RATE_WINDOW]
-        if len(_rate_buckets[bucket_key]) >= limit:
+        fresh = [t for t in _rate_buckets[bucket_key] if now - t < _RATE_WINDOW]
+        # evict the key entirely when it has no in-window entries (prevents unbounded key growth)
+        if not fresh:
+            _rate_buckets.pop(bucket_key, None)
+        if len(fresh) >= limit:
             return JSONResponse(
                 {"detail": "Rate limit exceeded. Please slow down."},
                 status_code=429,
             )
-        _rate_buckets[bucket_key].append(now)
+        fresh.append(now)
+        _rate_buckets[bucket_key] = fresh
 
     return await call_next(request)
 # ─────────────────────────────────────────────────────────────────────────────
 
 PROCESSING_SESSIONS: Dict[str, Dict[str, Any]] = {}
+_SESSION_TTL_SECS = int(os.getenv("SESSION_TTL_SECS", str(60 * 60 * 2)))  # default 2 hours
 
+
+def _evict_stale_sessions():
+    while True:
+        time.sleep(300)  # check every 5 minutes
+        cutoff = time.time() - _SESSION_TTL_SECS
+        with _rate_lock:
+            stale = [k for k, v in PROCESSING_SESSIONS.items() if v.get("_created_at", 0) < cutoff]
+            for k in stale:
+                PROCESSING_SESSIONS.pop(k, None)
+        if stale:
+            print(f"[SESSION GC] evicted {len(stale)} stale sessions", flush=True)
+
+
+# NOTE (FR-31): image files in saved_documents/ are NOT application-layer encrypted.
+# In production, place this directory on an encrypted volume (e.g., EBS/LUKS encryption).
 SAVED_DOCS_DIR = Path("saved_documents")
 SAVED_DOCS_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -196,6 +230,9 @@ def startup_event():
         print("[DB] Query history table ready", flush=True)
     except Exception as e:
         print(f"[DB] Query history table init skipped/failed: {e}", flush=True)
+    threading.Thread(target=_evict_stale_sessions, daemon=True, name="session-gc").start()
+    print("[SESSION GC] stale session eviction thread started", flush=True)
+    invalidate_column_cache()  # ensure fresh schema read on startup after any migration
 
 
 def save_query_history_to_db(
@@ -425,8 +462,7 @@ def require_write_role(authorization: str = Header(default=None)) -> str:
 
 
 def require_admin_role(authorization: str = Header(default=None)) -> str:
-    """Raise 403 unless the token's role is 'admin'. Not wired into any route
-    yet -- reserved for the admin panel (docs/iteration-plan-9-14.md Iter 12)."""
+    """Raise 403 unless the token's role is 'admin'."""
     payload = _decode_token(authorization)
     role = str(payload.get("role") or "owner")
 
@@ -527,6 +563,11 @@ def to_preview_data(fields: dict) -> dict:
         "final_total_amount": safe_number(fields.get("final_total_amount")),
         "payable_amount": safe_number(fields.get("payable_amount")),
         "cash_return": safe_number(fields.get("cash_return")),
+        "tax_amount": safe_number(fields.get("tax_amount")),
+        "tax_rate": safe_number(fields.get("tax_rate")),
+        "cash_inflowed": safe_number(fields.get("cash_inflowed")),
+        "cash_outflowed": safe_number(fields.get("cash_outflowed")),
+        "category": safe_text(fields.get("category", "Unknown")),
         "received_status": safe_text(fields.get("received_status")),
         "paid_status": safe_text(fields.get("paid_status")),
         "language": safe_text(fields.get("language", "unknown")),
@@ -554,6 +595,10 @@ def merge_edited_preview_into_fields(original_fields: dict, edited_preview: dict
         "final_total_amount",
         "payable_amount",
         "cash_return",
+        "tax_amount",
+        "tax_rate",
+        "cash_inflowed",
+        "cash_outflowed",
         "received_status",
         "paid_status",
         "language",
@@ -568,12 +613,31 @@ def merge_edited_preview_into_fields(original_fields: dict, edited_preview: dict
 
         if key == "items":
             merged[key] = normalize_items(edited_preview.get("items", []))
-        elif key in {"raw_total_amount", "final_total_amount", "payable_amount", "cash_return"}:
+        elif key in {"raw_total_amount", "final_total_amount", "payable_amount", "cash_return", "tax_amount", "tax_rate", "cash_inflowed", "cash_outflowed"}:
             merged[key] = safe_number(edited_preview.get(key))
         else:
             merged[key] = safe_text(edited_preview.get(key))
 
     merged["status"] = "confirmed"
+
+    # Auto-derive effective_flow_type and category after merge
+    eft = derive_effective_flow_type(
+        merged.get("flow_type"),
+        merged.get("received_status"),
+        merged.get("paid_status"),
+        cash_inflowed=merged.get("cash_inflowed"),
+        cash_outflowed=merged.get("cash_outflowed"),
+        final_total=merged.get("final_total_amount"),
+    )
+    merged["effective_flow_type"] = eft
+    merged["category"] = derive_category(eft)
+
+    # Auto-set status fields when fully paid/received
+    if eft == "cash_inflow" and str(merged.get("received_status", "")).lower() != "received":
+        merged["received_status"] = "received"
+    if eft == "cash_outflow" and str(merged.get("paid_status", "")).lower() != "paid":
+        merged["paid_status"] = "paid"
+
     return merged
 
 
@@ -683,18 +747,48 @@ def build_dashboard_summary(records: List[dict]):
         "ready_for_query_count": ready_count,
     }
 
-def derive_effective_flow_type(flow_type: str, received_status: str, paid_status: str) -> str:
-    flow = str(flow_type or "").strip().lower()
+def derive_effective_flow_type(
+    flow_type: str,
+    received_status: str,
+    paid_status: str,
+    cash_inflowed: Any = None,
+    cash_outflowed: Any = None,
+    final_total: Any = None,
+) -> str:
+    flow     = str(flow_type or "").strip().lower().replace(" ", "_")
     received = str(received_status or "").strip().lower()
-    paid = str(paid_status or "").strip().lower()
+    paid     = str(paid_status or "").strip().lower()
+    inflowed  = safe_number(cash_inflowed)
+    outflowed = safe_number(cash_outflowed)
+    total     = safe_number(final_total)
+    inflowed  = float(inflowed)  if isinstance(inflowed,  (int, float)) else 0.0
+    outflowed = float(outflowed) if isinstance(outflowed, (int, float)) else 0.0
+    total     = float(total)     if isinstance(total,     (int, float)) else 0.0
 
-    if flow == "receivable" and received == "received":
-        return "income"
+    if flow == "receivable":
+        if received == "received" or (total > 0 and inflowed >= total):
+            return "cash_inflow"
+        return "receivable"
 
-    if flow == "payable" and paid == "paid":
-        return "expense"
+    if flow == "payable":
+        if paid == "paid" or (total > 0 and outflowed >= total):
+            return "cash_outflow"
+        return "payable"
+
+    # Already a terminal state
+    if flow in ("cash_inflow", "cash_outflow"):
+        return flow
 
     return flow
+
+
+def derive_category(effective_flow_type: str) -> str:
+    eft = str(effective_flow_type or "").strip().lower().replace(" ", "_")
+    if eft in ("receivable", "cash_inflow"):
+        return "Revenue"
+    if eft in ("payable", "cash_outflow"):
+        return "Expenses"
+    return "Unknown"
 # =========================
 # REQUEST MODELS
 # =========================
@@ -721,6 +815,8 @@ class UpdateDocumentRequest(BaseModel):
     final_total_amount: Optional[Any] = None
     payable_amount: Optional[Any] = None
     cash_return: Optional[Any] = None
+    cash_inflowed: Optional[Any] = None
+    cash_outflowed: Optional[Any] = None
     received_status: Optional[str] = None
     paid_status: Optional[str] = None
     language: Optional[str] = None
@@ -732,7 +828,13 @@ class UpdateDocumentRequest(BaseModel):
 # =========================
 @app.get("/health")
 def health():
-    return {"success": True, "message": "Backend is running."}
+    from llm_client import check_ollama_health
+    ollama = check_ollama_health()
+    return {
+        "success": True,
+        "message": "Backend is running.",
+        "ollama": ollama,
+    }
 
 
 @app.post("/process-document")
@@ -767,6 +869,7 @@ async def process_document(
 
         session_id = str(uuid.uuid4())
         PROCESSING_SESSIONS[session_id] = {
+            "_created_at": time.time(),
             "user_id": user_id,
             "fields": fields,
             "preview": preview,
@@ -914,8 +1017,8 @@ async def process_document_stream(
                     _rich_template = _build_rich(
                         _c1_pages, tenant_id="__pending__", document_id="__pending__"
                     )
-                except Exception:
-                    pass
+                except Exception as _pre_rich_err:
+                    print(f"[PROCESS-STREAM] pre-rich template failed (non-fatal): {_pre_rich_err}", flush=True)
 
             # Stage 3 — LLM correction
             emit("llm_correction", 3, "Correcting OCR text with LLM…")
@@ -949,6 +1052,7 @@ async def process_document_stream(
             preview = to_preview_data(extracted_json)
 
             PROCESSING_SESSIONS[session_id] = {
+                "_created_at": time.time(),
                 "user_id": user_id,
                 "fields": extracted_json,
                 "preview": preview,
@@ -1033,6 +1137,21 @@ def confirm_save(payload: ConfirmSaveRequest, authorization: str = Header(defaul
             detail="This processing session does not belong to the current user.",
         )
 
+    # All keys produced by to_preview_data() — editable + read-only display fields
+    _ALLOWED_PREVIEW_KEYS = {
+        "document_type", "order_id", "flow_type", "company_name", "supplier_name",
+        "date", "currency", "raw_total_amount", "final_total_amount", "payable_amount",
+        "cash_return", "tax_amount", "tax_rate",
+        "cash_inflowed", "cash_outflowed", "category",
+        "received_status", "paid_status", "language", "items",
+        "raw_text", "corrected_text",
+        # read-only display fields sent back by the frontend unchanged
+        "arithmetic_status", "arithmetic_validation", "recommended_total_from_items",
+    }
+    unknown_keys = set(payload.edited_preview.keys()) - _ALLOWED_PREVIEW_KEYS
+    if unknown_keys:
+        raise HTTPException(status_code=400, detail=f"Unknown preview fields: {sorted(unknown_keys)}")
+
     original_fields = session["fields"]
     final_data = merge_edited_preview_into_fields(original_fields, payload.edited_preview)
 
@@ -1043,7 +1162,7 @@ def confirm_save(payload: ConfirmSaveRequest, authorization: str = Header(defaul
             content={
                 "success": False,
                 "duplicate_found": True,
-                "message": "Already we have this document.",
+                "message": "This document already exists in the repository.",
                 "existing_document_id": duplicate.get("document_id", "NULL")
             }
         )
@@ -1051,7 +1170,10 @@ def confirm_save(payload: ConfirmSaveRequest, authorization: str = Header(defaul
     save_input_json(final_data, "last_confirmed.json")
     save_result = upsert_confirmed_record(final_data, user_id=user_id)
 
-    document_id = save_result["record"]["document_id"]
+    _record = (save_result.get("record") or {})
+    document_id = _record.get("document_id")
+    if not document_id:
+        raise HTTPException(status_code=500, detail="Failed to retrieve saved document ID.")
     image_url = save_document_image_from_session(session["meta"], document_id)
 
     # ── Iteration 9: embed spatial chunks + persist JSON blobs ───────────
@@ -1139,7 +1261,7 @@ def update_document(document_id: str, payload: UpdateDocumentRequest, authorizat
     if "items" in update_data:
         update_data["items"] = normalize_items(update_data.get("items", []))
 
-    for numeric_key in ["raw_total_amount", "final_total_amount", "payable_amount", "cash_return"]:
+    for numeric_key in ["raw_total_amount", "final_total_amount", "payable_amount", "cash_return", "cash_inflowed", "cash_outflowed"]:
         if numeric_key in update_data:
             update_data[numeric_key] = safe_number(update_data[numeric_key])
 
@@ -1147,23 +1269,34 @@ def update_document(document_id: str, payload: UpdateDocumentRequest, authorizat
     if not existing:
         raise HTTPException(status_code=404, detail="Document not found.")
 
-    next_flow_type = update_data.get("flow_type", existing.get("flow_type", ""))
-    next_received_status = update_data.get("received_status", existing.get("received_status", ""))
-    next_paid_status = update_data.get("paid_status", existing.get("paid_status", ""))
+    next_flow_type      = update_data.get("flow_type",        existing.get("flow_type", ""))
+    next_received       = update_data.get("received_status",  existing.get("received_status", ""))
+    next_paid           = update_data.get("paid_status",      existing.get("paid_status", ""))
+    next_cash_inflowed  = update_data.get("cash_inflowed",    existing.get("cash_inflowed"))
+    next_cash_outflowed = update_data.get("cash_outflowed",   existing.get("cash_outflowed"))
+    next_final_total    = update_data.get("final_total_amount", existing.get("final_total_amount"))
 
     effective_flow_type = derive_effective_flow_type(
-        next_flow_type,
-        next_received_status,
-        next_paid_status,
+        next_flow_type, next_received, next_paid,
+        cash_inflowed=next_cash_inflowed,
+        cash_outflowed=next_cash_outflowed,
+        final_total=next_final_total,
     )
-
     update_data["effective_flow_type"] = effective_flow_type
+    update_data["category"] = derive_category(effective_flow_type)
+
+    # Auto-set status fields on full payment/receipt
+    if effective_flow_type == "cash_inflow":
+        update_data["received_status"] = "received"
+    if effective_flow_type == "cash_outflow":
+        update_data["paid_status"] = "paid"
 
     flow_changed_message = ""
-    if str(next_flow_type).strip().lower() == "receivable" and str(next_received_status).strip().lower() == "received":
-        flow_changed_message = "Flow type changed from receivable to income because received_status is received."
-    elif str(next_flow_type).strip().lower() == "payable" and str(next_paid_status).strip().lower() == "paid":
-        flow_changed_message = "Flow type changed from payable to expense because paid_status is paid."
+    prev_flow = str(existing.get("effective_flow_type") or existing.get("flow_type") or "").strip().lower()
+    if effective_flow_type == "cash_inflow" and prev_flow == "receivable":
+        flow_changed_message = "Document fully received — flow changed from Receivable to Cash Inflow."
+    elif effective_flow_type == "cash_outflow" and prev_flow == "payable":
+        flow_changed_message = "Document fully paid — flow changed from Payable to Cash Outflow."
 
     updated = update_record_for_user(
         user_id=user_id,
@@ -1446,9 +1579,7 @@ def prune_old_audit_logs(
     """NFR-15 — Delete ActivityLog rows older than `days` days (default 365).
     Admin-only via RBAC role check."""
     user_id = get_current_user_id(authorization)
-    role = get_current_user_role(authorization)
-    if role not in {"admin"}:
-        raise HTTPException(status_code=403, detail="Admin access required.")
+    require_admin_role(authorization)
 
     with get_db_connection() as conn:
         with conn.cursor() as cur:

@@ -541,6 +541,9 @@ export default function ProfilePage() {
 
           {/* ── Security ──────────────────────────────────────── */}
           <SectionHeader icon="security" title={t.corporateSecurity} danger />
+          <p className="mb-1 text-[11px] text-[var(--text-3)]">
+            All stored documents are encrypted at rest using AES-256 (database infrastructure level).
+          </p>
           <Card>
             <ActionRow
               icon="key"
