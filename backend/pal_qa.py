@@ -30,10 +30,10 @@ SOURCE = "FinancialDocument + LineItem (Postgres)"
 _NON_ARITHMETIC_INTENTS = {"invoice_list", "receipt_list", "po_list", "dn_list"}
 
 # These intents have deterministic handlers in data_tools.analyze_financial_query
-# that correctly map the new flow types (revenue/expenses/cash_inflow/cash_outflow).
-# Bypassing the PAL planner avoids the LLM generating wrong flow_type filters.
-_LEGACY_DIRECT_INTENTS = {"revenue", "expenses", "cash_inflow", "cash_outflow",
-                          "receivable", "payable"}
+# that correctly map the new flow types. Bypassing the PAL planner avoids the
+# LLM generating wrong flow_type filters for these category-level questions.
+# Note: "receivable" and "payable" stay in the PAL path (existing tests cover them).
+_LEGACY_DIRECT_INTENTS = {"revenue", "expenses", "cash_inflow", "cash_outflow"}
 
 
 def _legacy_answer(
