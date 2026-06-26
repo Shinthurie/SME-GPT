@@ -25,7 +25,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from document_pipeline import process_uploaded_document
+from document_pipeline import process_uploaded_document, OCREngineUnavailableError
 from dataset_manager import (
     upsert_confirmed_record,
     save_input_json,
@@ -154,6 +154,7 @@ _ERROR_CODE_BY_STATUS = {
     404: "DOCUMENT_NOT_FOUND",
     409: "CONFLICT",
     429: "RATE_LIMITED",
+    503: "SERVICE_UNAVAILABLE",
 }
 
 
@@ -864,7 +865,10 @@ async def process_document(
         with open(temp_file_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
 
-        result = process_uploaded_document(temp_file_path)
+        try:
+            result = process_uploaded_document(temp_file_path)
+        except OCREngineUnavailableError as e:
+            raise HTTPException(status_code=503, detail=str(e))
         fields = result["extracted_fields"]
         preview = to_preview_data(fields)
 
@@ -945,10 +949,10 @@ async def process_document_stream(
                 standardize_to_images,
                 preprocess_images,
                 _normalize_multi_page_ocr_result,
+                OCREngineUnavailableError,
                 COLAB_OCR_URL as _COLAB_URL,
             )
             from colab_ocr_client import send_images_to_colab_ocr
-            from local_surya_ocr_client import run_local_surya_ocr
             from ocr_selector import select_best_ocr_version
             from llm_correction import llm_refine_text, clean_ocr_text
             from ocr_to_json_extractor import extract_structured_json_from_text
@@ -967,16 +971,17 @@ async def process_document_stream(
             colab_url = _COLAB_URL or os.getenv("COLAB_OCR_URL", "").strip()
             page_count = len(processed_pages)
 
-            if colab_url:
-                emit("ocr", 2, f"Running Colab OCR on {page_count} page(s)…")
-                try:
-                    ocr_result = send_images_to_colab_ocr(processed_pages, colab_url)
-                except Exception as ocr_err:
-                    emit("ocr", 2, f"Colab OCR failed ({ocr_err}) — switching to local OCR…")
-                    ocr_result = run_local_surya_ocr(processed_pages)
-            else:
-                emit("ocr", 2, f"Running local OCR on {page_count} page(s)…")
-                ocr_result = run_local_surya_ocr(processed_pages)
+            if not colab_url:
+                emit("error", 2, str(OCREngineUnavailableError()))
+                return
+
+            emit("ocr", 2, f"Running Colab OCR on {page_count} page(s)…")
+            try:
+                ocr_result = send_images_to_colab_ocr(processed_pages, colab_url)
+            except Exception as ocr_err:
+                print(f"[PROCESS-STREAM] Colab OCR failed: {ocr_err}", flush=True)
+                emit("error", 2, str(OCREngineUnavailableError()))
+                return
 
             normalized = _normalize_multi_page_ocr_result(ocr_result)
             versions = normalized.get("versions", {})
