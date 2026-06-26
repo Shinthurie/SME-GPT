@@ -29,6 +29,12 @@ SOURCE = "FinancialDocument + LineItem (Postgres)"
 # legacy path rather than spending a planner call that can't help.
 _NON_ARITHMETIC_INTENTS = {"invoice_list", "receipt_list", "po_list", "dn_list"}
 
+# These intents have deterministic handlers in data_tools.analyze_financial_query
+# that correctly map the new flow types (revenue/expenses/cash_inflow/cash_outflow).
+# Bypassing the PAL planner avoids the LLM generating wrong flow_type filters.
+_LEGACY_DIRECT_INTENTS = {"revenue", "expenses", "cash_inflow", "cash_outflow",
+                          "receivable", "payable"}
+
 
 def _legacy_answer(
     question: str,
@@ -85,9 +91,14 @@ def _empty_scope_answer(message: str) -> dict:
 
 def answer_financial_question(question: str, company_name: str, user_id: str) -> dict:
     question_type = dt.route_question(question)
+
     if question_type in _NON_ARITHMETIC_INTENTS:
-        # Listing queries report an empty set legitimately — don't apply FR-22 refusal.
+        # Listing queries — no provenance check (empty set is a valid answer)
         return _legacy_answer(question, company_name, user_id, require_provenance=False)
+
+    if question_type in _LEGACY_DIRECT_INTENTS:
+        # Deterministic aggregation — bypass PAL planner to avoid LLM flow_type errors
+        return _legacy_answer(question, company_name, user_id, require_provenance=True)
 
     # Iteration 15 — FR-19: hybrid RAG + SQL scope; degrades silently to SQL-only
     documents_df, scope_error = resolve_scope_with_rag(question, company_name, user_id)

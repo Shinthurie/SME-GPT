@@ -1,12 +1,14 @@
 import os
 import re
-import requests
 from pathlib import Path
 from symspellpy import SymSpell, Verbosity
+from llm_client import call_llm
 
-DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
-DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
-DEEPSEEK_HOST = "https://api.deepseek.com"
+_CORRECTION_SYSTEM = (
+    "You are an OCR text correction assistant for financial documents from Sri Lanka. "
+    "You fix OCR errors in English text while preserving all Sinhala characters exactly as-is. "
+    "You output ONLY the corrected text — no explanations, no commentary, nothing else."
+)
 
 BASE_DIR = Path(__file__).resolve().parent
 DICT_DIR = BASE_DIR / "dictionaries"
@@ -105,7 +107,7 @@ def clean_ocr_text(text: str) -> str:
 def count_sinhala_chars(text: str) -> int:
     if not isinstance(text, str):
         return 0
-    return len(re.findall(r"[\u0D80-\u0DFF]", text))
+    return len(re.findall(r"[඀-෿]", text))
 
 
 def looks_like_transliterated_sinhala(original_text: str, corrected_text: str) -> bool:
@@ -165,6 +167,13 @@ def restore_sensitive_tokens(text: str, placeholders: dict):
 
     return text
 
+def _sinhala_ratio(text: str) -> float:
+    chars = [c for c in text if c.strip()]
+    if not chars:
+        return 0.0
+    return sum(1 for c in chars if "඀" <= c <= "෿") / len(chars)
+
+
 def looks_like_bad_rewrite(original_text: str, corrected_text: str) -> bool:
     if not isinstance(original_text, str) or not isinstance(corrected_text, str):
         return False
@@ -176,16 +185,24 @@ def looks_like_bad_rewrite(original_text: str, corrected_text: str) -> bool:
     if len(original_lines) >= 5 and len(corrected_lines) <= 2:
         return True
 
-    # Reject if model output starts with chatty phrases
+    # Reject if model output starts with chatty phrases (English or Sinhala)
     bad_starts = [
         "i'll correct",
         "here's the corrected",
         "here is the corrected",
         "based on your attempt",
         "please let me know",
+        # Sinhala chatty openers
+        "මෙය නිවැරදි",   # "this is correct"
+        "නිවැරදි කළ",    # "corrected"
+        "ඔබගේ",         # "your" — chatty opener
     ]
     lower = corrected_text.strip().lower()
-    if any(lower.startswith(x) for x in bad_starts):
+    if any(lower.startswith(x) or corrected_text.strip().startswith(x) for x in bad_starts):
+        return True
+
+    # Reject if LLM silently transliterated English input to Sinhala script
+    if _sinhala_ratio(corrected_text) > 0.8 and _sinhala_ratio(original_text) < 0.2:
         return True
 
     return False
@@ -196,7 +213,7 @@ def strip_llm_boilerplate(text: str) -> str:
 
     replacements = [
         "I'll correct the OCR text while following the strict rules. Here's the corrected text:",
-        "Here’s the corrected text:",
+        "Here's the corrected text:",
         "Here's the corrected text:",
         "Corrected OCR:",
         "Corrected OCR Text:",
@@ -395,7 +412,7 @@ def dictionary_correct_text(text: str) -> str:
     corrected_words = []
 
     for word in words:
-        if re.search(r"[\u0D80-\u0DFF]", word):
+        if re.search(r"[඀-෿]", word):
             new_word = word
 
             for wrong, correct in SINHALA_CORRECTIONS.items():
@@ -412,32 +429,8 @@ def dictionary_correct_text(text: str) -> str:
 
 
 def call_ollama(prompt: str) -> str:
-    url = f"{DEEPSEEK_HOST}/chat/completions"
-    headers = {
-        "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
-        "Content-Type": "application/json",
-    }
-    try:
-        response = requests.post(
-            url,
-            headers=headers,
-            json={
-                "model": DEEPSEEK_MODEL,
-                "messages": [{"role": "user", "content": prompt}],
-                "temperature": 0,
-                "stream": False,
-            },
-            timeout=600,
-        )
-        response.raise_for_status()
-        data = response.json()
-        return data["choices"][0]["message"]["content"].strip()
-    except requests.exceptions.ConnectionError as e:
-        raise Exception(f"Could not connect to DeepSeek API. Error: {e}")
-    except requests.exceptions.HTTPError as e:
-        raise Exception(f"DeepSeek HTTP error: {e}. Response: {response.text}")
-    except requests.exceptions.Timeout:
-        raise Exception("DeepSeek correction request timed out.")
+    """Routes correction calls to local Ollama."""
+    return call_llm(prompt, system=_CORRECTION_SYSTEM)
 
 
 def llm_refine_text(raw_text: str) -> str:
