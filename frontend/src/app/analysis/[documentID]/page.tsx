@@ -468,10 +468,10 @@ export default function AnalysisDetailPage() {
                 </div>
 
                 <div className="mt-4 space-y-4">
-                  <InfoCard title="Metadata">
-                    <span className="font-semibold text-[#0f172a]">Document ID:</span> {target.document_id}
+                  <InfoCard title={t.metadataTitle}>
+                    <span className="font-semibold text-[#0f172a]">{t.documentIdLabel}:</span> {target.document_id}
                     <br />
-                    <span className="font-semibold text-[#0f172a]">Order ID:</span>{" "}
+                    <span className="font-semibold text-[#0f172a]">{t.orderIdLabel}:</span>{" "}
                     {editMode ? (
                       <input
                         value={target.order_id || ""}
@@ -480,7 +480,7 @@ export default function AnalysisDetailPage() {
                       />
                     ) : target.order_id || "NULL"}
                     <br />
-                    <span className="font-semibold text-[#0f172a]">Date:</span>{" "}
+                    <span className="font-semibold text-[#0f172a]">{t.dateLabel}:</span>{" "}
                     {editMode ? (
                       <input
                         value={target.date || ""}
@@ -489,9 +489,9 @@ export default function AnalysisDetailPage() {
                       />
                     ) : target.date || "NULL"}
                     <br />
-                    <span className="font-semibold text-[#0f172a]">Party:</span> {formatParty()}
+                    <span className="font-semibold text-[#0f172a]">{t.partyLabel}:</span> {formatParty()}
                     <br />
-                    <span className="font-semibold text-[#0f172a]">Flow Type:</span>{" "}
+                    <span className="font-semibold text-[#0f172a]">{t.flowTypeLabel}:</span>{" "}
                     {editMode ? (
                       <select
                         value={target.flow_type || "unknown"}
@@ -506,14 +506,14 @@ export default function AnalysisDetailPage() {
                       </select>
                     ) : target.flow_type || "NULL"}
                     <br />
-                    <span className="font-semibold text-[#0f172a]">Category:</span>{" "}
+                    <span className="font-semibold text-[#0f172a]">{t.categoryLabel}:</span>{" "}
                     {(() => {
                       const ft = (target.flow_type || "").toLowerCase();
                       const derived = (target.category && target.category !== "NULL")
                         ? target.category
-                        : ["receivable","cash_inflow"].includes(ft) ? "Revenue"
-                        : ["payable","cash_outflow"].includes(ft) ? "Expenses"
-                        : "Unknown";
+                        : ["receivable","cash_inflow"].includes(ft) ? t.categoryRevenue
+                        : ["payable","cash_outflow"].includes(ft) ? t.categoryExpenses
+                        : t.categoryUnknown;
                       return (
                         <span className={`ml-1 inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-bold ${
                           derived === "Revenue"  ? "bg-green-50 text-green-700" :
@@ -524,8 +524,8 @@ export default function AnalysisDetailPage() {
                     })()}
                   </InfoCard>
 
-                  <InfoCard title="Parties">
-                    <span className="font-semibold text-[#0f172a]">Company:</span>{" "}
+                  <InfoCard title={t.partiesTitle}>
+                    <span className="font-semibold text-[#0f172a]">{t.companyLabel2}:</span>{" "}
                     {editMode ? (
                       <input
                         value={target.company_name || ""}
@@ -535,7 +535,7 @@ export default function AnalysisDetailPage() {
                     ) : target.company_name || "NULL"}
                     <br />
                     <span className="font-semibold text-[#0f172a]">
-                      {["receivable","cash_inflow"].includes(target.flow_type || "") ? "Customer:" : "Supplier:"}
+                      {["receivable","cash_inflow"].includes(target.flow_type || "") ? `${t.customerLabel}:` : `${t.supplierLabel2}:`}
                     </span>{" "}
                     {editMode ? (
                       <input
@@ -546,7 +546,7 @@ export default function AnalysisDetailPage() {
                     ) : target.supplier_name || "NULL"}
                   </InfoCard>
 
-                  <InfoCard title="Financial Summary">
+                  <InfoCard title={t.financialSummaryTitle}>
                     {(() => {
                       const ft  = (target.flow_type || "").toLowerCase();
                       const cur = target.currency && target.currency !== "NULL" ? target.currency : "LKR";
@@ -559,14 +559,14 @@ export default function AnalysisDetailPage() {
                       return (
                         <>
                           {/* Raw total always shown */}
-                          <span className="font-semibold text-[#0f172a]">Raw Total:</span>{" "}
+                          <span className="font-semibold text-[#0f172a]">{t.rawTotalLabel}:</span>{" "}
                           {editMode ? (
                             <input value={String(target.raw_total_amount || "")} onChange={(e) => updateField("raw_total_amount", e.target.value)} className="ml-2 rounded border border-slate-200 px-2 py-1 text-[13px]" />
                           ) : target.raw_total_amount || "NULL"}
                           <br />
 
                           {/* Final total always shown */}
-                          <span className="font-semibold text-[#0f172a]">Final Total:</span>{" "}
+                          <span className="font-semibold text-[#0f172a]">{t.finalTotalLabel}:</span>{" "}
                           {editMode ? (
                             <input value={String(target.final_total_amount || "")} onChange={(e) => updateField("final_total_amount", e.target.value)} className="ml-2 rounded border border-slate-200 px-2 py-1 text-[13px]" />
                           ) : `${cur} ${finalTotal.toFixed(2)}`}
@@ -575,14 +575,14 @@ export default function AnalysisDetailPage() {
                           {/* RECEIVABLE — track partial payments */}
                           {ft === "receivable" && (
                             <>
-                              <span className="font-semibold text-[#0f172a]">Cash Inflowed:</span>{" "}
+                              <span className="font-semibold text-[#0f172a]">{t.cashInflowedLabel}:</span>{" "}
                               {editMode ? (
                                 <input type="number" min="0" value={String(target.cash_inflowed ?? "")} onChange={(e) => updateField("cash_inflowed", e.target.value)} className="ml-2 rounded border border-slate-200 px-2 py-1 text-[13px] w-32" />
                               ) : `${cur} ${cashInflowed.toFixed(2)}`}
                               <br />
-                              <span className="font-semibold text-[#0f172a]">Receivable Amount:</span>{" "}
+                              <span className="font-semibold text-[#0f172a]">{t.receivableAmountLabel}:</span>{" "}
                               <span className={receivableAmt === 0 ? "ml-1 font-bold text-green-600" : "ml-1 font-bold text-[#2252b5]"}>
-                                {cur} {receivableAmt.toFixed(2)}{receivableAmt === 0 ? " ✓ Fully Received" : ""}
+                                {cur} {receivableAmt.toFixed(2)}{receivableAmt === 0 ? " {t.fullyReceived}" : ""}
                               </span>
                               <br />
                             </>
@@ -591,7 +591,7 @@ export default function AnalysisDetailPage() {
                           {/* CASH INFLOW — amount is the final total, no tracking needed */}
                           {ft === "cash_inflow" && (
                             <>
-                              <span className="font-semibold text-[#0f172a]">Cash Inflowed:</span>{" "}
+                              <span className="font-semibold text-[#0f172a]">{t.cashInflowedLabel}:</span>{" "}
                               <span className="ml-1 font-bold text-green-600">{cur} {finalTotal.toFixed(2)} ✓ Received</span>
                               <br />
                             </>
@@ -600,14 +600,14 @@ export default function AnalysisDetailPage() {
                           {/* PAYABLE — track partial payments */}
                           {ft === "payable" && (
                             <>
-                              <span className="font-semibold text-[#0f172a]">Cash Outflowed:</span>{" "}
+                              <span className="font-semibold text-[#0f172a]">{t.cashOutflowedLabel}:</span>{" "}
                               {editMode ? (
                                 <input type="number" min="0" value={String(target.cash_outflowed ?? "")} onChange={(e) => updateField("cash_outflowed", e.target.value)} className="ml-2 rounded border border-slate-200 px-2 py-1 text-[13px] w-32" />
                               ) : `${cur} ${cashOutflowed.toFixed(2)}`}
                               <br />
-                              <span className="font-semibold text-[#0f172a]">Payable Amount:</span>{" "}
+                              <span className="font-semibold text-[#0f172a]">{t.payableAmountLabel}:</span>{" "}
                               <span className={payableAmt === 0 ? "ml-1 font-bold text-green-600" : "ml-1 font-bold text-[#dc2626]"}>
-                                {cur} {payableAmt.toFixed(2)}{payableAmt === 0 ? " ✓ Fully Paid" : ""}
+                                {cur} {payableAmt.toFixed(2)}{payableAmt === 0 ? " {t.fullyPaid}" : ""}
                               </span>
                               <br />
                             </>
@@ -616,13 +616,13 @@ export default function AnalysisDetailPage() {
                           {/* CASH OUTFLOW — amount is the final total, no tracking needed */}
                           {ft === "cash_outflow" && (
                             <>
-                              <span className="font-semibold text-[#0f172a]">Cash Outflowed:</span>{" "}
+                              <span className="font-semibold text-[#0f172a]">{t.cashOutflowedLabel}:</span>{" "}
                               <span className="ml-1 font-bold text-green-600">{cur} {finalTotal.toFixed(2)} ✓ Paid</span>
                               <br />
                             </>
                           )}
 
-                          <span className="font-semibold text-[#0f172a]">Currency:</span>{" "}
+                          <span className="font-semibold text-[#0f172a]">{t.currencyLabel}:</span>{" "}
                           {editMode ? (
                             <input value={target.currency || ""} onChange={(e) => updateField("currency", e.target.value)} className="ml-2 rounded border border-slate-200 px-2 py-1 text-[13px]" />
                           ) : target.currency || "NULL"}
@@ -631,8 +631,8 @@ export default function AnalysisDetailPage() {
                     })()}
                   </InfoCard>
 
-                  <InfoCard title="Status">
-                    <span className="font-semibold text-[#0f172a]">Received Status:</span>{" "}
+                  <InfoCard title={t.statusTitle}>
+                    <span className="font-semibold text-[#0f172a]">{t.receivedStatusLabel}:</span>{" "}
 {editMode ? (
   <select
     value={target.received_status || "NULL"}
@@ -646,7 +646,7 @@ export default function AnalysisDetailPage() {
   </select>
 ) : target.received_status || "NULL"}
                     <br />
-                    <span className="font-semibold text-[#0f172a]">Paid Status:</span>{" "}
+                    <span className="font-semibold text-[#0f172a]">{t.paidStatusLabel}:</span>{" "}
 {editMode ? (
   <select
     value={target.paid_status || "NULL"}
@@ -660,7 +660,7 @@ export default function AnalysisDetailPage() {
   </select>
 ) : target.paid_status || "NULL"}
                     <br />
-                    <span className="font-semibold text-[#0f172a]">Language:</span>{" "}
+                    <span className="font-semibold text-[#0f172a]">{t.languageLabel}:</span>{" "}
                     {editMode ? (
                       <select
                         value={target.language || "en"}
@@ -674,7 +674,7 @@ export default function AnalysisDetailPage() {
                   </InfoCard>
 
                   {/* TAX DETAILS — shows only when tax was extracted from the document */}
-                  <InfoCard title="Tax Details">
+                  <InfoCard title={t.taxDetailsTitle}>
                     {(() => {
                       const rawTax = target.tax_amount;
                       const rawRate = target.tax_rate;
@@ -693,13 +693,13 @@ export default function AnalysisDetailPage() {
                           </div>
                         );
                       }
-                      return <span className="text-[#94a3b8]">No tax on this document</span>;
+                      return <span className="text-[#94a3b8]">{t.noTaxOnDocument}</span>;
                     })()}
                   </InfoCard>
 
                   <div className="rounded-[18px] border border-slate-200 bg-white p-5 shadow-sm">
                     <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#64748b]">
-                      Items
+                      {t.itemsTitle}
                     </p>
 
                     <div className="mt-3 space-y-3">
@@ -710,7 +710,7 @@ export default function AnalysisDetailPage() {
                             className="grid gap-2 rounded-[12px] border border-slate-200 p-3 sm:grid-cols-3"
                           >
                             <div className="text-[14px] text-[#0f172a]">
-                              <span className="font-semibold">Description:</span>{" "}
+                              <span className="font-semibold">{t.descriptionLabel}:</span>{" "}
                               {editMode ? (
                                 <input
                                   value={String(item.description || "")}
@@ -720,7 +720,7 @@ export default function AnalysisDetailPage() {
                               ) : item.description || "NULL"}
                             </div>
                             <div className="text-[14px] text-[#0f172a]">
-                              <span className="font-semibold">Quantity:</span>{" "}
+                              <span className="font-semibold">{t.quantityLabel}:</span>{" "}
                               {editMode ? (
                                 <input
                                   value={String(item.quantity ?? "")}
@@ -730,7 +730,7 @@ export default function AnalysisDetailPage() {
                               ) : item.quantity ?? "NULL"}
                             </div>
                             <div className="text-[14px] text-[#0f172a]">
-                              <span className="font-semibold">Unit Price:</span>{" "}
+                              <span className="font-semibold">{t.unitPriceLabel}:</span>{" "}
                               {editMode ? (
                                 <input
                                   value={String(item.unit_price ?? "")}
