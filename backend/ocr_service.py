@@ -9,8 +9,8 @@ imports Surya directly.
 
 Status (iteration 2):
 - The live pipeline (`document_pipeline.py`) still runs the older Surya v1 API
-  (`text_lines`, via `colab_ocr_client.py` / `local_surya_ocr_client.py`) and is
-  untouched by this module.
+  (`text_lines`, via `colab_ocr_client.py`, Colab-only -- no local fallback) and
+  is untouched by this module.
 - Surya v2 (`SuryaInferenceManager`, block/HTML output — see docs/suryaREADME.md)
   is the schema this module targets going forward, but it needs a running vllm
   (NVIDIA + Docker) or llama.cpp inference backend. Neither runs in our Colab
