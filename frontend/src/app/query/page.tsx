@@ -6,7 +6,7 @@ import MobileShell from "@/components/layout/MobileShell";
 import BottomNav from "@/components/layout/BottomNav";
 import LanguageSwitcher from "@/components/layout/LanguageSwitcher";
 import ThemeToggle from "@/components/layout/ThemeToggle";
-import { AppLanguage, getStoredLanguage, ui } from "@/lib/i18n";
+import { AppLanguage, getStoredLanguage, setStoredLanguage, ui } from "@/lib/i18n";
 
 const BACKEND_URL = "http://127.0.0.1:8000";
 
@@ -65,6 +65,16 @@ export default function QueryPage() {
     recognition.onend = () => setIsListening(false);
     recognition.onerror = () => { setIsListening(false); setError("Voice input failed. Please try again."); };
     recognition.start();
+  };
+
+  const handleLangToggle = () => {
+    const next: AppLanguage = lang === "en" ? "si" : "en";
+    setLang(next);
+    setStoredLanguage(next);
+    try {
+      window.dispatchEvent(new CustomEvent("app-language-changed", { detail: next }));
+    } catch {}
+    setTimeout(() => { try { window.location.reload(); } catch {} }, 50);
   };
 
   const handleAttach = () => fileInputRef.current?.click();
@@ -219,8 +229,8 @@ export default function QueryPage() {
                   </span>
                 </button>
                 <button
-                  onClick={() => setQuestion(prev => prev)}
-                  title={`Language: ${lang === "si" ? "Sinhala" : "English"} (auto-detected)`}
+                  onClick={handleLangToggle}
+                  title={`Language: ${lang === "si" ? "Sinhala" : "English"} — click to toggle`}
                   className="transition hover:opacity-70"
                   style={{ color: "var(--brand-mid)" }}
                 >

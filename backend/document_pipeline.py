@@ -24,6 +24,16 @@ from correction_engine import correct_extracted_fields
 COLAB_OCR_URL = os.getenv("COLAB_OCR_URL", "").strip()
 POPPLER_PATH = os.getenv("POPPLER_PATH", "")
 
+# Image preprocessing constants
+_TARGET_WIDTH_PX      = 1600
+_DENOISE_H            = 12
+_DENOISE_TEMPLATE_WIN = 7
+_DENOISE_SEARCH_WIN   = 21
+_ADAPTIVE_BLOCK_SIZE  = 31
+_ADAPTIVE_C           = 9
+_BILATERAL_D          = 9
+_BILATERAL_SIGMA      = 60
+
 TEMP_BASE = Path("temp_processing")
 RAW_DIR = TEMP_BASE / "raw"
 PAGES_DIR = TEMP_BASE / "pages"
@@ -134,9 +144,8 @@ def preprocess_images(orig_paths: list[Path]) -> list[dict]:
 
         h, w = img.shape[:2]
 
-        target_w = 1600
-        if w < target_w:
-            scale = target_w / w
+        if w < _TARGET_WIDTH_PX:
+            scale = _TARGET_WIDTH_PX / w
             img = cv2.resize(
                 img,
                 (int(w * scale), int(h * scale)),
@@ -146,19 +155,19 @@ def preprocess_images(orig_paths: list[Path]) -> list[dict]:
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
         # Printed-friendly version
-        den = cv2.fastNlMeansDenoising(gray, None, 12, 7, 21)
+        den = cv2.fastNlMeansDenoising(gray, None, _DENOISE_H, _DENOISE_TEMPLATE_WIN, _DENOISE_SEARCH_WIN)
         p_img = cv2.adaptiveThreshold(
             den,
             255,
             cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
             cv2.THRESH_BINARY,
-            31,
-            9
+            _ADAPTIVE_BLOCK_SIZE,
+            _ADAPTIVE_C
         )
         cv2.imwrite(str(p_path), p_img)
 
         # Messy-document-friendly version
-        m_img = cv2.bilateralFilter(gray, 9, 60, 60)
+        m_img = cv2.bilateralFilter(gray, _BILATERAL_D, _BILATERAL_SIGMA, _BILATERAL_SIGMA)
         m_img = cv2.normalize(m_img, None, 0, 255, cv2.NORM_MINMAX)
         cv2.imwrite(str(m_path), m_img)
 

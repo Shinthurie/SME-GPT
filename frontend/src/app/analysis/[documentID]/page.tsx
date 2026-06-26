@@ -47,6 +47,13 @@ type DocumentDetail = {
   safe_boxes_json?: string | null;
   // Field→chunk map (Iteration 18 GAP-18C)
   field_chunk_map_json?: string | null;
+  // Tax fields
+  tax_amount?: string | number | null;
+  tax_rate?: string | number | null;
+  // Cash flow tracking
+  cash_inflowed?: string | number | null;
+  cash_outflowed?: string | number | null;
+  category?: string | null;
 };
 
 function getAuthToken() {
@@ -217,6 +224,8 @@ export default function AnalysisDetailPage() {
           final_total_amount: editedDocument.final_total_amount,
           payable_amount: editedDocument.payable_amount,
           cash_return: editedDocument.cash_return,
+          cash_inflowed: editedDocument.cash_inflowed,
+          cash_outflowed: editedDocument.cash_outflowed,
           received_status: editedDocument.received_status,
           paid_status: editedDocument.paid_status,
           language: editedDocument.language,
@@ -492,10 +501,27 @@ export default function AnalysisDetailPage() {
                         <option value="unknown">unknown</option>
                         <option value="payable">payable</option>
                         <option value="receivable">receivable</option>
-                        <option value="income">income</option>
-                        <option value="expense">expense</option>
+                        <option value="cash_inflow">cash inflow</option>
+                        <option value="cash_outflow">cash outflow</option>
                       </select>
                     ) : target.flow_type || "NULL"}
+                    <br />
+                    <span className="font-semibold text-[#0f172a]">Category:</span>{" "}
+                    {(() => {
+                      const ft = (target.flow_type || "").toLowerCase();
+                      const derived = (target.category && target.category !== "NULL")
+                        ? target.category
+                        : ["receivable","cash_inflow"].includes(ft) ? "Revenue"
+                        : ["payable","cash_outflow"].includes(ft) ? "Expenses"
+                        : "Unknown";
+                      return (
+                        <span className={`ml-1 inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-bold ${
+                          derived === "Revenue"  ? "bg-green-50 text-green-700" :
+                          derived === "Expenses" ? "bg-red-50 text-red-700"    :
+                                                   "bg-slate-50 text-slate-500"
+                        }`}>{derived}</span>
+                      );
+                    })()}
                   </InfoCard>
 
                   <InfoCard title="Parties">
@@ -508,7 +534,9 @@ export default function AnalysisDetailPage() {
                       />
                     ) : target.company_name || "NULL"}
                     <br />
-                    <span className="font-semibold text-[#0f172a]">Supplier:</span>{" "}
+                    <span className="font-semibold text-[#0f172a]">
+                      {["receivable","cash_inflow"].includes(target.flow_type || "") ? "Customer:" : "Supplier:"}
+                    </span>{" "}
                     {editMode ? (
                       <input
                         value={target.supplier_name || ""}
@@ -519,41 +547,88 @@ export default function AnalysisDetailPage() {
                   </InfoCard>
 
                   <InfoCard title="Financial Summary">
-                    <span className="font-semibold text-[#0f172a]">Raw Total:</span>{" "}
-                    {editMode ? (
-                      <input
-                        value={String(target.raw_total_amount || "")}
-                        onChange={(e) => updateField("raw_total_amount", e.target.value)}
-                        className="ml-2 rounded border border-slate-200 px-2 py-1 text-[13px]"
-                      />
-                    ) : target.raw_total_amount || "NULL"}
-                    <br />
-                    <span className="font-semibold text-[#0f172a]">Final Total:</span>{" "}
-                    {editMode ? (
-                      <input
-                        value={String(target.final_total_amount || "")}
-                        onChange={(e) => updateField("final_total_amount", e.target.value)}
-                        className="ml-2 rounded border border-slate-200 px-2 py-1 text-[13px]"
-                      />
-                    ) : target.final_total_amount || "NULL"}
-                    <br />
-                    <span className="font-semibold text-[#0f172a]">Payable Amount:</span>{" "}
-                    {editMode ? (
-                      <input
-                        value={String(target.payable_amount || "")}
-                        onChange={(e) => updateField("payable_amount", e.target.value)}
-                        className="ml-2 rounded border border-slate-200 px-2 py-1 text-[13px]"
-                      />
-                    ) : target.payable_amount || "NULL"}
-                    <br />
-                    <span className="font-semibold text-[#0f172a]">Currency:</span>{" "}
-                    {editMode ? (
-                      <input
-                        value={target.currency || ""}
-                        onChange={(e) => updateField("currency", e.target.value)}
-                        className="ml-2 rounded border border-slate-200 px-2 py-1 text-[13px]"
-                      />
-                    ) : target.currency || "NULL"}
+                    {(() => {
+                      const ft  = (target.flow_type || "").toLowerCase();
+                      const cur = target.currency && target.currency !== "NULL" ? target.currency : "LKR";
+                      const finalTotal    = parseFloat(String(target.final_total_amount ?? 0)) || 0;
+                      const cashInflowed  = parseFloat(String(target.cash_inflowed  ?? 0)) || 0;
+                      const cashOutflowed = parseFloat(String(target.cash_outflowed ?? 0)) || 0;
+                      const receivableAmt = Math.max(0, finalTotal - cashInflowed);
+                      const payableAmt    = Math.max(0, finalTotal - cashOutflowed);
+
+                      return (
+                        <>
+                          {/* Raw total always shown */}
+                          <span className="font-semibold text-[#0f172a]">Raw Total:</span>{" "}
+                          {editMode ? (
+                            <input value={String(target.raw_total_amount || "")} onChange={(e) => updateField("raw_total_amount", e.target.value)} className="ml-2 rounded border border-slate-200 px-2 py-1 text-[13px]" />
+                          ) : target.raw_total_amount || "NULL"}
+                          <br />
+
+                          {/* Final total always shown */}
+                          <span className="font-semibold text-[#0f172a]">Final Total:</span>{" "}
+                          {editMode ? (
+                            <input value={String(target.final_total_amount || "")} onChange={(e) => updateField("final_total_amount", e.target.value)} className="ml-2 rounded border border-slate-200 px-2 py-1 text-[13px]" />
+                          ) : `${cur} ${finalTotal.toFixed(2)}`}
+                          <br />
+
+                          {/* RECEIVABLE — track partial payments */}
+                          {ft === "receivable" && (
+                            <>
+                              <span className="font-semibold text-[#0f172a]">Cash Inflowed:</span>{" "}
+                              {editMode ? (
+                                <input type="number" min="0" value={String(target.cash_inflowed ?? "")} onChange={(e) => updateField("cash_inflowed", e.target.value)} className="ml-2 rounded border border-slate-200 px-2 py-1 text-[13px] w-32" />
+                              ) : `${cur} ${cashInflowed.toFixed(2)}`}
+                              <br />
+                              <span className="font-semibold text-[#0f172a]">Receivable Amount:</span>{" "}
+                              <span className={receivableAmt === 0 ? "ml-1 font-bold text-green-600" : "ml-1 font-bold text-[#2252b5]"}>
+                                {cur} {receivableAmt.toFixed(2)}{receivableAmt === 0 ? " ✓ Fully Received" : ""}
+                              </span>
+                              <br />
+                            </>
+                          )}
+
+                          {/* CASH INFLOW — amount is the final total, no tracking needed */}
+                          {ft === "cash_inflow" && (
+                            <>
+                              <span className="font-semibold text-[#0f172a]">Cash Inflowed:</span>{" "}
+                              <span className="ml-1 font-bold text-green-600">{cur} {finalTotal.toFixed(2)} ✓ Received</span>
+                              <br />
+                            </>
+                          )}
+
+                          {/* PAYABLE — track partial payments */}
+                          {ft === "payable" && (
+                            <>
+                              <span className="font-semibold text-[#0f172a]">Cash Outflowed:</span>{" "}
+                              {editMode ? (
+                                <input type="number" min="0" value={String(target.cash_outflowed ?? "")} onChange={(e) => updateField("cash_outflowed", e.target.value)} className="ml-2 rounded border border-slate-200 px-2 py-1 text-[13px] w-32" />
+                              ) : `${cur} ${cashOutflowed.toFixed(2)}`}
+                              <br />
+                              <span className="font-semibold text-[#0f172a]">Payable Amount:</span>{" "}
+                              <span className={payableAmt === 0 ? "ml-1 font-bold text-green-600" : "ml-1 font-bold text-[#dc2626]"}>
+                                {cur} {payableAmt.toFixed(2)}{payableAmt === 0 ? " ✓ Fully Paid" : ""}
+                              </span>
+                              <br />
+                            </>
+                          )}
+
+                          {/* CASH OUTFLOW — amount is the final total, no tracking needed */}
+                          {ft === "cash_outflow" && (
+                            <>
+                              <span className="font-semibold text-[#0f172a]">Cash Outflowed:</span>{" "}
+                              <span className="ml-1 font-bold text-green-600">{cur} {finalTotal.toFixed(2)} ✓ Paid</span>
+                              <br />
+                            </>
+                          )}
+
+                          <span className="font-semibold text-[#0f172a]">Currency:</span>{" "}
+                          {editMode ? (
+                            <input value={target.currency || ""} onChange={(e) => updateField("currency", e.target.value)} className="ml-2 rounded border border-slate-200 px-2 py-1 text-[13px]" />
+                          ) : target.currency || "NULL"}
+                        </>
+                      );
+                    })()}
                   </InfoCard>
 
                   <InfoCard title="Status">
@@ -598,21 +673,27 @@ export default function AnalysisDetailPage() {
                     ) : target.language || "NULL"}
                   </InfoCard>
 
-                  {/* TAX DETAILS — SRS UI Design 4 */}
+                  {/* TAX DETAILS — shows only when tax was extracted from the document */}
                   <InfoCard title="Tax Details">
                     {(() => {
-                      const total = parseFloat(String(target.final_total_amount ?? "0").replace(/,/g, "")) || 0;
-                      const vatRate = 0.15;
-                      const vatAmt = total > 0 ? (total * vatRate).toFixed(2) : null;
+                      const rawTax = target.tax_amount;
+                      const rawRate = target.tax_rate;
+                      const taxAmt = rawTax != null && rawTax !== "NULL" && rawTax !== "" ? parseFloat(String(rawTax)) : null;
+                      const taxRate = rawRate != null && rawRate !== "NULL" && rawRate !== "" ? parseFloat(String(rawRate)) : null;
                       const cur = target.currency && target.currency !== "NULL" ? target.currency : "LKR";
-                      return vatAmt ? (
-                        <div className="flex items-center justify-between">
-                          <span className="font-semibold text-[#0f172a]">VAT (15%)</span>
-                          <span className="font-bold text-[#2252b5]">{cur} {vatAmt}</span>
-                        </div>
-                      ) : (
-                        <span className="text-[#94a3b8]">No total available to compute VAT</span>
-                      );
+
+                      if (taxAmt !== null && !isNaN(taxAmt) && taxAmt > 0) {
+                        const label = taxRate !== null && !isNaN(taxRate)
+                          ? `Tax (${taxRate}%)`
+                          : "Tax";
+                        return (
+                          <div className="flex items-center justify-between">
+                            <span className="font-semibold text-[#0f172a]">{label}</span>
+                            <span className="font-bold text-[#2252b5]">{cur} {taxAmt.toFixed(2)}</span>
+                          </div>
+                        );
+                      }
+                      return <span className="text-[#94a3b8]">No tax on this document</span>;
                     })()}
                   </InfoCard>
 

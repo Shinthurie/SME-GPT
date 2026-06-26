@@ -73,6 +73,11 @@ RECORD_TO_DB = {
     "total_status": "totalStatus",
     "payable_amount": "payableAmount",
     "cash_return": "cashReturn",
+    "tax_amount": "taxAmount",
+    "tax_rate": "taxRate",
+    "cash_inflowed": "cashInflowed",
+    "cash_outflowed": "cashOutflowed",
+    "category": "category",
     "currency": "currency",
     "received_status": "receivedStatus",
     "paid_status": "paidStatus",
@@ -92,7 +97,7 @@ RECORD_TO_DB = {
     "field_chunk_map_json": "fieldChunkMapJson",
 }
 
-MONEY_FIELDS = {"raw_total_amount", "final_total_amount", "payable_amount", "cash_return"}
+MONEY_FIELDS = {"raw_total_amount", "final_total_amount", "payable_amount", "cash_return", "tax_amount", "tax_rate", "cash_inflowed", "cash_outflowed"}
 JSON_FIELDS = {"structured_json", "correction_json", "arithmetic_json"}
 
 
@@ -272,6 +277,15 @@ def normalize_record(data: dict, user_id: str, force_generate_document_id: bool 
     }
 
 
+def _derive_category_from_flow(flow_type: str) -> str:
+    ft = str(flow_type or "").strip().lower().replace(" ", "_")
+    if ft in ("receivable", "cash_inflow"):
+        return "Revenue"
+    if ft in ("payable", "cash_outflow"):
+        return "Expenses"
+    return "Unknown"
+
+
 def parse_record_for_output(record: dict):
     parsed = dict(record)
     try:
@@ -284,6 +298,12 @@ def parse_record_for_output(record: dict):
         parsed["arithmetic_validation"] = arithmetic if isinstance(arithmetic, dict) else {}
     except Exception:
         parsed["arithmetic_validation"] = {}
+
+    # Always compute category live — DB may be NULL for older records
+    if not parsed.get("category") or parsed["category"] in ("NULL", "Unknown"):
+        eft = parsed.get("effective_flow_type") or parsed.get("flow_type") or ""
+        parsed["category"] = _derive_category_from_flow(eft)
+
     return parsed
 
 
@@ -418,7 +438,7 @@ def load_records(
         docs = cur.fetchall()
         if not docs:
             return []
-        doc_ids = [d["id"] for d in docs]
+        doc_ids = [d["id"] if isinstance(d, dict) else d[0] for d in docs]
         cur.execute(
             'SELECT * FROM "LineItem" WHERE "documentRef" = ANY(%s) ORDER BY "lineNo"',
             (doc_ids,),
@@ -452,19 +472,20 @@ def get_record_by_id_for_user(user_id: str, document_id: str):
 
 def generate_document_id(document_type: str) -> str:
     prefix = get_prefix_for_document_type(document_type)
+    offset = len(prefix) + 1  # 1-based SUBSTRING offset for PostgreSQL
     with get_conn() as conn:
         cur = conn.cursor()
-        cur.execute('SELECT "documentId" FROM "FinancialDocument" WHERE "deletedAt" IS NULL')
-        existing_ids = [str(r["documentId"]).strip() for r in cur.fetchall()]
-
-    numbers = []
-    for doc_id in existing_ids:
-        if doc_id.startswith(prefix):
-            num_part = doc_id[len(prefix):]
-            if num_part.isdigit():
-                numbers.append(int(num_part))
-    next_number = max(numbers) + 1 if numbers else 1
-    return f"{prefix}{next_number}"
+        cur.execute(
+            'SELECT MAX(CAST(SUBSTRING("documentId" FROM %s) AS INTEGER)) '
+            'FROM "FinancialDocument" '
+            'WHERE "documentId" LIKE %s '
+            'AND "deletedAt" IS NULL '
+            "AND SUBSTRING(\"documentId\" FROM %s) ~ '^[0-9]+$'",
+            (offset, f"{prefix}%", offset),
+        )
+        row = cur.fetchone()
+    max_num = (row[0] if isinstance(row, (list, tuple)) else row.get(list(row.keys())[0])) if row else None
+    return f"{prefix}{(max_num or 0) + 1}"
 
 
 def find_duplicate_record(data: dict, user_id: str):
@@ -500,20 +521,29 @@ def _insert_line_items(cur, doc_pk: str, tenant_id, currency, items: list):
         )
 
 
+_COLUMN_CACHE: set | None = None
+
+
+def invalidate_column_cache():
+    global _COLUMN_CACHE
+    _COLUMN_CACHE = None
+
+
 def _get_existing_columns(conn) -> set:
     """Return the column names that actually exist in FinancialDocument.
-    Cached per-process so we only query pg_attribute once per restart."""
-    if not hasattr(_get_existing_columns, "_cache"):
+    Cached per-process; call invalidate_column_cache() after ALTER TABLE migrations."""
+    global _COLUMN_CACHE
+    if _COLUMN_CACHE is None:
         try:
             cur = conn.cursor()
             cur.execute(
                 """SELECT column_name FROM information_schema.columns
                    WHERE table_name = 'FinancialDocument'"""
             )
-            _get_existing_columns._cache = {row["column_name"] for row in (cur.fetchall() or [])}
+            _COLUMN_CACHE = {row["column_name"] for row in (cur.fetchall() or [])}
         except Exception:
-            _get_existing_columns._cache = set()
-    return _get_existing_columns._cache
+            _COLUMN_CACHE = set()
+    return _COLUMN_CACHE
 
 
 def upsert_confirmed_record(data: dict, user_id: str):
@@ -595,9 +625,12 @@ def update_record_for_user(user_id: str, document_id: str, updates: dict):
 
         merged_record["structured_json"] = json.dumps(merged_structured, ensure_ascii=False).replace("\n", " ")
 
+        existing_cols = _get_existing_columns(conn)
         set_cols = []
         set_vals = []
         for rec_key, db_col in RECORD_TO_DB.items():
+            if existing_cols and db_col not in existing_cols:
+                continue  # skip columns that don't exist in the DB yet
             set_cols.append(f'"{db_col}" = %s')
             set_vals.append(_record_to_db_value(rec_key, merged_record.get(rec_key)))
         set_sql = ", ".join(set_cols) + ', "updatedAt" = NOW()'
