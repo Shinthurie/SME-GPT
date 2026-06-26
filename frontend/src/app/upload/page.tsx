@@ -7,6 +7,7 @@ import BottomNav from "@/components/layout/BottomNav";
 import LanguageSwitcher from "@/components/layout/LanguageSwitcher";
 import ThemeToggle from "@/components/layout/ThemeToggle";
 import { AppLanguage, getStoredLanguage, ui } from "@/lib/i18n";
+import { addNotification } from "@/lib/notifications";
 
 type PreviewItem = {
   description: string;
@@ -174,6 +175,14 @@ export default function UploadPage() {
     setIsProcessing(true); setError(""); setPreview(null);
     setActiveStep(1); setStageMessage("Preparing document…");
 
+    addNotification({
+      title: lang === "si" ? "ලේඛනය සකසමින් ඇත" : "Processing Document",
+      message: lang === "si"
+        ? `${selectedFile.name} — OCR සහ ක්ෂේත්‍ර ලබාගැනීම ආරම්භ විය.`
+        : `${selectedFile.name} — OCR extraction started.`,
+      type: "info",
+    });
+
     try {
       const fd = new FormData();
       fd.append("file", selectedFile);
@@ -255,6 +264,17 @@ export default function UploadPage() {
       if (!res.ok || !data.success) throw new Error(data.message || "Save failed.");
 
       setSuccessMessage(`Saved successfully. Document ID: ${data.document_id}`);
+
+      // Fire notification so the bell icon lights up
+      const docId = data.document_id ?? "";
+      addNotification({
+        title: lang === "si" ? "ලේඛනය සාර්ථකව සුරකිනු ලැබිණි" : "Document Saved",
+        message: lang === "si"
+          ? `${docId} — OCR සහ ක්ෂේත්‍ර ලබාගැනීම සම්පූර්ණ විය. ලේඛනය ගබඩාවට එකතු කෙරිණි.`
+          : `${docId} — OCR extraction complete. Document added to your repository.`,
+        type: "success",
+      });
+
       resetForm();
     } catch (err) {
       if (err instanceof Error && err.name === "AbortError") {

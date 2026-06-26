@@ -8,6 +8,7 @@ import LanguageSwitcher from "@/components/layout/LanguageSwitcher";
 import ProvenancePanel, { type ArithmeticJson } from "@/components/ui/ProvenancePanel";
 import BboxOverlayViewer from "@/components/ui/BboxOverlayViewer";
 import { AppLanguage, getStoredLanguage, ui } from "@/lib/i18n";
+import { addNotification } from "@/lib/notifications";
 
 const BACKEND_URL = "http://127.0.0.1:8000";
 
@@ -250,6 +251,13 @@ export default function AnalysisDetailPage() {
       }
 
       setSuccessMessage("Document updated successfully.");
+      addNotification({
+        title: lang === "si" ? "ලේඛනය යාවත්කාලීන කෙරිණි" : "Document Updated",
+        message: lang === "si"
+          ? `${documentId} — ලේඛනයේ ක්ෂේත්‍ර සාර්ථකව සංස්කරණය කෙරිණි.`
+          : `${documentId} — Document fields updated successfully.`,
+        type: "success",
+      });
 
 
     } catch (err) {
@@ -264,7 +272,9 @@ export default function AnalysisDetailPage() {
     if (!documentId) return;
 
     const confirmed = window.confirm(
-      "Are you sure you want to delete this document?"
+      lang === "si"
+        ? "ඔබට මෙම ලේඛනය මකා දැමීමට අවශ්‍යද?"
+        : "Are you sure you want to delete this document?"
     );
 
     if (!confirmed) return;
@@ -288,6 +298,14 @@ export default function AnalysisDetailPage() {
       if (!res.ok || !data.success) {
         throw new Error(data.message || "Failed to delete document.");
       }
+
+      addNotification({
+        title: lang === "si" ? "ලේඛනය මකා දමන ලදී" : "Document Deleted",
+        message: lang === "si"
+          ? `${documentId} — ලේඛනය ගබඩාවෙන් ස්ථිරවශයෙන් ඉවත් කෙරිණි.`
+          : `${documentId} — Document permanently removed from your repository.`,
+        type: "info",
+      });
 
       router.push("/repository");
     } catch (err) {
