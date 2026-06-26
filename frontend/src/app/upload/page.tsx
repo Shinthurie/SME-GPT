@@ -52,8 +52,10 @@ const FIELD_ROWS: [string, string][] = [
 const SELECT_OPTS: Record<string, { label: string; value: string }[]> = {
   flow_type: [
     { label: "Select…", value: "" },
-    { label: "Payable", value: "payable" }, { label: "Receivable", value: "receivable" },
-    { label: "Income", value: "income" }, { label: "Expense", value: "expense" },
+    { label: "Payable", value: "payable" },
+    { label: "Receivable", value: "receivable" },
+    { label: "Cash Inflow", value: "cash_inflow" },
+    { label: "Cash Outflow", value: "cash_outflow" },
   ],
   document_type: [
     { label: "Select…", value: "" },
