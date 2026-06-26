@@ -35,6 +35,7 @@ export default function LoginPage() {
   const [lang, setLang] = useState<AppLanguage>("en");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -212,13 +213,24 @@ export default function LoginPage() {
                     shield_lock
                   </span>
                   <input
-                    type="password"
+                    type={showPassword ? "text" : "password"}
                     placeholder="••••••••"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     required
-                    className="field-input h-12 w-full rounded-xl border pl-11 pr-4 text-[15px] transition"
+                    className="field-input h-12 w-full rounded-xl border pl-11 pr-11 text-[15px] transition"
                   />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(p => !p)}
+                    className="absolute right-3.5 top-1/2 -translate-y-1/2 transition hover:opacity-70"
+                    style={{ color: "var(--text-3)" }}
+                    tabIndex={-1}
+                  >
+                    <span className="material-symbols-outlined text-[18px]">
+                      {showPassword ? "visibility_off" : "visibility"}
+                    </span>
+                  </button>
                 </div>
                 <div className="mt-2 flex justify-end">
                   <button

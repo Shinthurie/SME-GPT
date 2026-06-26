@@ -259,9 +259,9 @@ export default function DashboardPage() {
           {/* Stats */}
           <section className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
             <StatCard label={t.totalDocs} value={String(summary?.total ?? 0)} />
-            <StatCard label="Pending Processing" value={String(summary?.pending_processing_count ?? 0)} color="#ea6c0a" />
-            <StatCard label="Ready for Query" value={String(summary?.ready_for_query_count ?? 0)} color="#16a34a" />
-            <StatCard label="Invoices" value={String(summary?.invoice ?? 0)} color="var(--brand-mid)" />
+            <StatCard label={t.pending} value={String(summary?.pending_processing_count ?? 0)} color="#ea6c0a" />
+            <StatCard label={t.ready} value={String(summary?.ready_for_query_count ?? 0)} color="#16a34a" />
+            <StatCard label={lang === "si" ? "ඉන්වොයිස්" : "Invoices"} value={String(summary?.invoice ?? 0)} color="var(--brand-mid)" />
             <StatCard label="PO / DN" value={String((summary?.po ?? 0) + (summary?.dn ?? 0))} color="#7c3aed" />
           </section>
 
@@ -286,7 +286,7 @@ export default function DashboardPage() {
                   className="rounded-2xl px-4 py-8 text-center text-[14px] text-[var(--text-2)]"
                   style={{ background: "var(--surface)", border: "1px solid var(--border)" }}
                 >
-                  No saved documents yet.
+                  {t.noSavedDocs}
                 </div>
               ) : (
                 recentDocs.map((doc) => (
@@ -331,25 +331,32 @@ export default function DashboardPage() {
                     insights
                   </span>
                   <p className="text-[13px] font-bold" style={{ color: "#ea6c0a" }}>
-                    Invoice Insights Ready
+                    {t.insightsReady}
                   </p>
                 </div>
                 {summary.mismatch_alerts.map((alert) => (
                   <div key={alert.document_id} className="mt-2">
                     <p className="text-[12px] text-[var(--text-2)]">
-                      System detected an arithmetic mismatch in{" "}
-                      <span className="font-semibold text-[var(--text-1)]">{alert.document_id}</span>
-                      {alert.company_name && alert.company_name !== "NULL"
-                        ? ` (${alert.company_name})`
-                        : ""}
-                      . Verify the extracted totals.
+                      {lang === "si"
+                        ? <>
+                            <span className="font-semibold text-[var(--text-1)]">{alert.document_id}</span>
+                            {alert.company_name && alert.company_name !== "NULL" ? ` (${alert.company_name})` : ""}
+                            {" "}ලේඛනයේ අංකගණිත නොගැලපීමක් හඳුනාගෙන ඇත. ලබාගත් මුළු එකතු සත්‍යාපනය කරන්න.
+                          </>
+                        : <>
+                            System detected an arithmetic mismatch in{" "}
+                            <span className="font-semibold text-[var(--text-1)]">{alert.document_id}</span>
+                            {alert.company_name && alert.company_name !== "NULL" ? ` (${alert.company_name})` : ""}
+                            . Verify the extracted totals.
+                          </>
+                      }
                     </p>
                     <button
                       onClick={() => router.push(`/analysis/${alert.document_id}`)}
                       className="mt-1 text-[12px] font-bold transition hover:opacity-75"
                       style={{ color: "var(--brand-mid)" }}
                     >
-                      View Comparison →
+                      {t.viewComparison}
                     </button>
                   </div>
                 ))}
