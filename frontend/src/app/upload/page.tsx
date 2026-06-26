@@ -40,43 +40,99 @@ function getAuthToken() {
   return localStorage.getItem("token") || sessionStorage.getItem("token") || "";
 }
 
-const FIELD_ROWS: [string, string][] = [
-  ["document_type", "Document Type"], ["order_id", "Order ID"],
-  ["flow_type", "Flow Type"], ["company_name", "Company Name"],
-  ["supplier_name", "Customer / Supplier"], ["date", "Date"],
-  ["currency", "Currency"], ["raw_total_amount", "Raw Total (OCR)"],
-  ["final_total_amount", "Final Total"], ["payable_amount", "Payable / Receivable"],
-  ["cash_return", "Cash Return"], ["received_status", "Received Status"],
-  ["paid_status", "Paid Status"],
+// ── Field definitions per document type ─────────────────────────────────────
+
+const DOC_TYPE_OPTS = [
+  { label: "Select…", value: "" },
+  { label: "Invoice",  value: "invoice"  },
+  { label: "Receipt",  value: "receipt"  },
+  { label: "PO",       value: "po"       },
+  { label: "DN",       value: "dn"       },
+  { label: "Unknown",  value: "unknown"  },
 ];
 
-const SELECT_OPTS: Record<string, { label: string; value: string }[]> = {
-  flow_type: [
-    { label: "Select…", value: "" },
-    { label: "Payable", value: "payable" },
-    { label: "Receivable", value: "receivable" },
-    { label: "Cash Inflow", value: "cash_inflow" },
-    { label: "Cash Outflow", value: "cash_outflow" },
-  ],
-  document_type: [
-    { label: "Select…", value: "" },
-    { label: "Invoice", value: "invoice" }, { label: "Receipt", value: "receipt" },
-    { label: "PO", value: "po" }, { label: "DN", value: "dn" },
-    { label: "Unknown", value: "unknown" },
-  ],
-  received_status: [
-    { label: "Select…", value: "" },
-    { label: "Received", value: "received" }, { label: "Not Received", value: "not_received" },
-    { label: "Partial", value: "partial" }, { label: "NULL", value: "NULL" },
-  ],
-  paid_status: [
-    { label: "Select…", value: "" },
-    { label: "Paid", value: "paid" }, { label: "Not Paid", value: "not_paid" },
-    { label: "Partial", value: "partial" }, { label: "NULL", value: "NULL" },
-  ],
-};
+const FLOW_TYPE_OPTS = [
+  { label: "Select…",      value: "" },
+  { label: "Payable",      value: "payable"      },
+  { label: "Receivable",   value: "receivable"   },
+  { label: "Cash Inflow",  value: "cash_inflow"  },
+  { label: "Cash Outflow", value: "cash_outflow" },
+];
 
-const READONLY_FIELDS = new Set(["raw_total_amount", "final_total_amount", "payable_amount"]);
+const RECEIVED_STATUS_OPTS = [
+  { label: "Select…",      value: "" },
+  { label: "Received",     value: "received"     },
+  { label: "Not Received", value: "not_received" },
+  { label: "Partial",      value: "partial"      },
+  { label: "NULL",         value: "NULL"         },
+];
+
+const DELIVERY_STATUS_OPTS = [
+  { label: "Select…",       value: "" },
+  { label: "Delivered",     value: "delivered"     },
+  { label: "Not Delivered", value: "not_delivered" },
+  { label: "Partial",       value: "partial"       },
+];
+
+const PAID_STATUS_OPTS = [
+  { label: "Select…",  value: "" },
+  { label: "Paid",     value: "paid"     },
+  { label: "Not Paid", value: "not_paid" },
+  { label: "Partial",  value: "partial"  },
+  { label: "NULL",     value: "NULL"     },
+];
+
+const PO_STATUS_OPTS = [
+  { label: "Select…",   value: "" },
+  { label: "Pending",   value: "not_paid"  },
+  { label: "Approved",  value: "partial"   },
+  { label: "Fulfilled", value: "paid"      },
+  { label: "Cancelled", value: "NULL"      },
+];
+
+type FieldRow = { key: string; label: string; opts?: { label: string; value: string }[]; readonly?: boolean };
+
+function getFieldRows(docType: string): FieldRow[] {
+  if (docType === "dn") return [
+    { key: "document_type", label: "Document Type",    opts: DOC_TYPE_OPTS },
+    { key: "order_id",      label: "PO Reference"  },
+    { key: "company_name",  label: "Received By (Your Company)" },
+    { key: "supplier_name", label: "Delivered By"  },
+    { key: "date",          label: "Delivery Date" },
+    { key: "received_status", label: "Delivery Status", opts: DELIVERY_STATUS_OPTS },
+  ];
+  if (docType === "po") return [
+    { key: "document_type",       label: "Document Type",   opts: DOC_TYPE_OPTS },
+    { key: "order_id",            label: "PO Number"        },
+    { key: "company_name",        label: "Ordered By (Your Company)" },
+    { key: "supplier_name",       label: "Supplier"         },
+    { key: "date",                label: "Order Date"       },
+    { key: "currency",            label: "Currency"         },
+    { key: "final_total_amount",  label: "Order Total", readonly: true },
+    { key: "paid_status",         label: "PO Status",   opts: PO_STATUS_OPTS },
+  ];
+  // invoice / receipt / unknown — full form
+  return [
+    { key: "document_type",      label: "Document Type",      opts: DOC_TYPE_OPTS },
+    { key: "order_id",           label: "Order ID"            },
+    { key: "flow_type",          label: "Flow Type",          opts: FLOW_TYPE_OPTS },
+    { key: "company_name",       label: "Company Name"        },
+    { key: "supplier_name",      label: "Customer / Supplier" },
+    { key: "date",               label: "Date"                },
+    { key: "currency",           label: "Currency"            },
+    { key: "raw_total_amount",   label: "Raw Total (OCR)",    readonly: true },
+    { key: "final_total_amount", label: "Final Total",        readonly: true },
+    { key: "payable_amount",     label: "Payable / Receivable", readonly: true },
+    { key: "cash_return",        label: "Cash Return"         },
+    { key: "received_status",    label: "Received Status",    opts: RECEIVED_STATUS_OPTS },
+    { key: "paid_status",        label: "Paid Status",        opts: PAID_STATUS_OPTS },
+  ];
+}
+
+function getItemFields(docType: string): ("description" | "quantity" | "unit_price")[] {
+  // DN: only description + qty; everything else gets all three
+  return docType === "dn" ? ["description", "quantity"] : ["description", "quantity", "unit_price"];
+}
 
 export default function UploadPage() {
   const router = useRouter();
@@ -545,27 +601,34 @@ export default function UploadPage() {
               <p className="mt-1 text-[13px] text-[var(--text-2)]">{t.reviewBeforeSaving}</p>
 
               <div className="mt-5 grid gap-4 sm:grid-cols-2">
-                {FIELD_ROWS.map(([field, label]) => {
-                  const opts = SELECT_OPTS[field];
-                  const isReadonly = READONLY_FIELDS.has(field);
+                {getFieldRows(String(preview.document_type || "")).map((row) => {
+                  const val = String((preview as Record<string, unknown>)[row.key] ?? "");
                   return (
-                    <div key={field}>
-                      <p className="mb-1.5 text-[12px] font-semibold text-[var(--text-2)]">{label}</p>
-                      {opts ? (
+                    <div key={row.key}>
+                      <p className="mb-1.5 text-[12px] font-semibold text-[var(--text-2)]">{row.label}</p>
+                      {row.opts ? (
                         <select
-                          value={String((preview as Record<string, unknown>)[field] ?? "")}
-                          onChange={(e) => setPreview({ ...preview, [field]: e.target.value })}
+                          value={val}
+                          onChange={(e) => {
+                            const next = { ...preview, [row.key]: e.target.value };
+                            // Auto-set flow_type when document_type changes
+                            if (row.key === "document_type") {
+                              if (e.target.value === "dn")  next.flow_type = "expense";
+                              if (e.target.value === "po")  next.flow_type = "payable";
+                            }
+                            setPreview(next);
+                          }}
                           className="field-input w-full rounded-xl border px-4 py-2.5 text-[14px] transition"
                         >
-                          {opts.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                          {row.opts.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                         </select>
                       ) : (
                         <input
-                          value={String((preview as Record<string, unknown>)[field] ?? "")}
-                          onChange={(e) => !isReadonly && setPreview({ ...preview, [field]: e.target.value })}
-                          readOnly={isReadonly}
+                          value={val}
+                          onChange={(e) => !row.readonly && setPreview({ ...preview, [row.key]: e.target.value })}
+                          readOnly={row.readonly}
                           className="field-input w-full rounded-xl border px-4 py-2.5 text-[14px] transition"
-                          style={isReadonly ? { background: "var(--input-bg-ro)", cursor: "not-allowed" } : {}}
+                          style={row.readonly ? { background: "var(--input-bg-ro)", cursor: "not-allowed" } : {}}
                         />
                       )}
                     </div>
@@ -581,7 +644,7 @@ export default function UploadPage() {
                     {preview.items.map((item, idx) => (
                       <div key={idx} className="grid gap-3 rounded-xl p-4 sm:grid-cols-3"
                         style={{ border: "1px solid var(--border)", background: "var(--surface-2)" }}>
-                        {(["description", "quantity", "unit_price"] as (keyof PreviewItem)[]).map((f) => (
+                        {(getItemFields(String(preview.document_type || "")) as (keyof PreviewItem)[]).map((f) => (
                           <input
                             key={f}
                             value={String(item[f] ?? "")}

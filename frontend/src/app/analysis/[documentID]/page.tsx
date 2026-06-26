@@ -485,11 +485,32 @@ export default function AnalysisDetailPage() {
                   </div>
                 </div>
 
+                {/* DN / PO notice badge */}
+                {(target.document_type === "dn" || target.document_type === "po") && (
+                  <div className="mt-3 flex items-center gap-2 rounded-xl px-4 py-2.5 text-[12px] font-semibold"
+                    style={{
+                      background: target.document_type === "dn" ? "rgba(234,108,10,0.08)" : "rgba(124,58,237,0.08)",
+                      color: target.document_type === "dn" ? "#ea6c0a" : "#7c3aed",
+                      border: `1px solid ${target.document_type === "dn" ? "rgba(234,108,10,0.2)" : "rgba(124,58,237,0.2)"}`,
+                    }}>
+                    <span className="material-symbols-outlined text-[15px]">
+                      {target.document_type === "dn" ? "local_shipping" : "shopping_cart"}
+                    </span>
+                    {target.document_type === "dn"
+                      ? (lang === "si" ? "බෙදාහැරීමේ සටහන — මූල්‍ය ගනුදෙනුවක් නොවේ" : "Delivery Note — no financial amounts")
+                      : (lang === "si" ? "ගෙවීම් නියෝගය — ගෙවිය යුතු ගනුදෙනුව" : "Purchase Order — payable transaction")}
+                  </div>
+                )}
+
                 <div className="mt-4 space-y-4">
                   <InfoCard title={t.metadataTitle}>
                     <span className="font-semibold text-[#0f172a]">{t.documentIdLabel}:</span> {target.document_id}
                     <br />
-                    <span className="font-semibold text-[#0f172a]">{t.orderIdLabel}:</span>{" "}
+                    <span className="font-semibold text-[#0f172a]">
+                      {target.document_type === "dn" ? (lang === "si" ? "PO යොමු:" : "PO Reference:") :
+                       target.document_type === "po" ? (lang === "si" ? "PO අංකය:" : "PO Number:") :
+                       `${t.orderIdLabel}:`}
+                    </span>{" "}
                     {editMode ? (
                       <input
                         value={target.order_id || ""}
@@ -543,7 +564,11 @@ export default function AnalysisDetailPage() {
                   </InfoCard>
 
                   <InfoCard title={t.partiesTitle}>
-                    <span className="font-semibold text-[#0f172a]">{t.companyLabel2}:</span>{" "}
+                    <span className="font-semibold text-[#0f172a]">
+                      {target.document_type === "dn" ? (lang === "si" ? "ලැබුම්කරු:" : "Received By:") :
+                       target.document_type === "po" ? (lang === "si" ? "ඇණවුම් කළේ:" : "Ordered By:") :
+                       `${t.companyLabel2}:`}
+                    </span>{" "}
                     {editMode ? (
                       <input
                         value={target.company_name || ""}
@@ -553,7 +578,9 @@ export default function AnalysisDetailPage() {
                     ) : target.company_name || "NULL"}
                     <br />
                     <span className="font-semibold text-[#0f172a]">
-                      {["receivable","cash_inflow"].includes(target.flow_type || "") ? `${t.customerLabel}:` : `${t.supplierLabel2}:`}
+                      {target.document_type === "dn" ? (lang === "si" ? "ලබාදෙන්නා:" : "Delivered By:") :
+                       target.document_type === "po" ? (lang === "si" ? "සැපයුම්කරු:" : "Supplier:") :
+                       ["receivable","cash_inflow"].includes(target.flow_type || "") ? `${t.customerLabel}:` : `${t.supplierLabel2}:`}
                     </span>{" "}
                     {editMode ? (
                       <input
@@ -564,7 +591,7 @@ export default function AnalysisDetailPage() {
                     ) : target.supplier_name || "NULL"}
                   </InfoCard>
 
-                  <InfoCard title={t.financialSummaryTitle}>
+                  {target.document_type !== "dn" && <InfoCard title={target.document_type === "po" ? (lang === "si" ? "ඇණවුම් සාරාංශය" : "Order Summary") : t.financialSummaryTitle}>
                     {(() => {
                       const ft  = (target.flow_type || "").toLowerCase();
                       const cur = target.currency && target.currency !== "NULL" ? target.currency : "LKR";
@@ -647,52 +674,108 @@ export default function AnalysisDetailPage() {
                         </>
                       );
                     })()}
+                  </InfoCard>}
+
+                  {/* DN: Delivery Status only | PO: PO Status only | others: full status */}
+                  <InfoCard title={
+                    target.document_type === "dn" ? (lang === "si" ? "බෙදාහැරීමේ තත්ත්වය" : "Delivery Status") :
+                    target.document_type === "po" ? (lang === "si" ? "PO තත්ත්වය" : "PO Status") :
+                    t.statusTitle
+                  }>
+                    {target.document_type === "dn" ? (
+                      <>
+                        <span className="font-semibold text-[#0f172a]">{lang === "si" ? "බෙදාහැරීමේ තත්ත්වය:" : "Delivery Status:"}</span>{" "}
+                        {editMode ? (
+                          <select value={target.received_status || ""}
+                            onChange={(e) => updateField("received_status", e.target.value)}
+                            className="ml-2 rounded border border-slate-200 px-2 py-1 text-[13px]">
+                            <option value="">Select…</option>
+                            <option value="delivered">{lang === "si" ? "ලබාදෙන ලදී" : "Delivered"}</option>
+                            <option value="not_delivered">{lang === "si" ? "ලබා නොදුනේ" : "Not Delivered"}</option>
+                            <option value="partial">{lang === "si" ? "අර්ධ" : "Partial"}</option>
+                          </select>
+                        ) : (
+                          <span className={`ml-1 rounded-full px-2 py-0.5 text-[11px] font-bold ${
+                            target.received_status === "delivered" ? "bg-green-50 text-green-700" :
+                            target.received_status === "not_delivered" ? "bg-red-50 text-red-700" :
+                            "bg-amber-50 text-amber-700"
+                          }`}>
+                            {target.received_status === "delivered" ? (lang === "si" ? "ලබාදෙන ලදී" : "Delivered") :
+                             target.received_status === "not_delivered" ? (lang === "si" ? "ලබා නොදුනේ" : "Not Delivered") :
+                             target.received_status === "partial" ? (lang === "si" ? "අර්ධ" : "Partial") :
+                             target.received_status || "—"}
+                          </span>
+                        )}
+                        <br />
+                        <span className="font-semibold text-[#0f172a]">{t.languageLabel}:</span>{" "}
+                        {target.language || "NULL"}
+                      </>
+                    ) : target.document_type === "po" ? (
+                      <>
+                        <span className="font-semibold text-[#0f172a]">{lang === "si" ? "PO තත්ත්වය:" : "PO Status:"}</span>{" "}
+                        {editMode ? (
+                          <select value={target.paid_status || ""}
+                            onChange={(e) => updateField("paid_status", e.target.value)}
+                            className="ml-2 rounded border border-slate-200 px-2 py-1 text-[13px]">
+                            <option value="">Select…</option>
+                            <option value="not_paid">{lang === "si" ? "අනුමත නොකළ" : "Pending"}</option>
+                            <option value="partial">{lang === "si" ? "අනුමත කළ" : "Approved"}</option>
+                            <option value="paid">{lang === "si" ? "සම්පූර්ණ කළ" : "Fulfilled"}</option>
+                            <option value="NULL">{lang === "si" ? "අවලංගු" : "Cancelled"}</option>
+                          </select>
+                        ) : (
+                          <span className={`ml-1 rounded-full px-2 py-0.5 text-[11px] font-bold ${
+                            target.paid_status === "paid" ? "bg-green-50 text-green-700" :
+                            target.paid_status === "not_paid" ? "bg-amber-50 text-amber-700" :
+                            "bg-slate-50 text-slate-500"
+                          }`}>
+                            {target.paid_status === "paid" ? "Fulfilled" :
+                             target.paid_status === "not_paid" ? "Pending" :
+                             target.paid_status === "partial" ? "Approved" :
+                             target.paid_status === "NULL" ? "Cancelled" :
+                             target.paid_status || "Pending"}
+                          </span>
+                        )}
+                        <br />
+                        <span className="font-semibold text-[#0f172a]">{t.languageLabel}:</span>{" "}
+                        {target.language || "NULL"}
+                      </>
+                    ) : (
+                      // Invoice / Receipt — full status
+                      <>
+                        <span className="font-semibold text-[#0f172a]">{t.receivedStatusLabel}:</span>{" "}
+                        {editMode ? (
+                          <select value={target.received_status || "NULL"} onChange={(e) => updateField("received_status", e.target.value)} className="ml-2 rounded border border-slate-200 px-2 py-1 text-[13px]">
+                            <option value="NULL">NULL</option>
+                            <option value="received">received</option>
+                            <option value="not_received">not_received</option>
+                            <option value="partial">partial</option>
+                          </select>
+                        ) : target.received_status || "NULL"}
+                        <br />
+                        <span className="font-semibold text-[#0f172a]">{t.paidStatusLabel}:</span>{" "}
+                        {editMode ? (
+                          <select value={target.paid_status || "NULL"} onChange={(e) => updateField("paid_status", e.target.value)} className="ml-2 rounded border border-slate-200 px-2 py-1 text-[13px]">
+                            <option value="NULL">NULL</option>
+                            <option value="paid">paid</option>
+                            <option value="not_paid">not_paid</option>
+                            <option value="partial">partial</option>
+                          </select>
+                        ) : target.paid_status || "NULL"}
+                        <br />
+                        <span className="font-semibold text-[#0f172a]">{t.languageLabel}:</span>{" "}
+                        {editMode ? (
+                          <select value={target.language || "en"} onChange={(e) => updateField("language", e.target.value)} className="ml-2 rounded border border-slate-200 px-2 py-1 text-[13px]">
+                            <option value="en">en</option>
+                            <option value="si">si</option>
+                          </select>
+                        ) : target.language || "NULL"}
+                      </>
+                    )}
                   </InfoCard>
 
-                  <InfoCard title={t.statusTitle}>
-                    <span className="font-semibold text-[#0f172a]">{t.receivedStatusLabel}:</span>{" "}
-{editMode ? (
-  <select
-    value={target.received_status || "NULL"}
-    onChange={(e) => updateField("received_status", e.target.value)}
-    className="ml-2 rounded border border-slate-200 px-2 py-1 text-[13px]"
-  >
-    <option value="NULL">NULL</option>
-    <option value="received">received</option>
-    <option value="not_received">not_received</option>
-    <option value="partial">partial</option>
-  </select>
-) : target.received_status || "NULL"}
-                    <br />
-                    <span className="font-semibold text-[#0f172a]">{t.paidStatusLabel}:</span>{" "}
-{editMode ? (
-  <select
-    value={target.paid_status || "NULL"}
-    onChange={(e) => updateField("paid_status", e.target.value)}
-    className="ml-2 rounded border border-slate-200 px-2 py-1 text-[13px]"
-  >
-    <option value="NULL">NULL</option>
-    <option value="paid">paid</option>
-    <option value="not_paid">not_paid</option>
-    <option value="partial">partial</option>
-  </select>
-) : target.paid_status || "NULL"}
-                    <br />
-                    <span className="font-semibold text-[#0f172a]">{t.languageLabel}:</span>{" "}
-                    {editMode ? (
-                      <select
-                        value={target.language || "en"}
-                        onChange={(e) => updateField("language", e.target.value)}
-                        className="ml-2 rounded border border-slate-200 px-2 py-1 text-[13px]"
-                      >
-                        <option value="en">en</option>
-                        <option value="si">si</option>
-                      </select>
-                    ) : target.language || "NULL"}
-                  </InfoCard>
-
-                  {/* TAX DETAILS — shows only when tax was extracted from the document */}
-                  <InfoCard title={t.taxDetailsTitle}>
+                  {/* TAX DETAILS — hidden for DN (no financial value) */}
+                  {target.document_type !== "dn" && <InfoCard title={t.taxDetailsTitle}>
                     {(() => {
                       const rawTax = target.tax_amount;
                       const rawRate = target.tax_rate;
@@ -713,7 +796,7 @@ export default function AnalysisDetailPage() {
                       }
                       return <span className="text-[#94a3b8]">{t.noTaxOnDocument}</span>;
                     })()}
-                  </InfoCard>
+                  </InfoCard>}
 
                   <div className="rounded-[18px] border border-slate-200 bg-white p-5 shadow-sm">
                     <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#64748b]">
@@ -725,7 +808,7 @@ export default function AnalysisDetailPage() {
                         target.items.map((item, index) => (
                           <div
                             key={index}
-                            className="grid gap-2 rounded-[12px] border border-slate-200 p-3 sm:grid-cols-3"
+                            className={`grid gap-2 rounded-[12px] border border-slate-200 p-3 ${target.document_type === "dn" ? "sm:grid-cols-2" : "sm:grid-cols-3"}`}
                           >
                             <div className="text-[14px] text-[#0f172a]">
                               <span className="font-semibold">{t.descriptionLabel}:</span>{" "}
@@ -747,16 +830,19 @@ export default function AnalysisDetailPage() {
                                 />
                               ) : item.quantity ?? "NULL"}
                             </div>
-                            <div className="text-[14px] text-[#0f172a]">
-                              <span className="font-semibold">{t.unitPriceLabel}:</span>{" "}
-                              {editMode ? (
-                                <input
-                                  value={String(item.unit_price ?? "")}
-                                  onChange={(e) => updateItemField(index, "unit_price", e.target.value)}
-                                  className="mt-1 w-full rounded border border-slate-200 px-2 py-1 text-[13px]"
-                                />
-                              ) : item.unit_price ?? "NULL"}
-                            </div>
+                            {/* Unit price hidden for DN — no financial value on delivery notes */}
+                            {target.document_type !== "dn" && (
+                              <div className="text-[14px] text-[#0f172a]">
+                                <span className="font-semibold">{t.unitPriceLabel}:</span>{" "}
+                                {editMode ? (
+                                  <input
+                                    value={String(item.unit_price ?? "")}
+                                    onChange={(e) => updateItemField(index, "unit_price", e.target.value)}
+                                    className="mt-1 w-full rounded border border-slate-200 px-2 py-1 text-[13px]"
+                                  />
+                                ) : item.unit_price ?? "NULL"}
+                              </div>
+                            )}
                           </div>
                         ))
                       ) : (

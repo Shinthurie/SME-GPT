@@ -224,6 +224,25 @@ def normalize_root_fields(parsed: dict, source_text: str) -> dict:
     }
     flow_type = _flow_aliases.get(flow_type, flow_type)
 
+    # DN — delivery notes have no financial value; zero all amounts and lock flow
+    if document_type == "dn":
+        flow_type = "expense"          # stored for DB consistency, hidden in UI
+        parsed["raw_total_amount"]  = ""
+        parsed["final_total_amount"] = ""
+        parsed["payable_amount"]    = ""
+        parsed["cash_return"]       = ""
+        parsed["paid_status"]       = "NULL"
+        # Strip prices from items — only description + qty matter on a DN
+        for item in parsed.get("items", []):
+            item["unit_price"] = ""
+            item["line_total"] = ""
+
+    # PO — always payable; no cash return, no received status
+    if document_type == "po":
+        flow_type = "payable"
+        parsed["cash_return"]       = ""
+        parsed["received_status"]   = "NULL"
+
     return {
         "document_id": str(parsed.get("document_id", "")).strip(),
         "document_type": document_type,
