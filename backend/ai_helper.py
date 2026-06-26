@@ -1,32 +1,17 @@
-import os
 import json
-import requests
+from llm_client import call_llm
 
-DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
-DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
-DEEPSEEK_HOST = "https://api.deepseek.com"
+_QA_SYSTEM = (
+    "You are a financial assistant for a Sri Lankan SME business. "
+    "You answer questions using ONLY the provided analysis result data. "
+    "Never invent numbers or document IDs. "
+    "When returning JSON, output ONLY the JSON object — no markdown, no extra text."
+)
 
 
 def call_ollama(prompt: str) -> str:
-    url = f"{DEEPSEEK_HOST}/chat/completions"
-    headers = {
-        "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
-        "Content-Type": "application/json",
-    }
-    response = requests.post(
-        url,
-        headers=headers,
-        json={
-            "model": DEEPSEEK_MODEL,
-            "messages": [{"role": "user", "content": prompt}],
-            "temperature": 0,
-            "stream": False,
-        },
-        timeout=600,
-    )
-    response.raise_for_status()
-    data = response.json()
-    return data["choices"][0]["message"]["content"].strip()
+    """Routes Q&A calls to local Ollama."""
+    return call_llm(prompt, system=_QA_SYSTEM)
 
 
 def detect_currency(result: dict) -> str:
