@@ -19,8 +19,11 @@ Allowed tasks: aggregate_sum, aggregate_avg, aggregate_count, compare, lookup_va
 Allowed filter ops: eq, in, contains, gte, lte, between
 Allowed aggregations: sum, avg, count, max, min
 Canonical fields ONLY (reject anything else): item, description, qty, unit_price, total, tax,
-discount, currency, doc_date, vendor, flow_type
-flow_type values: payable, receivable, income, expense
+discount, currency, doc_date, vendor, flow_type, category
+flow_type values: payable, receivable, cash_inflow, cash_outflow
+category values: Revenue, Expenses
+revenue/income queries → use flow_type in [receivable, cash_inflow]
+expense/cost queries  → use flow_type in [payable, cash_outflow]
 
 Return ONLY valid JSON, no prose, in this exact shape:
 {{

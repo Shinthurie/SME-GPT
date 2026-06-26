@@ -1,41 +1,19 @@
 import json
 import os
 import re
-import requests
 from llm_correction import clean_ocr_text
+from llm_client import call_llm
 
-DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
-DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
-DEEPSEEK_HOST = "https://api.deepseek.com"
+_EXTRACTION_SYSTEM = (
+    "You are a financial document data extraction engine for Sri Lankan SME businesses. "
+    "You output ONLY a single valid JSON object — no markdown fences, no explanation, "
+    "no text before or after the JSON. Start your response with { and end with }."
+)
 
 
 def call_ollama(prompt: str) -> str:
-    url = f"{DEEPSEEK_HOST}/chat/completions"
-    headers = {
-        "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
-        "Content-Type": "application/json",
-    }
-    try:
-        response = requests.post(
-            url,
-            headers=headers,
-            json={
-                "model": DEEPSEEK_MODEL,
-                "messages": [{"role": "user", "content": prompt}],
-                "temperature": 0,
-                "stream": False,
-            },
-            timeout=600,
-        )
-        response.raise_for_status()
-        data = response.json()
-        return data["choices"][0]["message"]["content"].strip()
-    except requests.exceptions.ConnectionError as e:
-        raise Exception(f"Could not connect to DeepSeek API. Error: {e}")
-    except requests.exceptions.HTTPError as e:
-        raise Exception(f"DeepSeek HTTP error: {e}. Response: {response.text}")
-    except requests.exceptions.Timeout:
-        raise Exception("DeepSeek extraction request timed out.")
+    """Routes extraction calls to local Ollama."""
+    return call_llm(prompt, system=_EXTRACTION_SYSTEM)
 
 
 def extract_json_block(text: str) -> str:
@@ -84,14 +62,17 @@ def normalize_ocr_money(value):
 
     text = text.replace(",", "").replace("Rs.", "").replace("Rs", "").replace("LKR", "").strip()
 
-    # OCR receipt fix:
-    # ".300" on receipt totals is often a broken OCR read of "1300"
+    # OCR receipt fix: ".300" on receipt totals is often a broken OCR read of "1300".
+    # Only applies to exact 3-digit decimal strings (e.g. ".300", ".500").
     if re.fullmatch(r"\.\d{3}", text):
-        return int("1" + text[1:])
+        corrected = int("1" + text[1:])
+        print(f"[normalize_ocr_money] OCR receipt fix applied: {text!r} → {corrected}", flush=True)
+        return corrected
 
     try:
         return float(text) if "." in text else int(text)
-    except Exception:
+    except Exception as e:
+        print(f"[normalize_ocr_money] parse error for value={value!r}: {e}", flush=True)
         return "NULL"
 
 def normalize_number(value):
@@ -108,7 +89,8 @@ def normalize_number(value):
 
     try:
         return float(text) if "." in text else int(text)
-    except Exception:
+    except Exception as e:
+        print(f"[normalize_number] parse error for value={value!r}: {e}", flush=True)
         return "NULL"
 
 
@@ -116,7 +98,7 @@ def detect_language(text: str) -> str:
     if not isinstance(text, str) or not text.strip():
         return "unknown"
 
-    has_sinhala = bool(re.search(r"[\u0D80-\u0DFF]", text))
+    has_sinhala = bool(re.search(r"[඀-෿]", text))
     has_english = bool(re.search(r"[A-Za-z]", text))
 
     if has_sinhala and has_english:
@@ -203,7 +185,7 @@ def infer_company_name_from_text(source_text: str, current_company: str) -> str:
         if any(keyword in lower for keyword in business_keywords):
             return line
 
-    # If first 2–3 top lines look like a stacked business name, join them
+    # If first 2-3 top lines look like a stacked business name, join them
     if len(top_lines) >= 2:
         joined = " ".join(top_lines[:2]).strip()
         if joined:
@@ -233,9 +215,14 @@ def normalize_root_fields(parsed: dict, source_text: str) -> dict:
     if document_type in {"delivery note", "delivery_note"}:
         document_type = "dn"
 
-    flow_type = str(parsed.get("flow_type", "unknown")).strip().lower() or "unknown"
-    if flow_type == "expence":
-        flow_type = "expense"
+    flow_type = str(parsed.get("flow_type", "unknown")).strip().lower().replace(" ", "_") or "unknown"
+    # Normalise legacy / misspelled values
+    _flow_aliases = {
+        "expense": "cash_outflow", "expence": "cash_outflow",
+        "income": "cash_inflow", "revenue": "cash_inflow",
+        "cash outflow": "cash_outflow", "cash inflow": "cash_inflow",
+    }
+    flow_type = _flow_aliases.get(flow_type, flow_type)
 
     return {
         "document_id": str(parsed.get("document_id", "")).strip(),
@@ -255,6 +242,8 @@ def normalize_root_fields(parsed: dict, source_text: str) -> dict:
         "final_total_amount": normalize_ocr_money(parsed.get("final_total_amount")),
         "payable_amount": normalize_ocr_money(parsed.get("payable_amount")),
         "cash_return": normalize_number(parsed.get("cash_return")),
+        "tax_amount": normalize_ocr_money(parsed.get("tax_amount")) if parsed.get("tax_amount") not in (None, "", "NULL") else "NULL",
+        "tax_rate": normalize_number(parsed.get("tax_rate")) if parsed.get("tax_rate") not in (None, "", "NULL") else "NULL",
         "received_status": str(parsed.get("received_status", "")).strip(),
         "paid_status": str(parsed.get("paid_status", "")).strip(),
         "language": language,
@@ -267,9 +256,9 @@ Return ONLY one valid JSON object — no markdown, no explanations, no notes.
 
 Extract ALL line items. For each item row extract:
 - description (item name)
-- quantity (Qty/QTY/Nos/Pcs/Units/ප්‍රමාණය)
-- unit_price (Rate/Price/Unit Rate/Unit Price/ඒකක මිල)
-- line_total (Amount/Total/රු.)
+- quantity (Qty/QTY/Nos/Pcs/Units/ป๊รมาณย)
+- unit_price (Rate/Price/Unit Rate/Unit Price/อาคมิล)
+- line_total (Amount/Total/รู.)
 
 Use "" for any missing field. Do NOT skip item rows.
 Default currency to "LKR" if not stated.
@@ -287,6 +276,8 @@ Default currency to "LKR" if not stated.
   "final_total_amount": "",
   "payable_amount": "",
   "cash_return": "",
+  "tax_amount": "",
+  "tax_rate": "",
   "received_status": "",
   "paid_status": "",
   "items": [
@@ -330,11 +321,11 @@ DOCUMENT TYPE (pick one):
 - "unknown"  → if none of the above
 
 FLOW TYPE (pick one):
-- "payable"    → we owe money to a supplier (we are the buyer)
-- "receivable" → a customer owes us money (we are the seller)
-- "expense"    → already paid retail bill / cash purchase
-- "income"     → money already received from a customer
-- "unknown"    → when unclear
+- "payable"      → we owe money to a supplier, not yet paid (we are the buyer)
+- "receivable"   → a customer owes us money, not yet received (we are the seller)
+- "cash_outflow" → already paid retail bill / cash purchase / expense paid
+- "cash_inflow"  → money already received from a customer / income received
+- "unknown"      → when unclear
 
 FIELD EXTRACTION GUIDE:
 - company_name: the business that ISSUED this document (top of page, usually largest text)
@@ -346,9 +337,9 @@ LINE ITEMS — THIS IS CRITICAL:
 Each item row in the document must be a separate object in "items".
 For EACH item look for these columns (they may use different labels):
   - description: item name/product/service (required — always extract)
-  - quantity: amount/count (also labeled as: Qty, QTY, Nos, No., Pcs, Units, Count, ප්‍රමාණය)
-  - unit_price: price per unit (also labeled as: Rate, Unit Rate, Price, U/Price, Unit Price, ඒකක මිල, මිල)
-  - line_total: row total / amount (also labeled as: Amount, Total, Line Total, Sub, රු.)
+  - quantity: amount/count (also labeled as: Qty, QTY, Nos, No., Pcs, Units, Count, ป๊รมาณย)
+  - unit_price: price per unit (also labeled as: Rate, Unit Rate, Price, U/Price, Unit Price, อาคมิล, มิล)
+  - line_total: row total / amount (also labeled as: Amount, Total, Line Total, Sub, รู.)
 If a column is missing from a row, use "" — do NOT skip the item row entirely.
 For receipts with no explicit qty column: assume quantity = 1 if only price and total are given.
 Extract ALL item rows visible in the document — do not skip any.
@@ -359,6 +350,11 @@ AMOUNT FIELDS:
 - payable_amount: amount the buyer must pay (after discount, if any)
 - cash_return: change given back to customer (if shown)
 - currency: LKR, USD, EUR etc. (default LKR if not stated)
+
+TAX FIELDS (CRITICAL — only extract if explicitly shown on the document):
+- tax_amount: the actual tax amount printed on the document (e.g. "VAT: 300.00", "Tax: 45.00"). Use "" if no tax is shown.
+- tax_rate: the tax percentage printed on the document (e.g. 15 for "VAT 15%", 8 for "GST 8%"). Use "" if no rate is shown.
+- Do NOT calculate or guess tax. Only extract what is EXPLICITLY printed.
 
 Return this JSON structure:
 {{
@@ -374,6 +370,8 @@ Return this JSON structure:
   "final_total_amount": "",
   "payable_amount": "",
   "cash_return": "",
+  "tax_amount": "",
+  "tax_rate": "",
   "received_status": "",
   "paid_status": "",
   "items": [
