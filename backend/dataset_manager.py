@@ -15,6 +15,7 @@ All reads/writes are tenant-scoped (tenant_id == user_id). Deletes are soft
 
 import os
 import json
+from datetime import datetime, timedelta
 
 import pandas as pd
 from psycopg.types.json import Jsonb
@@ -472,13 +473,56 @@ def _row_to_record(row: dict, items: list) -> dict:
 
 # ──────────────────────────── reads ────────────────────────────
 
-def count_records(user_id: str) -> int:
-    """NFR-03: returns total row count without loading data into memory."""
+def parse_date_bounds(date_from: str | None, date_to: str | None):
+    """Parse ISO ``YYYY-MM-DD`` strings into inclusive createdAt timestamp bounds.
+
+    Returns ``(lower, upper)`` where ``lower`` is the start of ``date_from`` and
+    ``upper`` is the start of the day *after* ``date_to`` (so the range is
+    inclusive of the whole ``date_to`` day). Either bound is ``None`` when its
+    input is missing or unparseable — callers simply skip that side of the range.
+    Pure function (no DB) so it is unit-testable without a database.
+    """
+    def _start_of_day(value):
+        if not value:
+            return None
+        try:
+            return datetime.strptime(str(value).strip(), "%Y-%m-%d")
+        except (ValueError, TypeError):
+            return None
+
+    lower = _start_of_day(date_from)
+    upper = _start_of_day(date_to)
+    if upper is not None:
+        upper = upper + timedelta(days=1)  # make date_to inclusive
+    return lower, upper
+
+
+def _created_at_clause(date_from, date_to, where: list, params: list) -> None:
+    """Append createdAt range predicates to an existing WHERE list / params."""
+    lower, upper = parse_date_bounds(date_from, date_to)
+    if lower is not None:
+        where.append('"createdAt" >= %s')
+        params.append(lower)
+    if upper is not None:
+        where.append('"createdAt" < %s')
+        params.append(upper)
+
+
+def count_records(user_id: str, date_from: str | None = None, date_to: str | None = None) -> int:
+    """NFR-03: returns total row count without loading data into memory.
+
+    Optional ``date_from`` / ``date_to`` (ISO ``YYYY-MM-DD``) restrict the count
+    to documents created within that inclusive upload-date range, so pagination
+    totals stay consistent with the same filter applied in load_records().
+    """
+    where = ['"tenantId"=%s', '"deletedAt" IS NULL']
+    params: list = [str(user_id)]
+    _created_at_clause(date_from, date_to, where, params)
     with get_conn() as conn:
         cur = conn.cursor()
         cur.execute(
-            'SELECT COUNT(*) AS n FROM "FinancialDocument" WHERE "tenantId"=%s AND "deletedAt" IS NULL',
-            (str(user_id),),
+            f'SELECT COUNT(*) AS n FROM "FinancialDocument" WHERE {" AND ".join(where)}',
+            params,
         )
         row = cur.fetchone()
     return int((row or {}).get("n", 0))
@@ -489,6 +533,8 @@ def load_records(
     document_id: str = None,
     limit: int | None = None,
     offset: int = 0,
+    date_from: str | None = None,
+    date_to: str | None = None,
 ):
     where = ['"deletedAt" IS NULL']
     params: list = []
@@ -498,6 +544,7 @@ def load_records(
     if document_id is not None:
         where.append('"documentId" = %s')
         params.append(str(document_id))
+    _created_at_clause(date_from, date_to, where, params)
 
     sql = f'SELECT * FROM "FinancialDocument" WHERE {" AND ".join(where)} ORDER BY "createdAt" DESC'
     if limit is not None:

@@ -1374,12 +1374,21 @@ def get_documents(
     authorization: str = Header(default=None),
     page: int = Query(default=1, ge=1),
     limit: int = Query(default=50, ge=1, le=200),
+    date_from: str | None = Query(default=None, alias="from"),
+    date_to: str | None = Query(default=None, alias="to"),
 ):
-    """NFR-02/03: DB-level LIMIT/OFFSET — never loads the full dataset into memory."""
+    """NFR-02/03: DB-level LIMIT/OFFSET — never loads the full dataset into memory.
+
+    IT-21: optional ``from`` / ``to`` query params (ISO ``YYYY-MM-DD``) restrict
+    results to documents uploaded within that inclusive date range.
+    """
     user_id = get_current_user_id(authorization)
-    total = count_records(user_id=user_id)
+    total = count_records(user_id=user_id, date_from=date_from, date_to=date_to)
     offset = (page - 1) * limit
-    raw_records = load_records(user_id=user_id, limit=limit, offset=offset)
+    raw_records = load_records(
+        user_id=user_id, limit=limit, offset=offset,
+        date_from=date_from, date_to=date_to,
+    )
 
     from dataset_manager import parse_record_for_output
     page_records = []
