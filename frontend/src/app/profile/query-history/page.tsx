@@ -5,7 +5,9 @@ import { useRouter } from "next/navigation";
 import MobileShell from "@/components/layout/MobileShell";
 import BottomNav from "@/components/layout/BottomNav";
 import LanguageSwitcher from "@/components/layout/LanguageSwitcher";
+import ThemeToggle from "@/components/layout/ThemeToggle";
 import { getStoredToken } from "@/lib/auth";
+import { AppLanguage, getStoredLanguage, ui } from "@/lib/i18n";
 
 const BACKEND_URL = "http://127.0.0.1:8000";
 
@@ -21,20 +23,24 @@ type QueryHistoryItem = {
   created_at: string;
 };
 
-function formatDateTime(value: string) {
-  if (!value) return "No Date";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString();
-}
-
 export default function QueryHistoryPage() {
   const router = useRouter();
+  const [lang, setLang] = useState<AppLanguage>("en");
   const [history, setHistory] = useState<QueryHistoryItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [deletingId, setDeletingId] = useState("");
   const [clearing, setClearing] = useState(false);
+
+  useEffect(() => { setLang(getStoredLanguage()); }, []);
+  const t = ui[lang];
+
+  function formatDateTime(value: string) {
+    if (!value) return t.noDate;
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return value;
+    return date.toLocaleString();
+  }
 
   const loadHistory = useCallback(async () => {
     const token = getStoredToken();
@@ -58,12 +64,12 @@ export default function QueryHistoryPage() {
       const data = await res.json();
 
       if (!res.ok || !data.success) {
-        throw new Error(data.message || "Failed to load query history.");
+        throw new Error(data.message || ui[getStoredLanguage()].qhLoadFailed);
       }
 
       setHistory(data.history || []);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load history.");
+      setError(err instanceof Error ? err.message : ui[getStoredLanguage()].qhLoadFailed);
     } finally {
       setLoading(false);
     }
@@ -93,7 +99,7 @@ export default function QueryHistoryPage() {
   };
 
   const handleDeleteOne = async (id: string) => {
-    const confirmed = window.confirm("Delete this history item?");
+    const confirmed = window.confirm(t.qhConfirmDeleteOne);
     if (!confirmed) return;
 
     try {
@@ -111,19 +117,19 @@ export default function QueryHistoryPage() {
       const data = await res.json();
 
       if (!res.ok || !data.success) {
-        throw new Error(data.message || "Failed to delete history item.");
+        throw new Error(data.message || t.qhLoadFailed);
       }
 
       setHistory((prev) => prev.filter((item) => item.id !== id));
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Failed to delete history item.");
+      alert(err instanceof Error ? err.message : t.qhLoadFailed);
     } finally {
       setDeletingId("");
     }
   };
 
   const handleClearAll = async () => {
-    const confirmed = window.confirm("Clear all query history?");
+    const confirmed = window.confirm(t.qhConfirmClear);
     if (!confirmed) return;
 
     try {
@@ -141,12 +147,12 @@ export default function QueryHistoryPage() {
       const data = await res.json();
 
       if (!res.ok || !data.success) {
-        throw new Error(data.message || "Failed to clear history.");
+        throw new Error(data.message || t.qhLoadFailed);
       }
 
       setHistory([]);
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Failed to clear history.");
+      alert(err instanceof Error ? err.message : t.qhLoadFailed);
     } finally {
       setClearing(false);
     }
@@ -154,70 +160,78 @@ export default function QueryHistoryPage() {
 
   return (
     <MobileShell>
-      <div className="min-h-screen bg-[#f6f7fb] pb-24">
+      <div className="min-h-screen pb-24" style={{ background: "var(--bg)" }}>
         <main className="mx-auto w-full max-w-[980px] px-4 py-6 sm:px-6 lg:px-8">
           <div className="mb-4 flex items-center justify-between gap-3">
             <button
               onClick={() => router.push("/profile")}
-              className="text-[14px] font-medium text-[#2563ff]"
+              className="text-[14px] font-medium text-[var(--brand-mid)]"
             >
-              ← Back
+              ← {t.back}
             </button>
 
             <div className="flex items-center gap-2">
+              <ThemeToggle />
               <LanguageSwitcher />
               <button
                 onClick={handleClearAll}
                 disabled={clearing || history.length === 0}
                 className="rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-[13px] font-bold text-red-600 disabled:opacity-50"
               >
-                {clearing ? "Clearing..." : "Clear All"}
+                {clearing ? t.clearing : t.clearAll}
               </button>
             </div>
           </div>
 
-          <h1 className="text-[24px] font-extrabold text-[#0f172a]">
-            Query History
+          <h1 className="text-[24px] font-extrabold text-[var(--text-1)]">
+            {t.qhTitle}
           </h1>
 
-          <p className="mt-2 text-[14px] text-[#64748b]">
-            Open, review, or delete your previous saved query answers.
+          <p className="mt-2 text-[14px] text-[var(--text-2)]">
+            {t.qhSubtitle}
           </p>
 
           {loading ? (
-            <div className="mt-6 rounded-[18px] border border-slate-200 bg-white p-5 text-[14px] text-[#64748b] shadow-sm">
-              Loading history...
+            <div
+              className="mt-6 rounded-[18px] p-5 text-[14px] text-[var(--text-2)] shadow-sm"
+              style={{ background: "var(--surface)", border: "1px solid var(--border)" }}
+            >
+              {t.qhLoading}
             </div>
           ) : error ? (
             <div className="mt-6 rounded-[18px] border border-red-200 bg-red-50 p-5 text-[14px] text-red-700 shadow-sm">
               {error}
             </div>
           ) : history.length === 0 ? (
-            <div className="mt-6 rounded-[18px] border border-slate-200 bg-white p-5 text-[14px] text-[#64748b] shadow-sm">
-              No query history found.
+            <div
+              className="mt-6 rounded-[18px] p-5 text-[14px] text-[var(--text-2)] shadow-sm"
+              style={{ background: "var(--surface)", border: "1px solid var(--border)" }}
+            >
+              {t.qhNone}
             </div>
           ) : (
             <div className="mt-6 space-y-4">
               {history.map((item) => (
                 <div
                   key={item.id}
-                  className="rounded-[18px] border border-slate-200 bg-white p-5 shadow-sm"
+                  className="rounded-[18px] p-5 shadow-sm"
+                  style={{ background: "var(--surface)", border: "1px solid var(--border)" }}
                 >
                   <div className="flex flex-wrap items-start justify-between gap-4">
                     <div className="min-w-0 flex-1">
-                      <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#64748b]">
+                      <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[var(--text-3)]">
                         {item.company_name}
                       </p>
 
-                      <h2 className="mt-2 text-[16px] font-bold text-[#0f172a]">
+                      <h2 className="mt-2 text-[16px] font-bold text-[var(--text-1)]">
                         {item.question}
                       </h2>
 
-                      <p className="mt-2 line-clamp-2 text-[13px] text-[#64748b]">
+                      <p className="mt-2 line-clamp-2 text-[13px] text-[var(--text-2)]">
                         {item.answer}
                       </p>
 
-                      <p className="mt-3 text-[12px] text-[#94a3b8]">
+                      <p className="mt-3 text-[12px] text-[var(--text-3)]">
                         {formatDateTime(item.created_at)}
                       </p>
                     </div>
@@ -225,9 +239,10 @@ export default function QueryHistoryPage() {
                     <div className="flex items-center gap-2">
                       <button
                         onClick={() => openHistoryItem(item)}
-                        className="rounded-xl bg-[#2563ff] px-4 py-2 text-[13px] font-bold text-white"
+                        className="rounded-xl px-4 py-2 text-[13px] font-bold text-white"
+                        style={{ background: "var(--brand-mid)" }}
                       >
-                        Open
+                        {t.open}
                       </button>
 
                       <button
@@ -235,7 +250,7 @@ export default function QueryHistoryPage() {
                         disabled={deletingId === item.id}
                         className="rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-[13px] font-bold text-red-600 disabled:opacity-50"
                       >
-                        {deletingId === item.id ? "Deleting..." : "Delete"}
+                        {deletingId === item.id ? t.deleting : t.delete}
                       </button>
                     </div>
                   </div>

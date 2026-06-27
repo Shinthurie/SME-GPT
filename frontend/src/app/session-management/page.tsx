@@ -5,7 +5,9 @@ import { useRouter } from "next/navigation";
 import MobileShell from "@/components/layout/MobileShell";
 import BottomNav from "@/components/layout/BottomNav";
 import LanguageSwitcher from "@/components/layout/LanguageSwitcher";
+import ThemeToggle from "@/components/layout/ThemeToggle";
 import { getSession } from "@/lib/auth";
+import { AppLanguage, getStoredLanguage, ui } from "@/lib/i18n";
 
 type TrustedDevice = {
   id: string;
@@ -28,11 +30,15 @@ function formatDate(value: string) {
 export default function SessionManagementPage() {
   const router = useRouter();
 
+  const [lang, setLang] = useState<AppLanguage>("en");
   const [devices, setDevices] = useState<TrustedDevice[]>([]);
   const [currentDeviceToken, setCurrentDeviceToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [message, setMessage] = useState("");
+
+  useEffect(() => { setLang(getStoredLanguage()); }, []);
+  const t = ui[lang];
 
   const loadSessions = useCallback(async () => {
     try {
@@ -49,7 +55,7 @@ export default function SessionManagementPage() {
       const data = await res.json();
 
       if (!res.ok) {
-        setMessage(data.error || "Failed to load sessions");
+        setMessage(data.error || ui[getStoredLanguage()].smLoadFailed);
         return;
       }
 
@@ -57,7 +63,7 @@ export default function SessionManagementPage() {
       setCurrentDeviceToken(data.currentDeviceToken || null);
     } catch (error) {
       console.error("LOAD SESSIONS ERROR:", error);
-      setMessage("Something went wrong while loading sessions");
+      setMessage(ui[getStoredLanguage()].smLoadError);
     } finally {
       setLoading(false);
     }
@@ -83,15 +89,15 @@ export default function SessionManagementPage() {
       const data = await res.json();
 
       if (!res.ok) {
-        setMessage(data.error || "Failed to remove device");
+        setMessage(data.error || t.smRemoveFailed);
         return;
       }
 
-      setMessage("Trusted device removed");
+      setMessage(t.smRemovedOne);
       await loadSessions();
     } catch (error) {
       console.error("REMOVE DEVICE ERROR:", error);
-      setMessage("Something went wrong");
+      setMessage(t.genericError);
     } finally {
       setActionLoading(false);
     }
@@ -109,15 +115,15 @@ export default function SessionManagementPage() {
       const data = await res.json();
 
       if (!res.ok) {
-        setMessage(data.error || "Failed to remove other devices");
+        setMessage(data.error || t.smRemoveOthersFailed);
         return;
       }
 
-      setMessage(data.message || "All other trusted devices removed");
+      setMessage(data.message || t.smRemovedOthers);
       await loadSessions();
     } catch (error) {
       console.error("REMOVE OTHERS ERROR:", error);
-      setMessage("Something went wrong");
+      setMessage(t.genericError);
     } finally {
       setActionLoading(false);
     }
@@ -135,15 +141,15 @@ export default function SessionManagementPage() {
       const data = await res.json();
 
       if (!res.ok) {
-        setMessage(data.error || "Failed to trust device");
+        setMessage(data.error || t.smTrustFailed);
         return;
       }
 
-      setMessage(data.message || "Device trusted successfully");
+      setMessage(data.message || t.smTrusted);
       await loadSessions();
     } catch (error) {
       console.error("TRUST CURRENT DEVICE ERROR:", error);
-      setMessage("Something went wrong");
+      setMessage(t.genericError);
     } finally {
       setActionLoading(false);
     }
@@ -155,104 +161,119 @@ export default function SessionManagementPage() {
 
   return (
     <MobileShell>
-      <div className="min-h-screen bg-[#f6f7fb] pb-24">
+      <div className="min-h-screen pb-24" style={{ background: "var(--bg)" }}>
         <main className="mx-auto w-full max-w-[980px] px-4 py-6 sm:px-6 lg:px-8">
           <div className="mb-4 flex items-center justify-between gap-3">
             <div>
-              <h1 className="text-[24px] font-extrabold tracking-tight text-[#0f172a] sm:text-[28px]">
-                Session Management
+              <h1 className="text-[24px] font-extrabold tracking-tight text-[var(--text-1)] sm:text-[28px]">
+                {t.smTitle}
               </h1>
-              <p className="mt-1 text-[13px] text-[#64748b]">
-                Manage trusted devices for your SME-GPT account
+              <p className="mt-1 text-[13px] text-[var(--text-2)]">
+                {t.smSubtitle}
               </p>
             </div>
-            <LanguageSwitcher />
+            <div className="flex items-center gap-2">
+              <ThemeToggle />
+              <LanguageSwitcher />
+            </div>
           </div>
 
           <div className="mb-5 flex flex-wrap gap-3">
             <button
               type="button"
               onClick={() => router.push("/profile")}
-              className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-[13px] font-bold text-[#64748b]"
+              className="rounded-xl px-4 py-2 text-[13px] font-bold text-[var(--text-2)]"
+              style={{ background: "var(--surface)", border: "1px solid var(--border)" }}
             >
-              Back to Profile
+              {t.backToProfile}
             </button>
 
             <button
               type="button"
               onClick={() => {
-                if (!confirm("This will remove all other trusted devices. Continue?")) return;
+                if (!confirm(t.smConfirmOthers)) return;
                 handleRemoveOthers();
               }}
               disabled={actionLoading}
-              className="rounded-xl bg-[#07122f] px-4 py-2 text-[13px] font-bold text-white"
+              className="rounded-xl px-4 py-2 text-[13px] font-bold text-white"
+              style={{ background: "var(--brand)" }}
             >
-              {actionLoading ? "Working..." : "Logout All Other Devices"}
+              {actionLoading ? t.working : t.smLogoutOthers}
             </button>
           </div>
 
           {message && (
-            <p className="mb-4 text-[13px] text-[#2563ff]">{message}</p>
+            <p className="mb-4 text-[13px] text-[var(--brand-mid)]">{message}</p>
           )}
 
-          <div className="rounded-[20px] border border-slate-200 bg-white p-5 shadow-sm">
-            <h2 className="text-[16px] font-bold text-[#0f172a]">
-              Current Device Status
+          <div
+            className="rounded-[20px] p-5 shadow-sm"
+            style={{ background: "var(--surface)", border: "1px solid var(--border)" }}
+          >
+            <h2 className="text-[16px] font-bold text-[var(--text-1)]">
+              {t.smCurrentStatus}
             </h2>
 
-            <div className="mt-4 rounded-[16px] border border-slate-200 bg-[#fafbff] p-4">
-              <p className="text-[15px] font-bold text-[#0f172a]">This Device</p>
+            <div
+              className="mt-4 rounded-[16px] p-4"
+              style={{ background: "var(--surface-2)", border: "1px solid var(--border)" }}
+            >
+              <p className="text-[15px] font-bold text-[var(--text-1)]">{t.smThisDevice}</p>
 
               {currentTrustedDevice ? (
                 <>
                   <p className="mt-1 text-[13px] font-semibold text-[#16a34a]">
-                    Trusted Device
+                    {t.smTrustedDevice}
                   </p>
-                  <p className="mt-2 text-[12px] text-[#64748b]">
-                    Last used: {formatDate(currentTrustedDevice.lastUsedAt)}
+                  <p className="mt-2 text-[12px] text-[var(--text-2)]">
+                    {t.smLastUsed}: {formatDate(currentTrustedDevice.lastUsedAt)}
                   </p>
-                  <p className="mt-1 text-[12px] text-[#64748b] break-words">
-                    {currentTrustedDevice.deviceName || "Unknown Device"}
+                  <p className="mt-1 text-[12px] text-[var(--text-2)] break-words">
+                    {currentTrustedDevice.deviceName || t.smUnknownDevice}
                   </p>
                 </>
               ) : (
                 <>
                   <p className="mt-1 text-[13px] font-semibold text-red-500">
-                    Not Trusted
+                    {t.smNotTrusted}
                   </p>
 
                   <button
                     onClick={handleTrustCurrentDevice}
                     disabled={actionLoading}
-                    className="mt-3 rounded-xl bg-[#2563ff] px-4 py-2 text-[12px] font-bold text-white"
+                    className="mt-3 rounded-xl px-4 py-2 text-[12px] font-bold text-white"
+                    style={{ background: "var(--brand-mid)" }}
                   >
-                    {actionLoading ? "Working..." : "Trust This Device"}
+                    {actionLoading ? t.working : t.smTrustThis}
                   </button>
                 </>
               )}
             </div>
           </div>
 
-          <div className="mt-6 rounded-[20px] border border-slate-200 bg-white shadow-sm">
-            <div className="border-b border-slate-200 px-5 py-4">
-              <h2 className="text-[16px] font-bold text-[#0f172a]">
-                Trusted Devices
+          <div
+            className="mt-6 rounded-[20px] shadow-sm"
+            style={{ background: "var(--surface)", border: "1px solid var(--border)" }}
+          >
+            <div className="px-5 py-4" style={{ borderBottom: "1px solid var(--border)" }}>
+              <h2 className="text-[16px] font-bold text-[var(--text-1)]">
+                {t.smTrustedDevices}
               </h2>
-              <p className="mt-1 text-[13px] text-[#64748b]">
-                Removing a device means future logins on that device will require email verification again.
+              <p className="mt-1 text-[13px] text-[var(--text-2)]">
+                {t.smRemovingNote}
               </p>
             </div>
 
             {loading ? (
-              <div className="px-5 py-6 text-[14px] text-[#64748b]">
-                Loading trusted devices...
+              <div className="px-5 py-6 text-[14px] text-[var(--text-2)]">
+                {t.smLoadingDevices}
               </div>
             ) : devices.length === 0 ? (
-              <div className="px-5 py-6 text-[14px] text-[#64748b]">
-                No trusted devices found.
+              <div className="px-5 py-6 text-[14px] text-[var(--text-2)]">
+                {t.smNoDevices}
               </div>
             ) : (
-              <div className="divide-y divide-slate-200">
+              <div>
                 {devices.map((device) => {
                   const isCurrent = device.deviceToken === currentDeviceToken;
 
@@ -260,31 +281,35 @@ export default function SessionManagementPage() {
                     <div
                       key={device.id}
                       className="flex flex-col gap-4 px-5 py-4 sm:flex-row sm:items-center sm:justify-between"
+                      style={{ borderTop: "1px solid var(--border)" }}
                     >
                       <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
-                          <p className="text-[15px] font-bold text-[#0f172a]">
-                            {device.deviceName || "Unknown Device"}
+                          <p className="text-[15px] font-bold text-[var(--text-1)]">
+                            {device.deviceName || t.smUnknownDevice}
                           </p>
 
                           {isCurrent && (
-                            <span className="rounded-full bg-[#e0edff] px-2.5 py-1 text-[10px] font-bold text-[#2563ff]">
-                              This Device
+                            <span
+                              className="rounded-full px-2.5 py-1 text-[10px] font-bold text-[var(--brand-mid)]"
+                              style={{ background: "var(--brand-tint)" }}
+                            >
+                              {t.smThisDevice}
                             </span>
                           )}
                         </div>
 
-                        <p className="mt-1 break-all text-[13px] text-[#64748b]">
-                          {device.ipAddress || "Unknown IP"}
+                        <p className="mt-1 break-all text-[13px] text-[var(--text-2)]">
+                          {device.ipAddress || t.smUnknownIP}
                         </p>
 
-                        <p className="mt-1 break-words text-[12px] text-[#94a3b8]">
-                          {device.userAgent || "Unknown browser"}
+                        <p className="mt-1 break-words text-[12px] text-[var(--text-3)]">
+                          {device.userAgent || t.smUnknownBrowser}
                         </p>
 
-                        <div className="mt-2 text-[12px] text-[#64748b]">
-                          <p>Trusted: {formatDate(device.trustedAt)}</p>
-                          <p>Last used: {formatDate(device.lastUsedAt)}</p>
+                        <div className="mt-2 text-[12px] text-[var(--text-2)]">
+                          <p>{t.smTrustedAt}: {formatDate(device.trustedAt)}</p>
+                          <p>{t.smLastUsed}: {formatDate(device.lastUsedAt)}</p>
                         </div>
                       </div>
 
@@ -293,12 +318,13 @@ export default function SessionManagementPage() {
                           type="button"
                           disabled={actionLoading}
                           onClick={() => {
-                            if (!confirm("Remove this trusted device?")) return;
+                            if (!confirm(t.smConfirmRemove)) return;
                             handleRemoveDevice(device.id);
                           }}
-                          className="rounded-xl border border-red-300 bg-[#fff5f5] px-4 py-2 text-[12px] font-bold text-red-600"
+                          className="rounded-xl border border-red-300 px-4 py-2 text-[12px] font-bold text-red-600"
+                          style={{ background: "rgba(220,38,38,0.06)" }}
                         >
-                          Remove
+                          {t.remove}
                         </button>
                       </div>
                     </div>
@@ -308,13 +334,15 @@ export default function SessionManagementPage() {
             )}
           </div>
 
-          <div className="mt-6 rounded-[20px] border border-amber-200 bg-[#fffaf0] p-5">
-            <h3 className="text-[15px] font-bold text-[#0f172a]">
-              Important Note
+          <div
+            className="mt-6 rounded-[20px] p-5"
+            style={{ background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.25)" }}
+          >
+            <h3 className="text-[15px] font-bold text-[var(--text-1)]">
+              {t.smImportantNote}
             </h3>
-            <p className="mt-2 text-[13px] leading-6 text-[#64748b]">
-              Removing a trusted device does not immediately destroy an already active login session on that device.
-              It prevents that device from skipping email verification on future logins.
+            <p className="mt-2 text-[13px] leading-6 text-[var(--text-2)]">
+              {t.smImportantBody}
             </p>
           </div>
         </main>

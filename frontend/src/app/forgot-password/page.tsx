@@ -1,15 +1,21 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import ThemeToggle from "@/components/layout/ThemeToggle";
+import LanguageSwitcher from "@/components/layout/LanguageSwitcher";
+import { AppLanguage, getStoredLanguage, ui } from "@/lib/i18n";
 
 export default function ForgotPasswordPage() {
   const router = useRouter();
+  const [lang, setLang] = useState<AppLanguage>("en");
   const [email, setEmail] = useState("");
   const [message, setMessage] = useState("");
   const [isError, setIsError] = useState(false);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => { setLang(getStoredLanguage()); }, []);
+  const t = ui[lang];
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -27,15 +33,15 @@ export default function ForgotPasswordPage() {
 
       if (!res.ok) {
         setIsError(true);
-        setMessage(data.error || "Something went wrong");
+        setMessage(data.error || t.genericError);
         return;
       }
 
       setIsError(false);
-      setMessage("Reset email sent. Please check your inbox.");
+      setMessage(t.fpSent);
     } catch {
       setIsError(true);
-      setMessage("Request failed. Please try again.");
+      setMessage(t.requestFailed);
     } finally {
       setLoading(false);
     }
@@ -47,7 +53,8 @@ export default function ForgotPasswordPage() {
       style={{ background: "var(--bg)" }}
     >
       {/* Top-right controls */}
-      <div className="fixed right-4 top-4">
+      <div className="fixed right-4 top-4 flex items-center gap-2">
+        <LanguageSwitcher />
         <ThemeToggle />
       </div>
 
@@ -64,10 +71,10 @@ export default function ForgotPasswordPage() {
         </div>
 
         <h1 className="text-center text-[24px] font-extrabold tracking-tight text-[var(--text-1)]">
-          Forgot Password
+          {t.fpTitle}
         </h1>
         <p className="mt-2 text-center text-[13px] text-[var(--text-2)]">
-          Enter your email and we&apos;ll send a reset link.
+          {t.fpSubtitle}
         </p>
 
         <form onSubmit={handleSubmit} className="mt-8 space-y-4">
@@ -97,7 +104,7 @@ export default function ForgotPasswordPage() {
             {loading ? (
               <span className="material-symbols-outlined animate-spin text-[20px]">progress_activity</span>
             ) : (
-              "Send Reset Link"
+              t.fpSendLink
             )}
           </button>
         </form>
@@ -121,7 +128,7 @@ export default function ForgotPasswordPage() {
           style={{ color: "var(--text-2)" }}
         >
           <span className="material-symbols-outlined text-[16px]">arrow_back</span>
-          Back to Sign In
+          {t.backToSignIn}
         </button>
       </div>
     </div>
