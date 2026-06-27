@@ -12,8 +12,19 @@ import json
 
 from ai_helper import call_ollama
 
-_PLAN_PROMPT = """You are a financial query planner. Convert the user's question into a single
-JSON plan -- you never compute the answer yourself, you only describe what to compute.
+_PLAN_PROMPT = """You are a financial query planner for a Sri Lankan SME system. Convert the user's
+question into a single JSON plan -- you never compute the answer yourself, you only describe what to compute.
+
+LANGUAGE NOTE: The user may write in English, Sinhala, or a natural mix of both (very common in
+Sri Lanka). Treat Sinhala words as their English semantic equivalents when planning:
+  - "ගෙවිය යුතු" / "payable" → flow_type = payable
+  - "ලැබිය යුතු" / "receivable" → flow_type = receivable
+  - "කීයද" / "කීයක්" → aggregate count or sum
+  - "මේ මාසේ" → current month date filter
+  - "ගිය මාසේ" → previous month date filter
+  - "වැඩියෙන්ම" → "highest" / "most"
+  - "සැපයුම්කරු" → vendor/supplier
+  - "ගනුදෙනුකරු" → customer/client
 
 Allowed tasks: aggregate_sum, aggregate_avg, aggregate_count, compare, lookup_value, group_by_sum
 Allowed filter ops: eq, in, contains, gte, lte, between

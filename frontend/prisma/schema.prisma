@@ -139,6 +139,22 @@ model FinancialDocument {
   spatialChunksJson  String?   @db.Text
   fileSizeKb         Float?
   fieldChunkMapJson  String?   @db.Text
+  // Iteration 10 — PO/DN workflow + invoice status
+  poStatus           String?
+  dnStatus           String?
+  invoiceStatus      String?
+  dueDate            String?
+  deliveryDate       String?
+  approvedBy         String?
+  proofOfDelivery    Boolean?
+  signed             Boolean?
+  // Iteration 11 — supplier/customer contact fields
+  supplierCity       String?
+  supplierPhone      String?
+  supplierEmail      String?
+  companyCity        String?
+  companyPhone       String?
+  companyEmail       String?
   deletedAt          DateTime?
   createdAt          DateTime   @default(now())
   updatedAt          DateTime   @updatedAt

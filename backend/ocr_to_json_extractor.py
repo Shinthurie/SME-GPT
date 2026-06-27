@@ -193,10 +193,15 @@ def infer_company_name_from_text(source_text: str, current_company: str) -> str:
 
     return current_company if current_company else "Customer"
 
-def normalize_supplier_name(value: str) -> str:
+def normalize_supplier_name(value: str, flow_type: str = "", document_type: str = "") -> str:
     text = str(value or "").strip()
-    if not text or text.upper() == "NULL" or text.lower() == "unknown":
-        return "Customer"
+    if not text or text.upper() == "NULL" or text.lower() in ("unknown", ""):
+        # Smart default based on context
+        if document_type in ("po", "dn") or flow_type in ("payable", "cash_outflow"):
+            return "Supplier"
+        if flow_type in ("receivable", "cash_inflow"):
+            return "Customer"
+        return "Supplier"
     return text
 
 
@@ -224,18 +229,73 @@ def normalize_root_fields(parsed: dict, source_text: str) -> dict:
     }
     flow_type = _flow_aliases.get(flow_type, flow_type)
 
+    # DN — delivery notes have no financial value; zero all amounts and lock flow
+    if document_type == "dn":
+        flow_type = "expense"          # stored for DB consistency, hidden in UI
+        parsed["raw_total_amount"]  = ""
+        parsed["final_total_amount"] = ""
+        parsed["payable_amount"]    = ""
+        parsed["cash_return"]       = ""
+        parsed["paid_status"]       = "NULL"
+        # Strip prices from items — only description + qty matter on a DN
+        for item in parsed.get("items", []):
+            item["unit_price"] = ""
+            item["line_total"] = ""
+
+    # PO — always payable; no cash return, no received status
+    if document_type == "po":
+        flow_type = "payable"
+        parsed["cash_return"]       = ""
+        parsed["received_status"]   = "NULL"
+
+    # ── Auto-set paid/received status from flow_type ──────────────────────────
+    # These express what has already happened at the time of the document.
+    # Payable/receivable are OUTSTANDING — their status is set when settled later.
+    _status_map = {
+        "cash_outflow": ("NULL",         "paid"),
+        "cash_inflow":  ("received",     "NULL"),
+        "payable":      ("NULL",         "not_paid"),
+        "receivable":   ("not_received", "NULL"),
+        "expense":      ("NULL",         "paid"),   # DN uses expense
+    }
+    if flow_type in _status_map and document_type != "dn":  # DN already handled above
+        _rec, _paid = _status_map[flow_type]
+        parsed.setdefault("received_status", _rec)
+        parsed.setdefault("paid_status",     _paid)
+        # Override only if the LLM returned empty/NULL
+        if str(parsed.get("received_status", "")).strip() in ("", "NULL", "null"):
+            parsed["received_status"] = _rec
+        if str(parsed.get("paid_status", "")).strip() in ("", "NULL", "null"):
+            parsed["paid_status"] = _paid
+
+    # ── Default date to today if missing ─────────────────────────────────────
+    from datetime import date as _today
+    _date_val = str(parsed.get("date", "")).strip()
+    if not _date_val or _date_val.upper() in ("", "NULL", "NONE"):
+        parsed["date"] = _today.today().strftime("%d/%m/%Y")
+
+    # ── Extracted company name from document ─────────────────────────────────
+    # company_name from OCR = the ISSUING company on the document.
+    # In /confirm-save this will be overridden with the user's registered company.
+    # supplier_name = the OTHER party.
+    # If supplier_name is empty but company_name was extracted, move company_name
+    # to supplier_name (it's the OTHER party's name the document was issued by).
+    _ocr_company  = infer_company_name_from_text(source_text, str(parsed.get("company_name", "")).strip())
+    _ocr_supplier = str(parsed.get("supplier_name", "")).strip()
+
+    if not _ocr_supplier or _ocr_supplier.upper() in ("NULL", "NONE"):
+        # Use the extracted company name as the OTHER party's name
+        _ocr_supplier = _ocr_company if _ocr_company else ""
+
+    _supplier_final = normalize_supplier_name(_ocr_supplier, flow_type, document_type)
+
     return {
         "document_id": str(parsed.get("document_id", "")).strip(),
         "document_type": document_type,
         "order_id": str(parsed.get("order_id", "")).strip(),
         "flow_type": flow_type,
-        "company_name": infer_company_name_from_text(
-            source_text,
-            str(parsed.get("company_name", "")).strip()
-        ),
-        "supplier_name": normalize_supplier_name(
-            str(parsed.get("supplier_name", "")).strip()
-        ),
+        "company_name": _ocr_company,   # will be overridden in /confirm-save with user's company
+        "supplier_name": _supplier_final,
         "date": str(parsed.get("date", "")).strip(),
         "currency": str(parsed.get("currency", "")).strip(),
         "raw_total_amount": normalize_ocr_money(parsed.get("raw_total_amount")),
@@ -248,6 +308,19 @@ def normalize_root_fields(parsed: dict, source_text: str) -> dict:
         "paid_status": str(parsed.get("paid_status", "")).strip(),
         "language": language,
         "items": normalize_items(parsed.get("items", [])),
+        # Iteration 10 — PO/DN workflow fields
+        "due_date": str(parsed.get("due_date", "")).strip(),
+        "delivery_date": str(parsed.get("delivery_date", "")).strip(),
+        "approved_by": str(parsed.get("approved_by", "")).strip(),
+        "proof_of_delivery": parsed.get("proof_of_delivery", None),
+        "signed": parsed.get("signed", None),
+        # Iteration 11 — contact/location fields
+        "supplier_city": str(parsed.get("supplier_city", "")).strip(),
+        "supplier_phone": str(parsed.get("supplier_phone", "")).strip(),
+        "supplier_email": str(parsed.get("supplier_email", "")).strip(),
+        "company_city": str(parsed.get("company_city", "")).strip(),
+        "company_phone": str(parsed.get("company_phone", "")).strip(),
+        "company_email": str(parsed.get("company_email", "")).strip(),
     }
 
 def retry_extract_json_only(raw_text: str) -> str:
@@ -328,10 +401,14 @@ FLOW TYPE (pick one):
 - "unknown"      → when unclear
 
 FIELD EXTRACTION GUIDE:
-- company_name: the business that ISSUED this document (top of page, usually largest text)
-- supplier_name: the party on the other side (buyer for invoices, seller for receipts)
+- company_name: the business whose name appears at the TOP of this document — the ISSUER
+  (e.g. the shop that issued the receipt, the company that wrote the invoice)
+- supplier_name: the OTHER party — the buyer, customer, recipient, or counter-party.
+  This is NOT the issuing company. It is whoever is on the other side of the transaction.
+  Examples: for a shop receipt → the customer who paid; for an invoice → the client being billed;
+  for a PO → the supplier being ordered from. Leave empty if only one company name appears.
 - order_id: any invoice number, receipt number, PO number, bill number, reference number
-- date: the document date in any format found
+- date: the document date in any format found. If no date is visible, use today's date.
 
 LINE ITEMS — THIS IS CRITICAL:
 Each item row in the document must be a separate object in "items".
@@ -356,6 +433,22 @@ TAX FIELDS (CRITICAL — only extract if explicitly shown on the document):
 - tax_rate: the tax percentage printed on the document (e.g. 15 for "VAT 15%", 8 for "GST 8%"). Use "" if no rate is shown.
 - Do NOT calculate or guess tax. Only extract what is EXPLICITLY printed.
 
+WORKFLOW FIELDS (Iteration 10 — only extract if explicitly shown):
+- due_date: payment due date if printed on the document (e.g. "Due: 30/07/2025"). Use "" if not shown.
+- delivery_date: expected delivery date if printed (e.g. "Delivery by: 15/07/2025"). Use "" if not shown.
+- approved_by: name of person who approved the document (e.g. "Approved by: John Silva"). Use "" if not shown.
+- proof_of_delivery: true if document has a "Received By" signature section, false otherwise. Use null if unknown.
+- signed: true if there is a signature on the document, false if signature field is blank. Use null if unknown.
+
+CONTACT FIELDS (Iteration 11 — extract if visible on the document):
+- supplier_city: city or town of the supplier/other-party (e.g. "Colombo", "Kandy", "Galle"). Use "" if not visible.
+- supplier_phone: phone/mobile number of the supplier/other-party. Use "" if not visible.
+- supplier_email: email address of the supplier/other-party. Use "" if not visible.
+- company_city: city or town of the issuing company (top of document). Use "" if not visible.
+- company_phone: phone/mobile of the issuing company. Use "" if not visible.
+- company_email: email of the issuing company. Use "" if not visible.
+Note: For city, look for labels like "City:", "Address:", location text under company names, or any visible address line.
+
 Return this JSON structure:
 {{
   "document_id": "",
@@ -374,6 +467,17 @@ Return this JSON structure:
   "tax_rate": "",
   "received_status": "",
   "paid_status": "",
+  "due_date": "",
+  "delivery_date": "",
+  "approved_by": "",
+  "proof_of_delivery": null,
+  "signed": null,
+  "supplier_city": "",
+  "supplier_phone": "",
+  "supplier_email": "",
+  "company_city": "",
+  "company_phone": "",
+  "company_email": "",
   "items": [
     {{
       "description": "",

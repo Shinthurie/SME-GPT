@@ -1,5 +1,6 @@
 import re
 from copy import deepcopy
+from datetime import date as _date_today
 from llm_correction import llm_refine_text, dictionary_correct_text
 
 def safe_float(value, default=0.0):
@@ -109,4 +110,67 @@ def correct_extracted_fields(extracted_json: dict):
     data["correction_status"] = "hybrid_text_and_item_normalization"
     data["correction_confidence"] = 0.92
 
+    _derive_workflow_status(data)
+
     return data
+
+
+def _parse_date_flexible(date_str: str):
+    """Try common date formats, return date object or None."""
+    if not date_str or str(date_str).strip().upper() in ("", "NULL", "NONE"):
+        return None
+    from dateutil import parser as _dparser
+    try:
+        return _dparser.parse(str(date_str), dayfirst=True).date()
+    except Exception:
+        return None
+
+
+def _derive_workflow_status(data: dict):
+    """
+    Iteration 10: derive po_status, dn_status, invoice_status from existing fields.
+    Called after item/total corrections so paid_status/received_status are final.
+    """
+    doc_type  = str(data.get("document_type", "")).strip().lower()
+    paid      = str(data.get("paid_status",     "")).strip().lower()
+    received  = str(data.get("received_status", "")).strip().lower()
+    today     = _date_today.today()
+
+    if doc_type == "po":
+        if not data.get("po_status") or str(data.get("po_status", "")).strip().upper() in ("", "NULL"):
+            if paid == "paid":
+                data["po_status"] = "fulfilled"
+            elif paid == "partial":
+                data["po_status"] = "partially_delivered"
+            else:
+                # Check if overdue by delivery_date
+                delivery_dt = _parse_date_flexible(data.get("delivery_date", ""))
+                if delivery_dt and delivery_dt < today:
+                    data["po_status"] = "pending"  # overdue but still pending
+                else:
+                    data["po_status"] = "pending"
+
+    elif doc_type == "dn":
+        if not data.get("dn_status") or str(data.get("dn_status", "")).strip().upper() in ("", "NULL"):
+            if received == "received":
+                data["dn_status"] = "delivered"
+            elif received in ("partial", "partially_received"):
+                data["dn_status"] = "partially_delivered"
+            else:
+                delivery_dt = _parse_date_flexible(data.get("delivery_date", ""))
+                if delivery_dt and delivery_dt < today:
+                    data["dn_status"] = "delayed"
+                else:
+                    data["dn_status"] = "pending"
+
+    elif doc_type == "invoice":
+        if not data.get("invoice_status") or str(data.get("invoice_status", "")).strip().upper() in ("", "NULL"):
+            due_dt = _parse_date_flexible(data.get("due_date", ""))
+            if paid == "paid":
+                data["invoice_status"] = "paid"
+            elif paid == "partial":
+                data["invoice_status"] = "partially_paid"
+            elif due_dt and due_dt < today:
+                data["invoice_status"] = "overdue"
+            else:
+                data["invoice_status"] = "pending"
