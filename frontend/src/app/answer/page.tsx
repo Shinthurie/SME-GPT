@@ -20,6 +20,15 @@ type EvidenceItem = {
   flow_type: string;
   received_status: string;
   paid_status: string;
+  // Iteration 10: workflow status fields
+  po_status?: string | null;
+  dn_status?: string | null;
+  invoice_status?: string | null;
+  due_date?: string | null;
+  delivery_date?: string | null;
+  approved_by?: string | null;
+  proof_of_delivery?: boolean | null;
+  signed?: boolean | null;
   currency?: string;
   final_total_amount: number;
   payable_amount: number;
@@ -491,7 +500,59 @@ export default function AnswerPage() {
                           <p className="text-[13px] text-[#334155]"><span className="font-semibold">Amount Used:</span> {formatValue(item.amount_used ?? item.final_total_amount)}</p>
                           <p className="text-[13px] text-[#334155]"><span className="font-semibold">Received Status:</span> {item.received_status}</p>
                           <p className="text-[13px] text-[#334155]"><span className="font-semibold">Paid Status:</span> {item.paid_status}</p>
+                          {item.due_date && <p className="text-[13px] text-[#334155]"><span className="font-semibold">Due Date:</span> {item.due_date}</p>}
+                          {item.delivery_date && <p className="text-[13px] text-[#334155]"><span className="font-semibold">Delivery Date:</span> {item.delivery_date}</p>}
+                          {item.approved_by && <p className="text-[13px] text-[#334155]"><span className="font-semibold">Approved By:</span> {item.approved_by}</p>}
                         </div>
+                        {/* Iteration 10: workflow status badges */}
+                        {(item.po_status || item.dn_status || item.invoice_status) && (
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            {item.po_status && (
+                              <span className={`rounded-full px-3 py-1 text-[11px] font-bold ${
+                                item.po_status === "approved" ? "bg-green-100 text-green-700" :
+                                item.po_status === "rejected" ? "bg-red-100 text-red-700" :
+                                item.po_status === "cancelled" ? "bg-gray-200 text-gray-600" :
+                                item.po_status === "fulfilled" ? "bg-blue-100 text-blue-700" :
+                                item.po_status === "partially_delivered" ? "bg-yellow-100 text-yellow-700" :
+                                "bg-orange-100 text-orange-700"
+                              }`}>
+                                PO: {item.po_status.replace(/_/g, " ").toUpperCase()}
+                              </span>
+                            )}
+                            {item.dn_status && (
+                              <span className={`rounded-full px-3 py-1 text-[11px] font-bold ${
+                                item.dn_status === "delivered" ? "bg-green-100 text-green-700" :
+                                item.dn_status === "delayed" ? "bg-red-100 text-red-700" :
+                                item.dn_status === "failed" ? "bg-red-200 text-red-800" :
+                                item.dn_status === "returned" ? "bg-purple-100 text-purple-700" :
+                                item.dn_status === "partially_delivered" ? "bg-yellow-100 text-yellow-700" :
+                                "bg-orange-100 text-orange-700"
+                              }`}>
+                                DN: {item.dn_status.replace(/_/g, " ").toUpperCase()}
+                              </span>
+                            )}
+                            {item.invoice_status && (
+                              <span className={`rounded-full px-3 py-1 text-[11px] font-bold ${
+                                item.invoice_status === "paid" ? "bg-green-100 text-green-700" :
+                                item.invoice_status === "overdue" ? "bg-red-100 text-red-700" :
+                                item.invoice_status === "cancelled" ? "bg-gray-200 text-gray-600" :
+                                item.invoice_status === "partially_paid" ? "bg-yellow-100 text-yellow-700" :
+                                "bg-orange-100 text-orange-700"
+                              }`}>
+                                INV: {item.invoice_status.replace(/_/g, " ").toUpperCase()}
+                              </span>
+                            )}
+                            {item.proof_of_delivery === true && (
+                              <span className="rounded-full bg-teal-100 px-3 py-1 text-[11px] font-bold text-teal-700">✓ PROOF OF DELIVERY</span>
+                            )}
+                            {item.signed === true && (
+                              <span className="rounded-full bg-teal-100 px-3 py-1 text-[11px] font-bold text-teal-700">✓ SIGNED</span>
+                            )}
+                            {item.signed === false && (
+                              <span className="rounded-full bg-red-100 px-3 py-1 text-[11px] font-bold text-red-600">UNSIGNED</span>
+                            )}
+                          </div>
+                        )}
 
                         <div className="mt-3 rounded-[12px] bg-[#f8fafc] px-3 py-3 text-[12px] text-[#475569]">
                           <span className="font-semibold">Reason used:</span> {item.reason_used}

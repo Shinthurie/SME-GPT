@@ -55,6 +55,22 @@ DATASET_COLUMNS = [
     "spatial_chunks_json",
     "file_size_kb",
     "field_chunk_map_json",
+    # Iteration 10 — PO/DN workflow + invoice status
+    "po_status",
+    "dn_status",
+    "invoice_status",
+    "due_date",
+    "delivery_date",
+    "approved_by",
+    "proof_of_delivery",
+    "signed",
+    # Iteration 11 — supplier/customer contact fields
+    "supplier_city",
+    "supplier_phone",
+    "supplier_email",
+    "company_city",
+    "company_phone",
+    "company_email",
 ]
 
 # record key -> DB column (Prisma camelCase). items_json is handled separately.
@@ -95,10 +111,27 @@ RECORD_TO_DB = {
     "spatial_chunks_json": "spatialChunksJson",
     "file_size_kb": "fileSizeKb",
     "field_chunk_map_json": "fieldChunkMapJson",
+    # Iteration 10 — PO/DN workflow + invoice status
+    "po_status": "poStatus",
+    "dn_status": "dnStatus",
+    "invoice_status": "invoiceStatus",
+    "due_date": "dueDate",
+    "delivery_date": "deliveryDate",
+    "approved_by": "approvedBy",
+    "proof_of_delivery": "proofOfDelivery",
+    "signed": "signed",
+    # Iteration 11 — supplier/customer contact fields
+    "supplier_city": "supplierCity",
+    "supplier_phone": "supplierPhone",
+    "supplier_email": "supplierEmail",
+    "company_city": "companyCity",
+    "company_phone": "companyPhone",
+    "company_email": "companyEmail",
 }
 
 MONEY_FIELDS = {"raw_total_amount", "final_total_amount", "payable_amount", "cash_return", "tax_amount", "tax_rate", "cash_inflowed", "cash_outflowed"}
 JSON_FIELDS = {"structured_json", "correction_json", "arithmetic_json"}
+BOOL_FIELDS = {"proof_of_delivery", "signed"}
 
 
 # ──────────────────────────── pure helpers (unchanged) ────────────────────────────
@@ -274,6 +307,22 @@ def normalize_record(data: dict, user_id: str, force_generate_document_id: bool 
         # Iteration 9 — spatial blobs (large TEXT strings; NULL until doc is confirmed)
         "safe_boxes_json": nullify_text(data.get("safe_boxes_json", None)),
         "spatial_chunks_json": nullify_text(data.get("spatial_chunks_json", None)),
+        # Iteration 10 — PO/DN workflow + invoice status
+        "po_status": nullify_text(data.get("po_status", None)),
+        "dn_status": nullify_text(data.get("dn_status", None)),
+        "invoice_status": nullify_text(data.get("invoice_status", None)),
+        "due_date": nullify_text(data.get("due_date", None)),
+        "delivery_date": nullify_text(data.get("delivery_date", None)),
+        "approved_by": nullify_text(data.get("approved_by", None)),
+        "proof_of_delivery": data.get("proof_of_delivery", None),
+        "signed": data.get("signed", None),
+        # Iteration 11 — supplier/customer contact fields
+        "supplier_city": nullify_text(data.get("supplier_city", None)),
+        "supplier_phone": nullify_text(data.get("supplier_phone", None)),
+        "supplier_email": nullify_text(data.get("supplier_email", None)),
+        "company_city": nullify_text(data.get("company_city", None)),
+        "company_phone": nullify_text(data.get("company_phone", None)),
+        "company_email": nullify_text(data.get("company_email", None)),
     }
 
 
@@ -367,11 +416,32 @@ def _from_db_json(value):
     return str(value)
 
 
+def _to_db_bool(value):
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return value
+    text = str(value).strip().lower()
+    if text in ("true", "1", "yes"):
+        return True
+    if text in ("false", "0", "no", "null", ""):
+        return None
+    return None
+
+
+def _from_db_bool(value):
+    if value is None:
+        return None
+    return bool(value)
+
+
 def _record_to_db_value(record_key, value):
     if record_key in MONEY_FIELDS:
         return _to_db_money(value)
     if record_key in JSON_FIELDS:
         return _to_db_json(value)
+    if record_key in BOOL_FIELDS:
+        return _to_db_bool(value)
     return _to_db_text(value)
 
 
@@ -392,6 +462,8 @@ def _row_to_record(row: dict, items: list) -> dict:
             record[rec_key] = _from_db_money(raw)
         elif rec_key in JSON_FIELDS:
             record[rec_key] = _from_db_json(raw)
+        elif rec_key in BOOL_FIELDS:
+            record[rec_key] = _from_db_bool(raw)
         else:
             record[rec_key] = _from_db_text(raw)
     record["items_json"] = json.dumps(items, ensure_ascii=False)
