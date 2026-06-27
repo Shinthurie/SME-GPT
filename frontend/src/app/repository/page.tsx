@@ -23,6 +23,10 @@ type RepoDocument = {
   status: string;
   flow_type?: string;
   file_size_kb?: number | null;
+  // Iteration 10: workflow status fields
+  po_status?: string | null;
+  dn_status?: string | null;
+  invoice_status?: string | null;
 };
 
 type TabType = "all" | "invoice" | "po" | "dn" | "receipt" | "archived";
@@ -72,6 +76,8 @@ export default function RepositoryPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [archivingId, setArchivingId] = useState<string | null>(null);
   const [autoClassify, setAutoClassify] = useState(true);
+  // Iteration 10: per-tab status filters
+  const [statusFilter, setStatusFilter] = useState<string>("all");
 
   useEffect(() => {
     setLang(getStoredLanguage());
@@ -112,6 +118,9 @@ export default function RepositoryPage() {
 
   useEffect(() => { loadDocuments(); }, [router]);
 
+  // Reset statusFilter when the main tab changes
+  const handleTabChange = (v: TabType) => { setTab(v); setStatusFilter("all"); };
+
   const filtered = useMemo(() => {
     let byTab: RepoDocument[];
     if (tab === "archived") {
@@ -121,6 +130,15 @@ export default function RepositoryPage() {
     } else {
       byTab = documents.filter((d) => d.document_type === tab && String(d.status).toLowerCase() !== "archived");
     }
+    // Iteration 10: apply workflow status sub-filter
+    if (statusFilter !== "all") {
+      byTab = byTab.filter((d) => {
+        if (tab === "po")      return (d.po_status      || "pending").toLowerCase() === statusFilter;
+        if (tab === "invoice") return (d.invoice_status || "pending").toLowerCase() === statusFilter;
+        if (tab === "dn")      return (d.dn_status      || "pending").toLowerCase() === statusFilter;
+        return true;
+      });
+    }
     if (!searchQuery.trim()) return byTab;
     const q = searchQuery.toLowerCase();
     return byTab.filter(
@@ -129,7 +147,7 @@ export default function RepositoryPage() {
         (d.company_name || "").toLowerCase().includes(q) ||
         (d.supplier_name || "").toLowerCase().includes(q)
     );
-  }, [tab, documents, searchQuery]);
+  }, [tab, documents, searchQuery, statusFilter]);
 
   const tabLabel = (v: TabType) => {
     const labels: Record<TabType, string> = {
@@ -221,7 +239,7 @@ export default function RepositoryPage() {
             ).map((v) => (
               <button
                 key={v}
-                onClick={() => setTab(v)}
+                onClick={() => handleTabChange(v)}
                 className="rounded-full px-4 py-1.5 text-[12px] font-semibold transition"
                 style={
                   tab === v
@@ -233,6 +251,70 @@ export default function RepositoryPage() {
               </button>
             ))}
           </div>
+
+          {/* Iteration 10: Status sub-filter chips */}
+          {tab === "po" && (
+            <div className="mb-4 flex flex-wrap gap-2">
+              {[
+                { v: "all", label: "All" },
+                { v: "pending", label: "⏳ Pending" },
+                { v: "approved", label: "✅ Approved" },
+                { v: "rejected", label: "❌ Rejected" },
+                { v: "fulfilled", label: "📦 Fulfilled" },
+                { v: "cancelled", label: "🚫 Cancelled" },
+                { v: "partially_delivered", label: "⚠ Partial" },
+              ].map(({ v, label }) => (
+                <button key={v} onClick={() => setStatusFilter(v)}
+                  className="rounded-full px-3 py-1 text-[11px] font-semibold transition"
+                  style={statusFilter === v
+                    ? { background: "#7c3aed", color: "#fff" }
+                    : { background: "var(--surface)", border: "1px solid var(--border)", color: "var(--text-2)" }}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
+          {tab === "invoice" && (
+            <div className="mb-4 flex flex-wrap gap-2">
+              {[
+                { v: "all", label: "All" },
+                { v: "pending", label: "⏳ Pending" },
+                { v: "overdue", label: "🔴 Overdue" },
+                { v: "paid", label: "✅ Paid" },
+                { v: "partially_paid", label: "⚠ Partial" },
+                { v: "cancelled", label: "🚫 Cancelled" },
+              ].map(({ v, label }) => (
+                <button key={v} onClick={() => setStatusFilter(v)}
+                  className="rounded-full px-3 py-1 text-[11px] font-semibold transition"
+                  style={statusFilter === v
+                    ? { background: "#2252b5", color: "#fff" }
+                    : { background: "var(--surface)", border: "1px solid var(--border)", color: "var(--text-2)" }}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
+          {tab === "dn" && (
+            <div className="mb-4 flex flex-wrap gap-2">
+              {[
+                { v: "all", label: "All" },
+                { v: "pending", label: "⏳ Pending" },
+                { v: "delivered", label: "✅ Delivered" },
+                { v: "delayed", label: "🔴 Delayed" },
+                { v: "partially_delivered", label: "⚠ Partial" },
+                { v: "failed", label: "❌ Failed" },
+                { v: "returned", label: "↩ Returned" },
+              ].map(({ v, label }) => (
+                <button key={v} onClick={() => setStatusFilter(v)}
+                  className="rounded-full px-3 py-1 text-[11px] font-semibold transition"
+                  style={statusFilter === v
+                    ? { background: "#ea6c0a", color: "#fff" }
+                    : { background: "var(--surface)", border: "1px solid var(--border)", color: "var(--text-2)" }}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
 
           {/* Content */}
           {loading ? (

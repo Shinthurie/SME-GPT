@@ -543,11 +543,11 @@ export default function ProfilePage() {
                 <Divider />
                 <InputRow label={t.businessUnit} value={form.businessUnit} onChange={(v) => update("businessUnit", v)} />
                 <Divider />
-                <InputRow label="Job Title" value={form.jobTitle} onChange={(v) => update("jobTitle", v)} />
+                <InputRow label={t.jobTitle} value={form.jobTitle} onChange={(v) => update("jobTitle", v)} />
                 <Divider />
-                <InputRow label="Country" value={form.country} onChange={(v) => update("country", v)} />
+                <InputRow label={t.country} value={form.country} onChange={(v) => update("country", v)} />
                 <Divider />
-                <InputRow label="Phone" value={form.phone} onChange={(v) => update("phone", v)} />
+                <InputRow label={t.phone} value={form.phone} onChange={(v) => update("phone", v)} />
               </>
             ) : (
               <>
@@ -555,11 +555,11 @@ export default function ProfilePage() {
                 <Divider />
                 <FieldRow label={t.businessUnit} value={form.businessUnit} />
                 <Divider />
-                <FieldRow label="Job Title" value={form.jobTitle} />
+                <FieldRow label={t.jobTitle} value={form.jobTitle} />
                 <Divider />
-                <FieldRow label="Country" value={form.country} />
+                <FieldRow label={t.country} value={form.country} />
                 <Divider />
-                <FieldRow label="Phone" value={form.phone} />
+                <FieldRow label={t.phone} value={form.phone} />
               </>
             )}
           </Card>

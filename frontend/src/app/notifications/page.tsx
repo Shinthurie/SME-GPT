@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import MobileShell from "@/components/layout/MobileShell";
 import BottomNav from "@/components/layout/BottomNav";
 import LanguageSwitcher from "@/components/layout/LanguageSwitcher";
+import { getStoredLanguage } from "@/lib/i18n";
 import {
   getNotifications,
   clearNotifications,
@@ -47,6 +48,9 @@ function getTypeStyles(type: AppNotification["type"]) {
 export default function NotificationsPage() {
   const router = useRouter();
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  const [lang, setLang] = useState("en");
+
+  useEffect(() => { setLang(getStoredLanguage()); }, []);
 
   useEffect(() => {
     const items = getNotifications();
@@ -81,27 +85,29 @@ export default function NotificationsPage() {
                 onClick={handleClearAll}
                 className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-[12px] font-semibold text-[#64748b]"
               >
-                Clear All
+                {lang === "si" ? "සියල්ල ඉවත් කරන්න" : "Clear All"}
               </button>
             </div>
           </div>
 
           <h1 className="text-[24px] font-extrabold text-[#0f172a]">
-            Notifications
+            {lang === "si" ? "දැනුම්දීම්" : "Notifications"}
           </h1>
 
           <p className="mt-2 text-[14px] text-[#64748b]">
-            Recent system updates and activity alerts.
+            {lang === "si" ? "මෑත පද්ධති යාවත්කාලීන සහ ක්‍රියාකාරකම් ඇඟවීම්." : "Recent system updates and activity alerts."}
           </p>
 
           <p className="mt-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-600">
-            Notifications are stored on this device only and will be cleared if you clear browser data.
+            {lang === "si"
+              ? "දැනුම්දීම් මෙම උපාංගයේ පමණක් ගබඩා වේ. බ්‍රවුසර් දත්ත ඉවත් කළහොත් ඒවා ද ඉවත් වේ."
+              : "Notifications are stored on this device only and will be cleared if you clear browser data."}
           </p>
 
           <div className="mt-6 space-y-4">
             {notifications.length === 0 ? (
               <div className="rounded-[18px] border border-slate-200 bg-white p-5 text-[14px] text-[#64748b] shadow-sm">
-                No notifications available.
+                {lang === "si" ? "දැනුම්දීම් නොමැත." : "No notifications available."}
               </div>
             ) : (
               notifications.map((item) => {
