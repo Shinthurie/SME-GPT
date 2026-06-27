@@ -12,8 +12,14 @@ _EXTRACTION_SYSTEM = (
 
 
 def call_ollama(prompt: str) -> str:
-    """Routes extraction calls to local Ollama."""
-    return call_llm(prompt, system=_EXTRACTION_SYSTEM)
+    """Routes extraction calls to local Ollama.
+
+    Uses Ollama's JSON output mode (format="json") so the model is constrained
+    to emit a single valid JSON object. This eliminates most of the conversational
+    preamble / markdown-fence noise that the regex scraping in extract_json_block()
+    previously had to recover from, reducing JSON parse failures (IT-28).
+    """
+    return call_llm(prompt, system=_EXTRACTION_SYSTEM, format="json")
 
 
 def extract_json_block(text: str) -> str:
