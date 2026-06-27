@@ -3,26 +3,33 @@
 import { FormEvent, Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import MobileShell from "@/components/layout/MobileShell";
+import LanguageSwitcher from "@/components/layout/LanguageSwitcher";
+import ThemeToggle from "@/components/layout/ThemeToggle";
+import { AppLanguage, getStoredLanguage, ui } from "@/lib/i18n";
 
 function ResetPasswordContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const token = searchParams.get("token") || "";
 
-  const [message, setMessage] = useState("Validating reset link...");
+  const [lang, setLang] = useState<AppLanguage>("en");
+  const [message, setMessage] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [loading, setLoading] = useState(false);
 
+  useEffect(() => { setLang(getStoredLanguage()); }, []);
+  const t = ui[lang];
+
   useEffect(() => {
     if (!token) {
-      setMessage("Invalid or expired reset link.");
+      setMessage(t.rpInvalidLink);
     } else {
-      setMessage("Please enter your new password.");
+      setMessage(t.rpEnterNew);
     }
-  }, [token]);
+  }, [token, t]);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -30,17 +37,17 @@ function ResetPasswordContent() {
     setSuccess("");
 
     if (!token) {
-      setError("Invalid or expired reset link.");
+      setError(t.rpInvalidLink);
       return;
     }
 
     if (!password || !confirmPassword) {
-      setError("Please fill all fields.");
+      setError(t.rpFillAll);
       return;
     }
 
     if (password !== confirmPassword) {
-      setError("Passwords do not match.");
+      setError(t.rpNoMatch);
       return;
     }
 
@@ -61,15 +68,15 @@ function ResetPasswordContent() {
       const data = await res.json();
 
       if (!res.ok) {
-        throw new Error(data.error || "Failed to reset password.");
+        throw new Error(data.error || t.rpFailed);
       }
 
-      setSuccess("Password reset successful. Redirecting to login...");
+      setSuccess(t.rpSuccess);
       setTimeout(() => {
         router.push("/login");
       }, 1500);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong.");
+      setError(err instanceof Error ? err.message : t.genericError);
     } finally {
       setLoading(false);
     }
@@ -77,42 +84,49 @@ function ResetPasswordContent() {
 
   return (
     <MobileShell>
-      <div className="min-h-screen bg-[#f7f8fb] px-4 py-8">
-        <div className="mx-auto max-w-[520px] rounded-[30px] border border-[#d9dff0] bg-white p-8 shadow-sm">
-          <h1 className="text-center text-[28px] font-extrabold text-[#0f172a]">
-            Reset Password
+      <div className="min-h-screen px-4 py-8" style={{ background: "var(--bg)" }}>
+        <div className="mx-auto mb-4 flex max-w-[520px] items-center justify-end gap-2">
+          <LanguageSwitcher />
+          <ThemeToggle />
+        </div>
+        <div
+          className="mx-auto max-w-[520px] rounded-[30px] p-8 shadow-sm"
+          style={{ background: "var(--surface)", border: "1px solid var(--border)" }}
+        >
+          <h1 className="text-center text-[28px] font-extrabold text-[var(--text-1)]">
+            {t.rpTitle}
           </h1>
 
-          <p className="mt-4 text-center text-[14px] text-[#64748b]">
+          <p className="mt-4 text-center text-[14px] text-[var(--text-2)]">
             {message}
           </p>
 
           {token && (
             <form onSubmit={handleSubmit} className="mt-8 space-y-5">
               <div>
-                <label className="mb-2 block text-[12px] font-semibold text-[#475569]">
-                  New Password
+                <label className="mb-2 block text-[12px] font-semibold text-[var(--text-2)]">
+                  {t.rpNewPassword}
                 </label>
                 <input
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Enter new password"
-                  className="h-12 w-full rounded-2xl border border-[#e3e7f2] bg-white px-4 text-[15px] text-slate-900 outline-none transition focus:border-[#4d7cff] focus:ring-2 focus:ring-[#4d7cff]/15"
+                  placeholder={t.rpNewPlaceholder}
+                  className="field-input h-12 w-full rounded-2xl border px-4 text-[15px] outline-none transition"
                   required
                 />
               </div>
 
               <div>
-                <label className="mb-2 block text-[12px] font-semibold text-[#475569]">
-                  Confirm Password
+                <label className="mb-2 block text-[12px] font-semibold text-[var(--text-2)]">
+                  {t.rpConfirmPassword}
                 </label>
                 <input
                   type="password"
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
-                  placeholder="Confirm new password"
-                  className="h-12 w-full rounded-2xl border border-[#e3e7f2] bg-white px-4 text-[15px] text-slate-900 outline-none transition focus:border-[#4d7cff] focus:ring-2 focus:ring-[#4d7cff]/15"
+                  placeholder={t.rpConfirmPlaceholder}
+                  className="field-input h-12 w-full rounded-2xl border px-4 text-[15px] outline-none transition"
                   required
                 />
               </div>
@@ -128,9 +142,10 @@ function ResetPasswordContent() {
               <button
                 type="submit"
                 disabled={loading}
-                className="flex h-12 w-full items-center justify-center rounded-2xl bg-[#07122f] text-[16px] font-bold text-white shadow-[0_10px_25px_rgba(7,18,47,0.22)] transition hover:translate-y-[1px] hover:opacity-95 disabled:opacity-60"
+                className="flex h-12 w-full items-center justify-center rounded-2xl text-[16px] font-bold text-white transition hover:translate-y-[1px] hover:opacity-95 disabled:opacity-60"
+                style={{ background: "var(--brand)" }}
               >
-                {loading ? "Resetting..." : "Reset Password"}
+                {loading ? t.rpResetting : t.rpTitle}
               </button>
             </form>
           )}
