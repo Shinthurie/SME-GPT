@@ -74,6 +74,9 @@ export default function RepositoryPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
+  // IT-21: server-side upload-date range filter
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
   const [archivingId, setArchivingId] = useState<string | null>(null);
   const [autoClassify, setAutoClassify] = useState(true);
   // Iteration 10: per-tab status filters
@@ -101,7 +104,10 @@ export default function RepositoryPage() {
     setLoading(true);
     setError("");
     try {
-      const res = await fetch(`${BACKEND_URL}/documents`, {
+      const params = new URLSearchParams({ limit: "200" });
+      if (dateFrom) params.set("from", dateFrom);
+      if (dateTo) params.set("to", dateTo);
+      const res = await fetch(`${BACKEND_URL}/documents?${params.toString()}`, {
         headers: { Authorization: `Bearer ${token}` },
         cache: "no-store",
       });
@@ -116,7 +122,7 @@ export default function RepositoryPage() {
     }
   };
 
-  useEffect(() => { loadDocuments(); }, [router]);
+  useEffect(() => { loadDocuments(); }, [router, dateFrom, dateTo]);
 
   // Reset statusFilter when the main tab changes
   const handleTabChange = (v: TabType) => { setTab(v); setStatusFilter("all"); };
@@ -227,6 +233,44 @@ export default function RepositoryPage() {
             {searchQuery && (
               <button onClick={() => setSearchQuery("")} className="text-[var(--text-3)] hover:text-[var(--text-1)]">
                 <span className="material-symbols-outlined text-[16px]">close</span>
+              </button>
+            )}
+          </div>
+
+          {/* IT-21: Upload-date range filter */}
+          <div className="mb-4 flex flex-wrap items-center gap-2 rounded-xl px-4 py-2.5"
+            style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
+            <span className="material-symbols-outlined text-[18px]" style={{ color: "var(--text-3)" }}>date_range</span>
+            <span className="text-[12px] font-semibold text-[var(--text-2)]">
+              {lang === "si" ? "උඩුගත කළ දිනය" : "Upload date"}
+            </span>
+            <input
+              type="date"
+              value={dateFrom}
+              max={dateTo || undefined}
+              onChange={(e) => setDateFrom(e.target.value)}
+              aria-label={lang === "si" ? "සිට" : "From"}
+              className="rounded-lg px-2 py-1 text-[13px] text-[var(--text-1)] outline-none"
+              style={{ background: "var(--bg)", border: "1px solid var(--border)" }}
+            />
+            <span className="text-[12px] text-[var(--text-3)]">{lang === "si" ? "–" : "to"}</span>
+            <input
+              type="date"
+              value={dateTo}
+              min={dateFrom || undefined}
+              onChange={(e) => setDateTo(e.target.value)}
+              aria-label={lang === "si" ? "දක්වා" : "To"}
+              className="rounded-lg px-2 py-1 text-[13px] text-[var(--text-1)] outline-none"
+              style={{ background: "var(--bg)", border: "1px solid var(--border)" }}
+            />
+            {(dateFrom || dateTo) && (
+              <button
+                onClick={() => { setDateFrom(""); setDateTo(""); }}
+                className="ml-auto flex items-center gap-1 text-[12px] font-bold transition hover:opacity-75"
+                style={{ color: "var(--text-3)" }}
+              >
+                <span className="material-symbols-outlined text-[16px]">close</span>
+                {lang === "si" ? "හිස් කරන්න" : "Clear"}
               </button>
             )}
           </div>
