@@ -15,13 +15,16 @@ OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3")
 _TIMEOUT = int(os.getenv("OLLAMA_TIMEOUT_SECS", "600"))
 
 
-def call_llm(prompt: str, system: str = "") -> str:
+def call_llm(prompt: str, system: str = "", format: str | None = None) -> str:
     """
     Send a prompt to the local Ollama model and return the text response.
 
     Args:
         prompt:  The user-facing instruction / data.
         system:  Optional system message (strongly recommended for Llama 3).
+        format:  Optional Ollama output format. Pass "json" to force the model
+                 to emit a single syntactically valid JSON object (structured
+                 output mode). Leave None for free-form text.
 
     Returns:
         The model's response text (stripped).
@@ -34,19 +37,23 @@ def call_llm(prompt: str, system: str = "") -> str:
         messages.append({"role": "system", "content": system})
     messages.append({"role": "user", "content": prompt})
 
+    payload = {
+        "model": OLLAMA_MODEL,
+        "messages": messages,
+        "stream": False,
+        "options": {
+            "temperature": 0,
+            "num_predict": 4096,
+        },
+    }
+    if format:
+        payload["format"] = format
+
     url = f"{OLLAMA_HOST}/api/chat"
     try:
         response = requests.post(
             url,
-            json={
-                "model": OLLAMA_MODEL,
-                "messages": messages,
-                "stream": False,
-                "options": {
-                    "temperature": 0,
-                    "num_predict": 4096,
-                },
-            },
+            json=payload,
             timeout=_TIMEOUT,
         )
         response.raise_for_status()
