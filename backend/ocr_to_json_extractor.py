@@ -308,6 +308,19 @@ def normalize_root_fields(parsed: dict, source_text: str) -> dict:
         "paid_status": str(parsed.get("paid_status", "")).strip(),
         "language": language,
         "items": normalize_items(parsed.get("items", [])),
+        # Iteration 10 — PO/DN workflow fields
+        "due_date": str(parsed.get("due_date", "")).strip(),
+        "delivery_date": str(parsed.get("delivery_date", "")).strip(),
+        "approved_by": str(parsed.get("approved_by", "")).strip(),
+        "proof_of_delivery": parsed.get("proof_of_delivery", None),
+        "signed": parsed.get("signed", None),
+        # Iteration 11 — contact/location fields
+        "supplier_city": str(parsed.get("supplier_city", "")).strip(),
+        "supplier_phone": str(parsed.get("supplier_phone", "")).strip(),
+        "supplier_email": str(parsed.get("supplier_email", "")).strip(),
+        "company_city": str(parsed.get("company_city", "")).strip(),
+        "company_phone": str(parsed.get("company_phone", "")).strip(),
+        "company_email": str(parsed.get("company_email", "")).strip(),
     }
 
 def retry_extract_json_only(raw_text: str) -> str:
@@ -420,6 +433,22 @@ TAX FIELDS (CRITICAL — only extract if explicitly shown on the document):
 - tax_rate: the tax percentage printed on the document (e.g. 15 for "VAT 15%", 8 for "GST 8%"). Use "" if no rate is shown.
 - Do NOT calculate or guess tax. Only extract what is EXPLICITLY printed.
 
+WORKFLOW FIELDS (Iteration 10 — only extract if explicitly shown):
+- due_date: payment due date if printed on the document (e.g. "Due: 30/07/2025"). Use "" if not shown.
+- delivery_date: expected delivery date if printed (e.g. "Delivery by: 15/07/2025"). Use "" if not shown.
+- approved_by: name of person who approved the document (e.g. "Approved by: John Silva"). Use "" if not shown.
+- proof_of_delivery: true if document has a "Received By" signature section, false otherwise. Use null if unknown.
+- signed: true if there is a signature on the document, false if signature field is blank. Use null if unknown.
+
+CONTACT FIELDS (Iteration 11 — extract if visible on the document):
+- supplier_city: city or town of the supplier/other-party (e.g. "Colombo", "Kandy", "Galle"). Use "" if not visible.
+- supplier_phone: phone/mobile number of the supplier/other-party. Use "" if not visible.
+- supplier_email: email address of the supplier/other-party. Use "" if not visible.
+- company_city: city or town of the issuing company (top of document). Use "" if not visible.
+- company_phone: phone/mobile of the issuing company. Use "" if not visible.
+- company_email: email of the issuing company. Use "" if not visible.
+Note: For city, look for labels like "City:", "Address:", location text under company names, or any visible address line.
+
 Return this JSON structure:
 {{
   "document_id": "",
@@ -438,6 +467,17 @@ Return this JSON structure:
   "tax_rate": "",
   "received_status": "",
   "paid_status": "",
+  "due_date": "",
+  "delivery_date": "",
+  "approved_by": "",
+  "proof_of_delivery": null,
+  "signed": null,
+  "supplier_city": "",
+  "supplier_phone": "",
+  "supplier_email": "",
+  "company_city": "",
+  "company_phone": "",
+  "company_email": "",
   "items": [
     {{
       "description": "",

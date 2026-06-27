@@ -27,13 +27,30 @@ SOURCE = "FinancialDocument + LineItem (Postgres)"
 
 # Listing-style intents aren't arithmetic questions -- skip straight to the
 # legacy path rather than spending a planner call that can't help.
-_NON_ARITHMETIC_INTENTS = {"invoice_list", "receipt_list", "po_list", "dn_list"}
+_NON_ARITHMETIC_INTENTS = {
+    "invoice_list", "receipt_list", "po_list", "dn_list",
+    # Iteration 10/11: all new deterministic handlers — never need PAL
+    "document_lookup",
+    "po_status_query", "invoice_status_query", "dn_status_query",
+    "date_range_query",
+    "supplier_query", "customer_query",
+    "cross_document_query",
+    "count_query",
+    "activity_query",
+    "payment_query",
+    "monthly_breakdown",
+    "ambiguous_status_query",
+}
 
 # These intents have deterministic handlers in data_tools.analyze_financial_query
 # that correctly map the new flow types. Bypassing the PAL planner avoids the
 # LLM generating wrong flow_type filters for these category-level questions.
 # Note: "receivable" and "payable" stay in the PAL path (existing tests cover them).
-_LEGACY_DIRECT_INTENTS = {"revenue", "expenses", "cash_inflow", "cash_outflow"}
+_LEGACY_DIRECT_INTENTS = {
+    "revenue", "expenses", "cash_inflow", "cash_outflow",
+    # financial_comparison has its own deterministic handler too
+    "financial_comparison",
+}
 
 
 def _legacy_answer(
@@ -90,7 +107,10 @@ def _empty_scope_answer(message: str) -> dict:
 
 
 def answer_financial_question(question: str, company_name: str, user_id: str) -> dict:
-    question_type = dt.route_question(question)
+    # Apply Sinhala/typo normalization before routing (same as analyze_financial_query)
+    _corrected, _ = dt.spell_correct_query(question)
+    _normalized = dt.normalize_query(_corrected)
+    question_type = dt.route_question(_normalized)
 
     if question_type in _NON_ARITHMETIC_INTENTS:
         # Listing queries — no provenance check (empty set is a valid answer)
