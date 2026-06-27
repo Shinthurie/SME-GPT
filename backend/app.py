@@ -1156,6 +1156,32 @@ def confirm_save(payload: ConfirmSaveRequest, authorization: str = Header(defaul
     original_fields = session["fields"]
     final_data = merge_edited_preview_into_fields(original_fields, payload.edited_preview)
 
+    # ── Override company_name with the user's registered company ─────────────
+    # The OCR may have extracted the ISSUING party's name (e.g. the shop's name
+    # on a receipt). We always replace it with the user's own company so that
+    # company_name = "AIESEC" (or whatever the user registered) on every document.
+    # supplier_name remains as the OTHER party extracted by OCR.
+    try:
+        with get_db_connection() as _uc:
+            with _uc.cursor() as _cur:
+                _cur.execute(
+                    'SELECT "companyName" FROM "User" WHERE id = %s',
+                    (str(user_id),)
+                )
+                _urow = _cur.fetchone()
+        if _urow:
+            _user_company = (_urow.get("companyName") if isinstance(_urow, dict) else _urow[0]) or ""
+            if _user_company.strip():
+                # If supplier_name is still empty, move the OCR-extracted company name there
+                if not final_data.get("supplier_name") or \
+                   str(final_data.get("supplier_name", "")).strip().upper() in ("", "NULL"):
+                    _ocr_company = str(final_data.get("company_name", "")).strip()
+                    if _ocr_company and _ocr_company.lower() != _user_company.lower():
+                        final_data["supplier_name"] = _ocr_company
+                final_data["company_name"] = _user_company.strip()
+    except Exception as _uc_err:
+        print(f"[CONFIRM-SAVE] company override failed (non-fatal): {_uc_err}", flush=True)
+
     duplicate = find_duplicate_record(final_data, user_id=user_id)
     if duplicate and not payload.force_save:
         return JSONResponse(

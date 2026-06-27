@@ -193,10 +193,15 @@ def infer_company_name_from_text(source_text: str, current_company: str) -> str:
 
     return current_company if current_company else "Customer"
 
-def normalize_supplier_name(value: str) -> str:
+def normalize_supplier_name(value: str, flow_type: str = "", document_type: str = "") -> str:
     text = str(value or "").strip()
-    if not text or text.upper() == "NULL" or text.lower() == "unknown":
-        return "Customer"
+    if not text or text.upper() == "NULL" or text.lower() in ("unknown", ""):
+        # Smart default based on context
+        if document_type in ("po", "dn") or flow_type in ("payable", "cash_outflow"):
+            return "Supplier"
+        if flow_type in ("receivable", "cash_inflow"):
+            return "Customer"
+        return "Supplier"
     return text
 
 
@@ -243,18 +248,54 @@ def normalize_root_fields(parsed: dict, source_text: str) -> dict:
         parsed["cash_return"]       = ""
         parsed["received_status"]   = "NULL"
 
+    # ── Auto-set paid/received status from flow_type ──────────────────────────
+    # These express what has already happened at the time of the document.
+    # Payable/receivable are OUTSTANDING — their status is set when settled later.
+    _status_map = {
+        "cash_outflow": ("NULL",         "paid"),
+        "cash_inflow":  ("received",     "NULL"),
+        "payable":      ("NULL",         "not_paid"),
+        "receivable":   ("not_received", "NULL"),
+        "expense":      ("NULL",         "paid"),   # DN uses expense
+    }
+    if flow_type in _status_map and document_type != "dn":  # DN already handled above
+        _rec, _paid = _status_map[flow_type]
+        parsed.setdefault("received_status", _rec)
+        parsed.setdefault("paid_status",     _paid)
+        # Override only if the LLM returned empty/NULL
+        if str(parsed.get("received_status", "")).strip() in ("", "NULL", "null"):
+            parsed["received_status"] = _rec
+        if str(parsed.get("paid_status", "")).strip() in ("", "NULL", "null"):
+            parsed["paid_status"] = _paid
+
+    # ── Default date to today if missing ─────────────────────────────────────
+    from datetime import date as _today
+    _date_val = str(parsed.get("date", "")).strip()
+    if not _date_val or _date_val.upper() in ("", "NULL", "NONE"):
+        parsed["date"] = _today.today().strftime("%d/%m/%Y")
+
+    # ── Extracted company name from document ─────────────────────────────────
+    # company_name from OCR = the ISSUING company on the document.
+    # In /confirm-save this will be overridden with the user's registered company.
+    # supplier_name = the OTHER party.
+    # If supplier_name is empty but company_name was extracted, move company_name
+    # to supplier_name (it's the OTHER party's name the document was issued by).
+    _ocr_company  = infer_company_name_from_text(source_text, str(parsed.get("company_name", "")).strip())
+    _ocr_supplier = str(parsed.get("supplier_name", "")).strip()
+
+    if not _ocr_supplier or _ocr_supplier.upper() in ("NULL", "NONE"):
+        # Use the extracted company name as the OTHER party's name
+        _ocr_supplier = _ocr_company if _ocr_company else ""
+
+    _supplier_final = normalize_supplier_name(_ocr_supplier, flow_type, document_type)
+
     return {
         "document_id": str(parsed.get("document_id", "")).strip(),
         "document_type": document_type,
         "order_id": str(parsed.get("order_id", "")).strip(),
         "flow_type": flow_type,
-        "company_name": infer_company_name_from_text(
-            source_text,
-            str(parsed.get("company_name", "")).strip()
-        ),
-        "supplier_name": normalize_supplier_name(
-            str(parsed.get("supplier_name", "")).strip()
-        ),
+        "company_name": _ocr_company,   # will be overridden in /confirm-save with user's company
+        "supplier_name": _supplier_final,
         "date": str(parsed.get("date", "")).strip(),
         "currency": str(parsed.get("currency", "")).strip(),
         "raw_total_amount": normalize_ocr_money(parsed.get("raw_total_amount")),
@@ -347,10 +388,14 @@ FLOW TYPE (pick one):
 - "unknown"      → when unclear
 
 FIELD EXTRACTION GUIDE:
-- company_name: the business that ISSUED this document (top of page, usually largest text)
-- supplier_name: the party on the other side (buyer for invoices, seller for receipts)
+- company_name: the business whose name appears at the TOP of this document — the ISSUER
+  (e.g. the shop that issued the receipt, the company that wrote the invoice)
+- supplier_name: the OTHER party — the buyer, customer, recipient, or counter-party.
+  This is NOT the issuing company. It is whoever is on the other side of the transaction.
+  Examples: for a shop receipt → the customer who paid; for an invoice → the client being billed;
+  for a PO → the supplier being ordered from. Leave empty if only one company name appears.
 - order_id: any invoice number, receipt number, PO number, bill number, reference number
-- date: the document date in any format found
+- date: the document date in any format found. If no date is visible, use today's date.
 
 LINE ITEMS — THIS IS CRITICAL:
 Each item row in the document must be a separate object in "items".

@@ -565,9 +565,7 @@ export default function AnalysisDetailPage() {
 
                   <InfoCard title={t.partiesTitle}>
                     <span className="font-semibold text-[#0f172a]">
-                      {target.document_type === "dn" ? (lang === "si" ? "ලැබුම්කරු:" : "Received By:") :
-                       target.document_type === "po" ? (lang === "si" ? "ඇණවුම් කළේ:" : "Ordered By:") :
-                       `${t.companyLabel2}:`}
+                      {lang === "si" ? "ඔබගේ සමාගම:" : "Your Company:"}
                     </span>{" "}
                     {editMode ? (
                       <input
@@ -578,9 +576,23 @@ export default function AnalysisDetailPage() {
                     ) : target.company_name || "NULL"}
                     <br />
                     <span className="font-semibold text-[#0f172a]">
-                      {target.document_type === "dn" ? (lang === "si" ? "ලබාදෙන්නා:" : "Delivered By:") :
-                       target.document_type === "po" ? (lang === "si" ? "සැපයුම්කරු:" : "Supplier:") :
-                       ["receivable","cash_inflow"].includes(target.flow_type || "") ? `${t.customerLabel}:` : `${t.supplierLabel2}:`}
+                      {(() => {
+                        const dt = target.document_type || "";
+                        const ft = target.flow_type || "";
+                        if (dt === "dn") return lang === "si" ? "ලබාදෙන්නා:" : "Delivered By (Supplier):";
+                        if (dt === "po") return lang === "si" ? "සැපයුම්කරු:" : "Supplier:";
+                        if (dt === "invoice") {
+                          if (["receivable","cash_inflow"].includes(ft)) return lang === "si" ? "ගනුදෙනුකරු:" : "Bill To (Customer):";
+                          return lang === "si" ? "සැපයුම්කරු:" : "Bill From (Supplier):";
+                        }
+                        if (dt === "receipt") {
+                          if (["cash_inflow","receivable"].includes(ft)) return lang === "si" ? "ලැබුනේ:" : "Received From (Customer):";
+                          return lang === "si" ? "ගෙව්වේ:" : "Paid To (Supplier):";
+                        }
+                        return ["receivable","cash_inflow"].includes(ft)
+                          ? (lang === "si" ? "ගනුදෙනුකරු:" : "Customer:")
+                          : (lang === "si" ? "සැපයුම්කරු:" : "Supplier:");
+                      })()}
                     </span>{" "}
                     {editMode ? (
                       <input

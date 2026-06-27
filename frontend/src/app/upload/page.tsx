@@ -8,6 +8,7 @@ import LanguageSwitcher from "@/components/layout/LanguageSwitcher";
 import ThemeToggle from "@/components/layout/ThemeToggle";
 import { AppLanguage, getStoredLanguage, ui } from "@/lib/i18n";
 import { addNotification } from "@/lib/notifications";
+import { getSession } from "@/lib/auth";
 
 type PreviewItem = {
   description: string;
@@ -92,40 +93,60 @@ const PO_STATUS_OPTS = [
 
 type FieldRow = { key: string; label: string; opts?: { label: string; value: string }[]; readonly?: boolean };
 
-function getFieldRows(docType: string): FieldRow[] {
+function getSupplierLabel(docType: string, flowType: string): string {
+  if (docType === "dn")  return "Delivered By (Supplier)";
+  if (docType === "po")  return "Supplier";
+  if (docType === "invoice") {
+    if (flowType === "receivable" || flowType === "cash_inflow") return "Bill To (Customer)";
+    return "Bill From (Supplier)";
+  }
+  if (docType === "receipt") {
+    if (flowType === "cash_inflow" || flowType === "receivable") return "Received From (Customer)";
+    return "Paid To (Supplier)";
+  }
+  // unknown / fallback
+  if (flowType === "receivable" || flowType === "cash_inflow") return "Customer";
+  return "Supplier";
+}
+
+function getFieldRows(docType: string, flowType: string = ""): FieldRow[] {
+  const supplierLabel = getSupplierLabel(docType, flowType);
+
   if (docType === "dn") return [
-    { key: "document_type", label: "Document Type",    opts: DOC_TYPE_OPTS },
-    { key: "order_id",      label: "PO Reference"  },
-    { key: "company_name",  label: "Received By (Your Company)" },
-    { key: "supplier_name", label: "Delivered By"  },
-    { key: "date",          label: "Delivery Date" },
-    { key: "received_status", label: "Delivery Status", opts: DELIVERY_STATUS_OPTS },
+    { key: "document_type",   label: "Document Type",          opts: DOC_TYPE_OPTS },
+    { key: "order_id",        label: "PO Reference"            },
+    { key: "company_name",    label: "Your Company",           readonly: true },
+    { key: "supplier_name",   label: supplierLabel             },
+    { key: "date",            label: "Delivery Date"           },
+    { key: "received_status", label: "Delivery Status",        opts: DELIVERY_STATUS_OPTS },
   ];
+
   if (docType === "po") return [
-    { key: "document_type",       label: "Document Type",   opts: DOC_TYPE_OPTS },
-    { key: "order_id",            label: "PO Number"        },
-    { key: "company_name",        label: "Ordered By (Your Company)" },
-    { key: "supplier_name",       label: "Supplier"         },
-    { key: "date",                label: "Order Date"       },
-    { key: "currency",            label: "Currency"         },
-    { key: "final_total_amount",  label: "Order Total", readonly: true },
-    { key: "paid_status",         label: "PO Status",   opts: PO_STATUS_OPTS },
+    { key: "document_type",      label: "Document Type",       opts: DOC_TYPE_OPTS },
+    { key: "order_id",           label: "PO Number"            },
+    { key: "company_name",       label: "Your Company",        readonly: true },
+    { key: "supplier_name",      label: supplierLabel          },
+    { key: "date",               label: "Order Date"           },
+    { key: "currency",           label: "Currency"             },
+    { key: "final_total_amount", label: "Order Total",         readonly: true },
+    { key: "paid_status",        label: "PO Status",           opts: PO_STATUS_OPTS },
   ];
+
   // invoice / receipt / unknown — full form
   return [
-    { key: "document_type",      label: "Document Type",      opts: DOC_TYPE_OPTS },
-    { key: "order_id",           label: "Order ID"            },
-    { key: "flow_type",          label: "Flow Type",          opts: FLOW_TYPE_OPTS },
-    { key: "company_name",       label: "Company Name"        },
-    { key: "supplier_name",      label: "Customer / Supplier" },
-    { key: "date",               label: "Date"                },
-    { key: "currency",           label: "Currency"            },
-    { key: "raw_total_amount",   label: "Raw Total (OCR)",    readonly: true },
-    { key: "final_total_amount", label: "Final Total",        readonly: true },
-    { key: "payable_amount",     label: "Payable / Receivable", readonly: true },
-    { key: "cash_return",        label: "Cash Return"         },
-    { key: "received_status",    label: "Received Status",    opts: RECEIVED_STATUS_OPTS },
-    { key: "paid_status",        label: "Paid Status",        opts: PAID_STATUS_OPTS },
+    { key: "document_type",      label: "Document Type",       opts: DOC_TYPE_OPTS },
+    { key: "order_id",           label: "Reference / Bill No." },
+    { key: "flow_type",          label: "Flow Type",           opts: FLOW_TYPE_OPTS },
+    { key: "company_name",       label: "Your Company",        readonly: true },
+    { key: "supplier_name",      label: supplierLabel          },
+    { key: "date",               label: "Date"                 },
+    { key: "currency",           label: "Currency"             },
+    { key: "raw_total_amount",   label: "Raw Total (OCR)",     readonly: true },
+    { key: "final_total_amount", label: "Final Total",         readonly: true },
+    { key: "payable_amount",     label: "Payable / Receivable",readonly: true },
+    { key: "cash_return",        label: "Cash Return"          },
+    { key: "received_status",    label: "Received Status",     opts: RECEIVED_STATUS_OPTS },
+    { key: "paid_status",        label: "Paid Status",         opts: PAID_STATUS_OPTS },
   ];
 }
 
@@ -275,7 +296,19 @@ export default function UploadPage() {
           if (typeof event.step === "number") setActiveStep(event.step);
           if (event.message) setStageMessage(event.message);
           if (event.stage === "done") {
-            setPreview(event.preview ?? null);
+            // Auto-fill company_name from user profile so it's always correct
+            const rawPreview = event.preview ?? null;
+            if (rawPreview) {
+              getSession().then(s => {
+                if (s?.companyName) {
+                  setPreview({ ...rawPreview, company_name: s.companyName });
+                } else {
+                  setPreview(rawPreview);
+                }
+              });
+            } else {
+              setPreview(rawPreview);
+            }
             setSessionId(event.session_id ?? "");
           }
         }
@@ -601,7 +634,7 @@ export default function UploadPage() {
               <p className="mt-1 text-[13px] text-[var(--text-2)]">{t.reviewBeforeSaving}</p>
 
               <div className="mt-5 grid gap-4 sm:grid-cols-2">
-                {getFieldRows(String(preview.document_type || "")).map((row) => {
+                {getFieldRows(String(preview.document_type || ""), String(preview.flow_type || "")).map((row) => {
                   const val = String((preview as Record<string, unknown>)[row.key] ?? "");
                   return (
                     <div key={row.key}>
@@ -613,8 +646,16 @@ export default function UploadPage() {
                             const next = { ...preview, [row.key]: e.target.value };
                             // Auto-set flow_type when document_type changes
                             if (row.key === "document_type") {
-                              if (e.target.value === "dn")  next.flow_type = "expense";
-                              if (e.target.value === "po")  next.flow_type = "payable";
+                              if (e.target.value === "dn") next.flow_type = "expense";
+                              if (e.target.value === "po") next.flow_type = "payable";
+                            }
+                            // Auto-set paid/received status when flow_type changes
+                            if (row.key === "flow_type") {
+                              const ft = e.target.value;
+                              if (ft === "cash_outflow") { next.received_status = "NULL";         next.paid_status = "paid"; }
+                              if (ft === "cash_inflow")  { next.received_status = "received";     next.paid_status = "NULL"; }
+                              if (ft === "payable")      { next.received_status = "NULL";         next.paid_status = "not_paid"; }
+                              if (ft === "receivable")   { next.received_status = "not_received"; next.paid_status = "NULL"; }
                             }
                             setPreview(next);
                           }}
