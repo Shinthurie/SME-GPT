@@ -4,7 +4,9 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import MobileShell from "@/components/layout/MobileShell";
 import BottomNav from "@/components/layout/BottomNav";
+import LanguageSwitcher from "@/components/layout/LanguageSwitcher";
 import { getSession } from "@/lib/auth";
+import { AppLanguage, getStoredLanguage, ui } from "@/lib/i18n";
 
 type AdminUser = {
   id: string;
@@ -37,6 +39,7 @@ function Card({ children }: { children: React.ReactNode }) {
 
 export default function AdminPage() {
   const router = useRouter();
+  const [lang, setLang] = useState<AppLanguage>("en");
   const [authorized, setAuthorized] = useState(false);
   const [checking, setChecking] = useState(true);
   const [tab, setTab] = useState<"users" | "logs">("users");
@@ -44,6 +47,9 @@ export default function AdminPage() {
   const [logs, setLogs] = useState<AuditLog[]>([]);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
+
+  useEffect(() => { setLang(getStoredLanguage()); }, []);
+  const t = ui[lang];
 
   useEffect(() => {
     const check = async () => {
@@ -101,7 +107,7 @@ export default function AdminPage() {
     });
     const data = await res.json();
     if (!res.ok) {
-      setMessage(data.error || "Failed to update role");
+      setMessage(data.error || t.adminRoleFailed);
       return;
     }
     setUsers((prev) => prev.map((u) => (u.id === userId ? { ...u, role: data.user.role } : u)));
@@ -113,9 +119,12 @@ export default function AdminPage() {
     <MobileShell>
       <div className="min-h-screen pb-28" style={{ background: "var(--bg)" }}>
         <main className="mx-auto w-full max-w-[900px] px-4 py-6 sm:px-6">
-          <h1 className="mb-5 text-[22px] font-extrabold tracking-tight text-[var(--text-1)] sm:text-[26px]">
-            Admin Panel
-          </h1>
+          <div className="mb-5 flex items-center justify-between gap-3">
+            <h1 className="text-[22px] font-extrabold tracking-tight text-[var(--text-1)] sm:text-[26px]">
+              {t.adminPanel}
+            </h1>
+            <LanguageSwitcher />
+          </div>
 
           <div className="mb-5 flex gap-2">
             <button
@@ -128,7 +137,7 @@ export default function AdminPage() {
                 border: "1px solid var(--border)",
               }}
             >
-              Users
+              {t.adminUsers}
             </button>
             <button
               type="button"
@@ -140,7 +149,7 @@ export default function AdminPage() {
                 border: "1px solid var(--border)",
               }}
             >
-              Audit Logs
+              {t.auditLogs}
             </button>
           </div>
 
@@ -159,10 +168,10 @@ export default function AdminPage() {
                 <table className="w-full text-left text-[13px]">
                   <thead>
                     <tr style={{ borderBottom: "1px solid var(--border)" }}>
-                      <th className="px-5 py-3 text-[var(--text-3)]">Name</th>
-                      <th className="px-5 py-3 text-[var(--text-3)]">Email</th>
-                      <th className="px-5 py-3 text-[var(--text-3)]">Role</th>
-                      <th className="px-5 py-3 text-[var(--text-3)]">Joined</th>
+                      <th className="px-5 py-3 text-[var(--text-3)]">{t.thName}</th>
+                      <th className="px-5 py-3 text-[var(--text-3)]">{t.thEmail}</th>
+                      <th className="px-5 py-3 text-[var(--text-3)]">{t.thRole}</th>
+                      <th className="px-5 py-3 text-[var(--text-3)]">{t.thJoined}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -189,7 +198,7 @@ export default function AdminPage() {
                     {!loading && users.length === 0 && (
                       <tr>
                         <td colSpan={4} className="px-5 py-6 text-center text-[var(--text-3)]">
-                          No users found.
+                          {t.noUsersFound}
                         </td>
                       </tr>
                     )}
@@ -205,10 +214,10 @@ export default function AdminPage() {
                 <table className="w-full text-left text-[13px]">
                   <thead>
                     <tr style={{ borderBottom: "1px solid var(--border)" }}>
-                      <th className="px-5 py-3 text-[var(--text-3)]">Time</th>
-                      <th className="px-5 py-3 text-[var(--text-3)]">User</th>
-                      <th className="px-5 py-3 text-[var(--text-3)]">Event</th>
-                      <th className="px-5 py-3 text-[var(--text-3)]">Detail</th>
+                      <th className="px-5 py-3 text-[var(--text-3)]">{t.thTime}</th>
+                      <th className="px-5 py-3 text-[var(--text-3)]">{t.thUser}</th>
+                      <th className="px-5 py-3 text-[var(--text-3)]">{t.thEvent}</th>
+                      <th className="px-5 py-3 text-[var(--text-3)]">{t.thDetail}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -225,7 +234,7 @@ export default function AdminPage() {
                     {!loading && logs.length === 0 && (
                       <tr>
                         <td colSpan={4} className="px-5 py-6 text-center text-[var(--text-3)]">
-                          No audit log entries.
+                          {t.noAuditLogs}
                         </td>
                       </tr>
                     )}

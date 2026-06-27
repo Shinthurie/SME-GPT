@@ -180,15 +180,15 @@ export default function RepositoryPage() {
   const partyName = (item: RepoDocument) => {
     if (item.company_name && item.company_name !== "NULL") return item.company_name;
     if (item.supplier_name && item.supplier_name !== "NULL") return item.supplier_name;
-    return "Unknown Party";
+    return t.unknownParty;
   };
 
   const partyLabel = (item: RepoDocument) => {
-    if (item.document_type === "po") return "Client";
-    if (item.document_type === "dn") return "Receiver";
+    if (item.document_type === "po") return t.partyClient;
+    if (item.document_type === "dn") return t.partyReceiver;
     const ft = String(item.flow_type || "").toLowerCase();
-    if (ft === "receivable") return "Customer";
-    return "Vendor";
+    if (ft === "receivable") return t.partyCustomer;
+    return t.partyVendor;
   };
 
   return (
@@ -300,13 +300,13 @@ export default function RepositoryPage() {
           {tab === "po" && (
             <div className="mb-4 flex flex-wrap gap-2">
               {[
-                { v: "all", label: "All" },
-                { v: "pending", label: "⏳ Pending" },
-                { v: "approved", label: "✅ Approved" },
-                { v: "rejected", label: "❌ Rejected" },
-                { v: "fulfilled", label: "📦 Fulfilled" },
-                { v: "cancelled", label: "🚫 Cancelled" },
-                { v: "partially_delivered", label: "⚠ Partial" },
+                { v: "all", label: t.filterAll },
+                { v: "pending", label: `⏳ ${t.stPending}` },
+                { v: "approved", label: `✅ ${t.stApproved}` },
+                { v: "rejected", label: `❌ ${t.stRejected}` },
+                { v: "fulfilled", label: `📦 ${t.stFulfilled}` },
+                { v: "cancelled", label: `🚫 ${t.stCancelled}` },
+                { v: "partially_delivered", label: `⚠ ${t.stPartial}` },
               ].map(({ v, label }) => (
                 <button key={v} onClick={() => setStatusFilter(v)}
                   className="rounded-full px-3 py-1 text-[11px] font-semibold transition"
@@ -321,12 +321,12 @@ export default function RepositoryPage() {
           {tab === "invoice" && (
             <div className="mb-4 flex flex-wrap gap-2">
               {[
-                { v: "all", label: "All" },
-                { v: "pending", label: "⏳ Pending" },
-                { v: "overdue", label: "🔴 Overdue" },
-                { v: "paid", label: "✅ Paid" },
-                { v: "partially_paid", label: "⚠ Partial" },
-                { v: "cancelled", label: "🚫 Cancelled" },
+                { v: "all", label: t.filterAll },
+                { v: "pending", label: `⏳ ${t.stPending}` },
+                { v: "overdue", label: `🔴 ${t.stOverdue}` },
+                { v: "paid", label: `✅ ${t.stPaid}` },
+                { v: "partially_paid", label: `⚠ ${t.stPartial}` },
+                { v: "cancelled", label: `🚫 ${t.stCancelled}` },
               ].map(({ v, label }) => (
                 <button key={v} onClick={() => setStatusFilter(v)}
                   className="rounded-full px-3 py-1 text-[11px] font-semibold transition"
@@ -341,13 +341,13 @@ export default function RepositoryPage() {
           {tab === "dn" && (
             <div className="mb-4 flex flex-wrap gap-2">
               {[
-                { v: "all", label: "All" },
-                { v: "pending", label: "⏳ Pending" },
-                { v: "delivered", label: "✅ Delivered" },
-                { v: "delayed", label: "🔴 Delayed" },
-                { v: "partially_delivered", label: "⚠ Partial" },
-                { v: "failed", label: "❌ Failed" },
-                { v: "returned", label: "↩ Returned" },
+                { v: "all", label: t.filterAll },
+                { v: "pending", label: `⏳ ${t.stPending}` },
+                { v: "delivered", label: `✅ ${t.stDelivered}` },
+                { v: "delayed", label: `🔴 ${t.stDelayed}` },
+                { v: "partially_delivered", label: `⚠ ${t.stPartial}` },
+                { v: "failed", label: `❌ ${t.stFailed}` },
+                { v: "returned", label: `↩ ${t.stReturned}` },
               ].map(({ v, label }) => (
                 <button key={v} onClick={() => setStatusFilter(v)}
                   className="rounded-full px-3 py-1 text-[11px] font-semibold transition"
@@ -405,7 +405,7 @@ export default function RepositoryPage() {
                             <p className="text-[13px] text-[var(--text-1)]">{partyName(item)}</p>
                           </div>
                           <div className="sm:text-right">
-                            <p className="text-[11px] text-[var(--text-3)]">Date</p>
+                            <p className="text-[11px] text-[var(--text-3)]">{t.dateLabel}</p>
                             <p className="text-[13px] text-[var(--text-1)]">
                               {item.date && item.date !== "NULL" ? item.date : "No Date"}
                             </p>

@@ -22,19 +22,22 @@
 }
 
 [data-theme="dark"] {
-  --bg:           #0c1220;
-  --surface:      #111927;
-  --surface-2:    #19203a;
-  --border:       #1d2c44;
-  --text-1:       #e2e8f0;
-  --text-2:       #8b949e;
-  --text-3:       #4a5568;
-  --brand:        #2d5bdd;
-  --brand-mid:    #4a7de8;
-  --brand-tint:   #162040;
-  --brand-ring:   rgba(45, 91, 221, 0.2);
-  --input-bg:     #19203a;
-  --input-bg-ro:  #111927;
+  /* Neutral charcoal base (not blue-tinted black) so the brand colour reads as
+     an accent instead of flooding the whole UI. Surfaces step up in lightness
+     for a clear, calm elevation hierarchy. */
+  --bg:           #15181d;
+  --surface:      #1c2027;
+  --surface-2:    #242932;
+  --border:       #2d333d;
+  --text-1:       #e7e9ed;
+  --text-2:       #9aa1ac;
+  --text-3:       #6b727d;
+  --brand:        #3f6cc4;
+  --brand-mid:    #79a2ec;
+  --brand-tint:   #1e2531;
+  --brand-ring:   rgba(121, 162, 236, 0.22);
+  --input-bg:     #242932;
+  --input-bg-ro:  #1c2027;
 }
 
 /* ─── Base ───────────────────────────────────────────────────── */
