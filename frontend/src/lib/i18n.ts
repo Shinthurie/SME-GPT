@@ -327,6 +327,21 @@ export const ui = {
     incorrectPassword: "Incorrect password. Please try again.",
     exportingMsg: "Preparing Excel file…",
     downloadExcel: "Download Excel",
+
+    // ── Overdue alerts (IT-23) ───────────────────────────────────────────────
+    overduePayableTitle: "Payment overdue",
+    overdueReceivableTitle: "Receivable overdue",
+    overdueDaysSuffix: "days overdue",
+
+    // ── PO approval (IT-27) ──────────────────────────────────────────────────
+    poApprove: "Approve",
+    poReject: "Reject",
+    poApproved: "Approved",
+    poRejected: "Rejected",
+    poApprovedBy: "Approved by",
+    poApproveSuccess: "Purchase order approved.",
+    poRejectSuccess: "Purchase order rejected.",
+    poActionFailed: "Could not update PO status.",
   },
 
   si: {
@@ -642,5 +657,20 @@ export const ui = {
     incorrectPassword: "වැරදි මුරපදය. නැවත උත්සාහ කරන්න.",
     exportingMsg: "Excel ගොනුව සකසමින්…",
     downloadExcel: "Excel බාගන්න",
+
+    // ── Overdue alerts (IT-23) ───────────────────────────────────────────────
+    overduePayableTitle: "ගෙවීම කල් ඉකුත්",
+    overdueReceivableTitle: "ලැබිය යුතු මුදල කල් ඉකුත්",
+    overdueDaysSuffix: "දින කල් ඉකුත්",
+
+    // ── PO approval (IT-27) ──────────────────────────────────────────────────
+    poApprove: "අනුමත කරන්න",
+    poReject: "ප්‍රතික්ෂේප කරන්න",
+    poApproved: "අනුමතයි",
+    poRejected: "ප්‍රතික්ෂේපයි",
+    poApprovedBy: "අනුමත කළේ",
+    poApproveSuccess: "මිලදී ගැනීමේ ඇණවුම අනුමත කරන ලදී.",
+    poRejectSuccess: "මිලදී ගැනීමේ ඇණවුම ප්‍රතික්ෂේප කරන ලදී.",
+    poActionFailed: "PO තත්ත්වය යාවත්කාල කළ නොහැකි විය.",
   },
 };
