@@ -8,6 +8,7 @@ import LanguageSwitcher from "@/components/layout/LanguageSwitcher";
 import DerivationTrace from "@/components/ui/DerivationTrace";
 import { AppLanguage, getStoredLanguage, ui } from "@/lib/i18n";
 import { isHiddenMetric, metricLabel, metricValue, humanizeFlow } from "@/lib/humanize";
+import { formatMoney, otherPartyName } from "@/lib/format";
 
 const BACKEND_URL = "http://127.0.0.1:8000";
 
@@ -500,9 +501,14 @@ export default function AnswerPage() {
                         className="rounded-[14px] border border-slate-200 p-4"
                       >
                         <div className="flex flex-wrap items-center justify-between gap-3">
-                          <p className="text-[15px] font-bold text-[#0f172a]">
-                            {item.document_id}
-                          </p>
+                          <div className="min-w-0">
+                            <p className="truncate text-[15px] font-bold text-[#0f172a]">
+                              {otherPartyName(item) || item.document_id}
+                            </p>
+                            <p className="mt-0.5 text-[11px] font-semibold text-slate-400">
+                              {item.document_id}
+                            </p>
+                          </div>
                           <div className="flex items-center gap-2">
                             <span className="rounded-xl bg-[#eef4ff] px-3 py-1.5 text-[11px] font-semibold text-[#2563ff]">
                               {item.document_type?.toUpperCase()}
@@ -525,9 +531,9 @@ export default function AnswerPage() {
                           <p className="text-[13px] text-[#334155]"><span className="font-semibold">Supplier:</span> {item.supplier_name}</p>
                           <p className="text-[13px] text-[#334155]"><span className="font-semibold">{t.flowTypeLabel}:</span> {humanizeFlow(item.flow_type, lang)}</p>
                           <p className="text-[13px] text-[#334155]"><span className="font-semibold">Currency:</span> {formatValue(item.currency)}</p>
-                          <p className="text-[13px] text-[#334155]"><span className="font-semibold">Final Total:</span> {formatValue(item.final_total_amount)}</p>
-                          <p className="text-[13px] text-[#334155]"><span className="font-semibold">Payable Amount:</span> {formatValue(item.payable_amount)}</p>
-                          <p className="text-[13px] text-[#334155]"><span className="font-semibold">Amount Used:</span> {formatValue(item.amount_used ?? item.final_total_amount)}</p>
+                          <p className="text-[13px] text-[#334155]"><span className="font-semibold">Final Total:</span> {formatMoney(item.final_total_amount, item.currency) || "—"}</p>
+                          <p className="text-[13px] text-[#334155]"><span className="font-semibold">Payable Amount:</span> {formatMoney(item.payable_amount, item.currency) || "—"}</p>
+                          <p className="text-[13px] text-[#334155]"><span className="font-semibold">Amount Used:</span> {formatMoney(item.amount_used ?? item.final_total_amount, item.currency) || "—"}</p>
                           <p className="text-[13px] text-[#334155]"><span className="font-semibold">Received Status:</span> {item.received_status}</p>
                           <p className="text-[13px] text-[#334155]"><span className="font-semibold">Paid Status:</span> {item.paid_status}</p>
                           {item.due_date && <p className="text-[13px] text-[#334155]"><span className="font-semibold">Due Date:</span> {item.due_date}</p>}
