@@ -21,9 +21,19 @@ though only the real model's output changes with it.
 from __future__ import annotations
 
 import hashlib
+import logging
 import math
+import os
 import re
 from abc import ABC, abstractmethod
+
+# Quieten Hugging Face when loading the embedding model from the local cache:
+# - no per-load "Loading weights" progress bar
+# - no "you are sending unauthenticated requests to the HF Hub / set HF_TOKEN"
+#   advisory (we only ever read an already-cached model, never download).
+os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
+os.environ.setdefault("TRANSFORMERS_NO_ADVISORY_WARNINGS", "1")
+logging.getLogger("huggingface_hub").setLevel(logging.ERROR)
 
 EMBEDDING_DIM = 384
 
@@ -90,16 +100,32 @@ class LocalMultilingualEmbeddingService(EmbeddingService):
         return [vec.tolist() for vec in embeddings]
 
 
+# Cache one service instance per engine. The real model holds the loaded
+# SentenceTransformer in `self._model`, so reusing the instance means the model
+# is loaded ONCE per process instead of on every call (e.g. every /ask-query
+# RAG step previously reloaded ~200MB of weights). Services are stateless aside
+# from the cached model, so sharing them is safe.
+_SERVICE_CACHE: dict[str, EmbeddingService] = {}
+
+
 def get_embedding_service(engine: str | None = None) -> EmbeddingService:
     """Factory mirroring `ocr_service.get_ocr_service()`. Defaults to the real
     model ('local_multilingual') since, unlike Surya v2, embedding inference
-    has no GPU/infra blocker. Tests construct `HashingEmbeddingService`
-    directly rather than going through this factory's default."""
+    has no GPU/infra blocker. Returns a cached singleton per engine so the model
+    loads only once. Tests construct `HashingEmbeddingService` directly rather
+    than going through this factory's default."""
     engine = (engine or "local_multilingual").strip().lower()
 
-    if engine == "local_multilingual":
-        return LocalMultilingualEmbeddingService()
-    if engine == "hashing":
-        return HashingEmbeddingService()
+    cached = _SERVICE_CACHE.get(engine)
+    if cached is not None:
+        return cached
 
-    raise NotImplementedError(f"Embedding engine '{engine}' is not supported.")
+    if engine == "local_multilingual":
+        service: EmbeddingService = LocalMultilingualEmbeddingService()
+    elif engine == "hashing":
+        service = HashingEmbeddingService()
+    else:
+        raise NotImplementedError(f"Embedding engine '{engine}' is not supported.")
+
+    _SERVICE_CACHE[engine] = service
+    return service

@@ -81,6 +81,8 @@ export default function AnswerPage() {
   const router = useRouter();
   const [lang, setLang] = useState<AppLanguage>("en");
   const [result, setResult] = useState<QueryResult | null>(null);
+  // Conversation thread: every Q&A turn, so the initial query stays visible.
+  const [thread, setThread] = useState<QueryResult[]>([]);
   const [followUpQuestion, setFollowUpQuestion] = useState("");
   const [asking, setAsking] = useState(false);
   const [followUpError, setFollowUpError] = useState("");
@@ -101,9 +103,12 @@ export default function AnswerPage() {
     }
 
     try {
-      setResult(JSON.parse(raw));
+      const parsed = JSON.parse(raw);
+      setResult(parsed);
+      setThread([parsed]);
     } catch {
       setResult(null);
+      setThread([]);
     }
   }, []);
 
@@ -160,6 +165,7 @@ export default function AnswerPage() {
       sessionStorage.removeItem("selected_query_history");
 
       setResult(data);
+      setThread((prev) => [...prev, data]);
       setFollowUpQuestion("");
       setShowExplanation(false);
       setShowEvidence(false);
@@ -271,6 +277,28 @@ export default function AnswerPage() {
               {result.company_name}
             </p>
           </div>
+
+          {/* Conversation thread — earlier turns so the initial query stays visible */}
+          {thread.length > 1 && (
+            <div className="mt-6">
+              <p className="mb-2 text-[11px] font-bold uppercase tracking-[0.12em] text-[#64748b]">
+                {t.conversationLabel}
+              </p>
+              <div className="space-y-3">
+                {thread.slice(0, -1).map((turn, i) => (
+                  <div key={i} className="rounded-[18px] border border-slate-200 bg-white p-4 shadow-sm">
+                    <p className="flex items-start gap-1.5 text-[13px] font-semibold text-[#0f172a]">
+                      <span className="material-symbols-outlined text-[16px] text-[#2563ff]">person</span>
+                      <span>{turn.question}</span>
+                    </p>
+                    <p className="mt-1.5 whitespace-pre-line pl-[22px] text-[13px] leading-6 text-[#475569]">
+                      {turn.answer}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           <div className="mt-6 rounded-[18px] border border-slate-200 bg-white p-5 shadow-sm">
             <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#64748b]">
