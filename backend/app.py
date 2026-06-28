@@ -158,12 +158,30 @@ _ERROR_CODE_BY_STATUS = {
 }
 
 
+def _cors_headers(request: Request) -> dict:
+    """Echo CORS headers onto error responses.
+
+    Exception handlers run outside CORSMiddleware, so without this an error
+    response reaches the browser with no Access-Control-Allow-Origin header and
+    the fetch fails with an opaque "failed to fetch" instead of the real error.
+    """
+    origin = request.headers.get("origin")
+    if origin and origin in CORS_ORIGINS:
+        return {
+            "Access-Control-Allow-Origin": origin,
+            "Access-Control-Allow-Credentials": "true",
+            "Vary": "Origin",
+        }
+    return {}
+
+
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException):
     error_code = _ERROR_CODE_BY_STATUS.get(exc.status_code, f"HTTP_{exc.status_code}")
     return JSONResponse(
         status_code=exc.status_code,
         content=ErrorResponse(error_code=error_code, message=str(exc.detail)).model_dump(),
+        headers=_cors_headers(request),
     )
 
 
@@ -179,6 +197,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
             error_code="INTERNAL_ERROR",
             message="An unexpected error occurred.",
         ).model_dump(),
+        headers=_cors_headers(request),
     )
 # ─────────────────────────────────────────────────────────────────────────────
 

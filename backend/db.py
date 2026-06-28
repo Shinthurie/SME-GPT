@@ -56,11 +56,19 @@ def _init_pool():
             max_size=8,
             kwargs={"row_factory": dict_row, "prepare_threshold": None},
             open=True,
+            # Supabase's PgBouncer closes idle connections, so a pooled
+            # connection can be silently dead by the next request. check_connection
+            # runs a cheap liveness probe on checkout and recycles dead ones,
+            # preventing "connection [BAD]" 500s on the second/follow-up query.
+            check=ConnectionPool.check_connection,
+            # Recycle connections that have been idle longer than the pooler's
+            # own idle timeout, so we rarely hand out a stale one in the first place.
+            max_idle=float(os.getenv("DB_POOL_MAX_IDLE_SECS", "120")),
             reconnect_failed=lambda p: print(
                 "[DB] Pool reconnect failed — will retry on next request.", flush=True
             ),
         )
-        print("[DB] Connection pool ready (min=1, max=8).", flush=True)
+        print("[DB] Connection pool ready (min=1, max=8, health-checked).", flush=True)
     except ImportError:
         # psycopg_pool not installed — fall back to per-request connections
         print("[DB] psycopg_pool not available, using per-request connections.", flush=True)
