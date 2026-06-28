@@ -55,6 +55,9 @@ type DocumentDetail = {
   cash_inflowed?: string | number | null;
   cash_outflowed?: string | number | null;
   category?: string | null;
+  // IT-27 — PO approval workflow
+  po_status?: string | null;
+  approved_by?: string | null;
 };
 
 function getAuthToken() {
@@ -96,6 +99,9 @@ export default function AnalysisDetailPage() {
   const [successMessage, setSuccessMessage] = useState("");
   const [deleting, setDeleting] = useState(false);
   const [flowChangeMessage, setFlowChangeMessage] = useState("");
+  // IT-27 — PO approval
+  const [approverName, setApproverName] = useState("");
+  const [poActionLoading, setPoActionLoading] = useState(false);
 
   const documentId = useMemo(() => {
     if (!pathname) return "";
@@ -105,6 +111,11 @@ export default function AnalysisDetailPage() {
 
   useEffect(() => {
     setLang(getStoredLanguage());
+    // IT-27: remember who is approving, to stamp approved_by on PO actions.
+    fetch("/api/auth/me")
+      .then((r) => r.json())
+      .then((d) => setApproverName(d?.user?.fullName || d?.user?.email || ""))
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -196,6 +207,35 @@ export default function AnalysisDetailPage() {
         items: updatedItems,
       };
     });
+  };
+
+  const handlePoAction = async (nextStatus: "approved" | "rejected") => {
+    if (!document) return;
+    try {
+      setPoActionLoading(true);
+      setError("");
+      setSuccessMessage("");
+
+      const token = getAuthToken();
+      const res = await fetch(`${BACKEND_URL}/documents/${documentId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          po_status: nextStatus,
+          approved_by: nextStatus === "approved" ? approverName : "",
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.message || t.poActionFailed);
+
+      setDocument(data.document);
+      setEditedDocument(data.document);
+      setSuccessMessage(nextStatus === "approved" ? t.poApproveSuccess : t.poRejectSuccess);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t.poActionFailed);
+    } finally {
+      setPoActionLoading(false);
+    }
   };
 
   const handleSave = async () => {
@@ -751,6 +791,47 @@ export default function AnalysisDetailPage() {
                         <br />
                         <span className="font-semibold text-[#0f172a]">{t.languageLabel}:</span>{" "}
                         {target.language || "NULL"}
+
+                        {/* IT-27: PO approval workflow */}
+                        <div className="mt-3 border-t border-slate-100 pt-3">
+                          <span className="font-semibold text-[#0f172a]">
+                            {lang === "si" ? "අනුමැතිය:" : "Approval:"}
+                          </span>{" "}
+                          <span className={`ml-1 rounded-full px-2 py-0.5 text-[11px] font-bold ${
+                            target.po_status === "approved" ? "bg-green-50 text-green-700" :
+                            target.po_status === "rejected" ? "bg-red-50 text-red-700" :
+                            "bg-amber-50 text-amber-700"
+                          }`}>
+                            {target.po_status === "approved" ? t.poApproved :
+                             target.po_status === "rejected" ? t.poRejected :
+                             (lang === "si" ? "පොරොත්තුවෙන්" : "Pending")}
+                          </span>
+
+                          {target.approved_by && target.po_status === "approved" && (
+                            <p className="mt-1 text-[12px] text-[#64748b]">
+                              {t.poApprovedBy}: {target.approved_by}
+                            </p>
+                          )}
+
+                          {!editMode && (
+                            <div className="mt-2 flex gap-2">
+                              <button
+                                onClick={() => handlePoAction("approved")}
+                                disabled={poActionLoading || target.po_status === "approved"}
+                                className="rounded-lg bg-green-600 px-3 py-1.5 text-[12px] font-bold text-white transition hover:opacity-90 disabled:opacity-40"
+                              >
+                                {t.poApprove}
+                              </button>
+                              <button
+                                onClick={() => handlePoAction("rejected")}
+                                disabled={poActionLoading || target.po_status === "rejected"}
+                                className="rounded-lg border border-red-300 bg-red-50 px-3 py-1.5 text-[12px] font-bold text-red-600 transition hover:opacity-90 disabled:opacity-40"
+                              >
+                                {t.poReject}
+                              </button>
+                            </div>
+                          )}
+                        </div>
                       </>
                     ) : (
                       // Invoice / Receipt — full status
