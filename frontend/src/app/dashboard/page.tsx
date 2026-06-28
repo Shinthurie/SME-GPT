@@ -9,6 +9,7 @@ import ThemeToggle from "@/components/layout/ThemeToggle";
 import { getSession, logoutUser, SessionUser, getStoredToken } from "@/lib/auth";
 import { AppLanguage, getStoredLanguage, ui } from "@/lib/i18n";
 import { hasUnreadNotifications } from "@/lib/notifications";
+import { syncOverdueAlerts } from "@/lib/overdueAlerts";
 
 const BACKEND_URL = "http://127.0.0.1:8000";
 
@@ -130,6 +131,9 @@ export default function DashboardPage() {
           throw new Error(data.message || `Server error ${res.status}`);
         }
         setSummary(data);
+
+        // IT-23: surface overdue payables/receivables as notifications.
+        void syncOverdueAlerts(token);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to fetch dashboard summary.");
       }
