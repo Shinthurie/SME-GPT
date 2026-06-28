@@ -167,7 +167,6 @@ export default function UploadPage() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [activeStep, setActiveStep] = useState(0);
-  const [stageMessage, setStageMessage] = useState("");
   const [preview, setPreview] = useState<PreviewData | null>(null);
   const [error, setError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
@@ -200,7 +199,7 @@ export default function UploadPage() {
   const resetForm = () => {
     setPreview(null); setSelectedFile(null); setSessionId("");
     setShowDuplicateWarning(false); setDuplicateMessage(""); setExistingDocumentId("");
-    setShowAmountMismatch(false); setError(""); setActiveStep(0); setStageMessage("");
+    setShowAmountMismatch(false); setError(""); setActiveStep(0);
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
@@ -250,7 +249,7 @@ export default function UploadPage() {
     if (!token) { router.push("/login"); return; }
 
     setIsProcessing(true); setError(""); setPreview(null);
-    setActiveStep(1); setStageMessage("Preparing document…");
+    setActiveStep(1);
 
     addNotification({
       title: lang === "si" ? "ලේඛනය සකසමින් ඇත" : "Processing Document",
@@ -294,7 +293,6 @@ export default function UploadPage() {
 
           if (event.stage === "error") throw new Error(event.message || "Processing failed.");
           if (typeof event.step === "number") setActiveStep(event.step);
-          if (event.message) setStageMessage(event.message);
           if (event.stage === "done") {
             // Auto-fill company_name from user profile so it's always correct
             const rawPreview = event.preview ?? null;
@@ -314,7 +312,7 @@ export default function UploadPage() {
         }
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong during processing.");
+      setError(friendlyError(err instanceof Error ? err.message : ""));
       setActiveStep(0);
     } finally {
       setIsProcessing(false);
@@ -377,23 +375,43 @@ export default function UploadPage() {
     }
   };
 
-  const pipelineSteps = [
-    {
-      title: t.pdfToPages ?? "PDF to Pages",
-      desc:  t.pdfToPagesDesc ?? "Structure analysis & layout parsing",
-      step: 1,
-    },
-    {
-      title: t.ocrExtraction,
-      desc:  t.ocrExtractionDesc,
-      step: 2,
-    },
-  ].map((s) => ({
-    ...s,
-    done:    s.step === 1 ? (activeStep > 1 || !!preview) : !!preview,
-    current: isProcessing && (s.step === 1 ? activeStep === 1 : activeStep >= 2),
-    liveMsg: isProcessing && (s.step === 1 ? activeStep === 1 : activeStep >= 2) ? stageMessage : "",
-  }));
+  // Jargon-free progress copy shown next to the spinner. Driven by the backend's
+  // real step number, but worded for SME owners (no "OCR" / "extraction" / "LLM").
+  const PROGRESS_COPY: Record<number, { en: string; si: string }> = {
+    1: { en: "Reading your document…",           si: "ඔබගේ ලේඛනය කියවමින්…" },
+    2: { en: "Looking at the text…",             si: "පෙළ පරීක්ෂා කරමින්…" },
+    3: { en: "Tidying up the details…",          si: "විස්තර පිළිවෙළට සකසමින්…" },
+    4: { en: "Pulling out the key information…",  si: "වැදගත් තොරතුරු උකහා ගනිමින්…" },
+  };
+  const friendlyProgress =
+    (PROGRESS_COPY[activeStep] ?? { en: "Getting started…", si: "ආරම්භ කරමින්…" })[
+      lang === "si" ? "si" : "en"
+    ];
+
+  // Turn raw backend error text into plain language an SME owner understands.
+  const friendlyError = (raw: string): string => {
+    const r = (raw || "").toLowerCase();
+    const si = lang === "si";
+    if (r.includes("unsupported file") || r.includes("file type"))
+      return si
+        ? "මෙම ගොනු වර්ගය සහාය නොදක්වයි. PDF, JPG හෝ PNG එකක් උඩුගත කරන්න."
+        : "That file type isn't supported. Please upload a PDF, JPG or PNG.";
+    if (r.includes("ocr") || r.includes("empty text") || r.includes("no usable text") || r.includes("engine") || r.includes("no pages"))
+      return si
+        ? "අපට මෙම ලේඛනය කියවිය නොහැකි විය. පැහැදිලි ඡායාරූපයක් හෝ PDF එකක් උත්සාහ කරන්න."
+        : "We couldn't read this document clearly. Try a sharper photo or a PDF.";
+    if (r.includes("timed out") || r.includes("timeout"))
+      return si
+        ? "මෙය සැකසීමට සාමාන්‍යයට වඩා කාලයක් ගත විය. කරුණාකර නැවත උත්සාහ කරන්න."
+        : "This took longer than expected. Please try again.";
+    if (r.includes("401") || r.includes("unauthorized"))
+      return si
+        ? "ඔබගේ සැසිය කල් ඉකුත් විය. කරුණාකර නැවත පුරනය වන්න."
+        : "Your session expired. Please log in again.";
+    return si
+      ? "සැකසීමේදී යම් දෝෂයක් ඇති විය. කරුණාකර නැවත උත්සාහ කරන්න."
+      : "Something went wrong while processing. Please try again.";
+  };
 
   return (
     <MobileShell>
@@ -536,49 +554,24 @@ export default function UploadPage() {
             </div>
           )}
 
-          {/* Pipeline steps */}
-          <div className="mt-8">
-            <p className="mb-4 text-[11px] font-bold uppercase tracking-[0.1em] text-[var(--text-3)]">
-              {t.processingPipeline}
-            </p>
-            <div className="space-y-4">
-              {pipelineSteps.map((step, i) => (
-                <div key={i} className="flex gap-4">
-                  <div className="flex w-7 flex-col items-center">
-                    <div
-                      className="flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-bold transition-all"
-                      style={
-                        step.done
-                          ? { background: "var(--brand)", color: "#fff" }
-                          : step.current
-                          ? { background: "var(--brand-mid)", color: "#fff", boxShadow: "0 0 0 3px var(--brand-tint)" }
-                          : { border: "2px solid var(--border)", color: "var(--text-3)" }
-                      }
-                    >
-                      {step.done ? "✓" : step.current ? (
-                        <span style={{ fontSize: 13, lineHeight: 1 }}>⟳</span>
-                      ) : i + 1}
-                    </div>
-                    {i < 1 && <div className="mt-1 h-full w-px" style={{ background: "var(--border)" }} />}
-                  </div>
-                  <div
-                    className="flex-1 rounded-2xl p-4 transition-all"
-                    style={{
-                      background: "var(--surface)",
-                      border: step.current
-                        ? "1px solid var(--brand-mid)"
-                        : "1px solid var(--border)",
-                    }}
-                  >
-                    <p className="text-[14px] font-bold text-[var(--text-1)]">{step.title}</p>
-                    <p className="mt-0.5 text-[12px] text-[var(--text-2)]">
-                      {step.liveMsg || step.desc}
-                    </p>
-                  </div>
-                </div>
-              ))}
+          {/* Processing indicator — friendly, jargon-free */}
+          {isProcessing && (
+            <div
+              className="mt-8 flex flex-col items-center justify-center rounded-2xl px-6 py-10 text-center"
+              style={{ background: "var(--surface)", border: "1px solid var(--border)" }}
+            >
+              <div
+                className="h-12 w-12 animate-spin rounded-full"
+                style={{ border: "3px solid var(--brand-tint)", borderTopColor: "var(--brand-mid)" }}
+              />
+              <p className="mt-5 text-[15px] font-bold text-[var(--text-1)]">{friendlyProgress}</p>
+              <p className="mt-1.5 text-[12px] text-[var(--text-2)]">
+                {lang === "si"
+                  ? "මෙයට මොහොතක් ගත විය හැක — කරුණාකර මෙම පිටුව විවෘතව තබන්න."
+                  : "This can take a moment — please keep this page open."}
+              </p>
             </div>
-          </div>
+          )}
 
           {/* Enterprise Security banner */}
           <div
@@ -621,7 +614,7 @@ export default function UploadPage() {
             style={{ background: preview ? "#16a34a" : "var(--brand)" }}
           >
             {isProcessing
-              ? stageMessage || "Processing…"
+              ? friendlyProgress
               : preview
               ? t.extractionDone
               : t.beginExtraction}

@@ -10,6 +10,7 @@ import { getSession, logoutUser, SessionUser, getStoredToken } from "@/lib/auth"
 import { AppLanguage, getStoredLanguage, ui } from "@/lib/i18n";
 import { hasUnreadNotifications } from "@/lib/notifications";
 import { syncOverdueAlerts } from "@/lib/overdueAlerts";
+import { formatMoney, otherPartyName } from "@/lib/format";
 
 const BACKEND_URL = "http://127.0.0.1:8000";
 
@@ -159,13 +160,25 @@ export default function DashboardPage() {
   const recentDocs = summary?.recent_documents || [];
 
   const getRecentMeta = (doc: RecentDocument) => {
-    const amt =
-      doc.final_total_amount && doc.final_total_amount !== "NULL"
-        ? `${doc.currency !== "NULL" ? doc.currency : "LKR"} ${doc.final_total_amount}`
-        : "No Amount";
-    const dt = doc.date && doc.date !== "NULL" ? doc.date : "No Date";
+    const amt = formatMoney(doc.final_total_amount, doc.currency) || "—";
+    const dt = doc.date && doc.date !== "NULL" ? doc.date : "—";
     return `${dt} • ${amt}`;
   };
+
+  // "R11 · Receipt" style sub-label under the party name
+  const DOC_TYPE_LABEL: Record<string, { en: string; si: string }> = {
+    invoice: { en: "Invoice", si: "ඉන්වොයිස්" },
+    receipt: { en: "Receipt", si: "රිසිට්පත" },
+    po: { en: "Purchase Order", si: "මිලදී ගැනීමේ ඇණවුම" },
+    dn: { en: "Delivery Note", si: "බෙදාහැරීමේ සටහන" },
+    unknown: { en: "Document", si: "ලේඛනය" },
+  };
+  const docSubLabel = (doc: RecentDocument) => {
+    const label = DOC_TYPE_LABEL[doc.document_type] ?? DOC_TYPE_LABEL.unknown;
+    return `${doc.document_id} · ${lang === "si" ? label.si : label.en}`;
+  };
+  // Bold title = the other party; fall back to the id when none was extracted.
+  const docTitle = (doc: RecentDocument) => otherPartyName(doc) || doc.document_id;
 
   return (
     <MobileShell>
@@ -304,7 +317,10 @@ export default function DashboardPage() {
                       <DocIcon type={doc.document_type} />
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-[15px] font-bold text-[var(--text-1)]">
-                          {doc.document_id}
+                          {docTitle(doc)}
+                        </p>
+                        <p className="mt-0.5 text-[11px] font-semibold text-[var(--text-3)]">
+                          {docSubLabel(doc)}
                         </p>
                         <p className="mt-0.5 text-[12px] text-[var(--text-2)]">
                           {getRecentMeta(doc)}
@@ -314,7 +330,7 @@ export default function DashboardPage() {
                         className="shrink-0 rounded-lg px-2.5 py-1 text-[10px] font-bold uppercase"
                         style={{ background: "rgba(22,163,74,0.1)", color: "#16a34a" }}
                       >
-                        ready
+                        {lang === "si" ? "සුරැකිණි" : "Saved"}
                       </span>
                     </div>
                   </button>

@@ -7,6 +7,7 @@ import BottomNav from "@/components/layout/BottomNav";
 import LanguageSwitcher from "@/components/layout/LanguageSwitcher";
 import ThemeToggle from "@/components/layout/ThemeToggle";
 import { AppLanguage, getStoredLanguage, ui } from "@/lib/i18n";
+import { formatMoney, otherPartyName } from "@/lib/format";
 
 const BACKEND_URL = "http://127.0.0.1:8000";
 
@@ -172,24 +173,23 @@ export default function RepositoryPage() {
       : isUsable(item.raw_total_amount)
       ? item.raw_total_amount
       : null;
-    if (!amt) return t.noAmount;
-    const cur = item.currency && item.currency !== "NULL" ? item.currency : "LKR";
-    return `${cur} ${amt}`;
+    return formatMoney(amt, item.currency) || t.noAmount;
   };
 
-  const partyName = (item: RepoDocument) => {
-    if (item.company_name && item.company_name !== "NULL") return item.company_name;
-    if (item.supplier_name && item.supplier_name !== "NULL") return item.supplier_name;
-    return t.unknownParty;
+  // "IN11 · Invoice" sub-label shown under the party name
+  const DOC_TYPE_LABEL: Record<string, { en: string; si: string }> = {
+    invoice: { en: "Invoice", si: "ඉන්වොයිස්" },
+    receipt: { en: "Receipt", si: "රිසිට්පත" },
+    po: { en: "Purchase Order", si: "මිලදී ගැනීමේ ඇණවුම" },
+    dn: { en: "Delivery Note", si: "බෙදාහැරීමේ සටහන" },
+    unknown: { en: "Document", si: "ලේඛනය" },
   };
-
-  const partyLabel = (item: RepoDocument) => {
-    if (item.document_type === "po") return t.partyClient;
-    if (item.document_type === "dn") return t.partyReceiver;
-    const ft = String(item.flow_type || "").toLowerCase();
-    if (ft === "receivable") return t.partyCustomer;
-    return t.partyVendor;
+  const docSubLabel = (item: RepoDocument) => {
+    const label = DOC_TYPE_LABEL[item.document_type] ?? DOC_TYPE_LABEL.unknown;
+    return `${item.document_id} · ${lang === "si" ? label.si : label.en}`;
   };
+  // Bold title = the other party; fall back to the id when none was extracted.
+  const docTitle = (item: RepoDocument) => otherPartyName(item) || item.document_id;
 
   return (
     <MobileShell>
@@ -396,18 +396,14 @@ export default function RepositoryPage() {
                       </div>
 
                       <div className="min-w-0 flex-1">
-                        <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[var(--text-3)]">{m.label}</p>
-                        <p className="mt-0.5 text-[15px] font-bold text-[var(--text-1)]">{item.document_id}</p>
+                        <p className="truncate text-[15px] font-bold text-[var(--text-1)]">{docTitle(item)}</p>
+                        <p className="mt-0.5 text-[11px] font-semibold uppercase tracking-[0.06em] text-[var(--text-3)]">{docSubLabel(item)}</p>
 
                         <div className="mt-2 grid gap-2 sm:grid-cols-2">
-                          <div>
-                            <p className="text-[11px] text-[var(--text-3)]">{partyLabel(item)}</p>
-                            <p className="text-[13px] text-[var(--text-1)]">{partyName(item)}</p>
-                          </div>
-                          <div className="sm:text-right">
+                          <div className="sm:text-right sm:col-start-2">
                             <p className="text-[11px] text-[var(--text-3)]">{t.dateLabel}</p>
                             <p className="text-[13px] text-[var(--text-1)]">
-                              {item.date && item.date !== "NULL" ? item.date : "No Date"}
+                              {item.date && item.date !== "NULL" ? item.date : "—"}
                             </p>
                           </div>
                         </div>
@@ -478,7 +474,7 @@ export default function RepositoryPage() {
                       <div className="text-right">
                         <p
                           className="text-[13px] font-bold"
-                          style={{ color: amt === "No Amount" ? "var(--text-3)" : "var(--text-1)" }}
+                          style={{ color: amt === t.noAmount ? "var(--text-3)" : "var(--text-1)" }}
                         >
                           {amt}
                         </p>
