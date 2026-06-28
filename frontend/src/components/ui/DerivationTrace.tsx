@@ -1,10 +1,15 @@
 "use client";
 
 /**
- * Iteration 7 — Explainability UI.
- * Shows a step-by-step derivation trace for a query answer:
- *   Scope resolution → Document match → Computation → Answer generation
+ * Explainability UI — shows, in plain language, how an answer was worked out:
+ *   Where we looked → Documents we used → How we calculated → Your answer
+ *
+ * Deliberately free of technical jargon (no table names, no "aggregate_sum",
+ * no "tenant-scoped result set") so an SME owner can follow the reasoning.
  */
+
+import { AppLanguage } from "@/lib/i18n";
+import { isHiddenMetric, metricLabel, metricValue, humanizeFlow, humanizeDocType } from "@/lib/humanize";
 
 type EvidenceItem = {
   document_id: string;
@@ -24,6 +29,7 @@ type DerivationTraceProps = {
   metrics: Record<string, unknown>;
   questionType: string;
   companyName: string;
+  lang?: AppLanguage;
 };
 
 function formatAmount(v: number | undefined | null): string {
@@ -49,48 +55,53 @@ export default function DerivationTrace({
   metrics,
   questionType,
   companyName,
+  lang = "en",
 }: DerivationTraceProps) {
+  const L = (en: string, si: string) => (lang === "si" ? si : en);
   const docCount = evidence.length;
   const currencies = [...new Set(evidence.map((e) => e.currency || "LKR"))];
 
-  // Derive arithmetic operation from questionType
+  // Plain-language description of the calculation, by question type.
   const opLabel: Record<string, string> = {
-    payable: "Sum of outstanding payable amounts",
-    receivable: "Sum of outstanding receivable amounts",
-    expense: "Sum of expense amounts",
-    income: "Sum of income amounts",
-    summary: "Aggregate across matched documents",
-    invoice_list: "List matching invoices",
-    receipt_list: "List matching receipts",
-    po_list: "List matching purchase orders",
-    dn_list: "List matching delivery notes",
+    payable: L("Added up the money you still owe", "ඔබ තවම ගෙවිය යුතු මුදල් එකතු කළා"),
+    receivable: L("Added up the money owed to you", "ඔබට ලැබිය යුතු මුදල් එකතු කළා"),
+    expense: L("Added up your expenses", "ඔබගේ වියදම් එකතු කළා"),
+    income: L("Added up your income", "ඔබගේ ආදායම එකතු කළා"),
+    summary: L("Combined the matching documents", "ගැළපෙන ලේඛන එකතු කළා"),
+    invoice_list: L("Listed the matching invoices", "ගැළපෙන ඉන්වොයිස් ලැයිස්තුගත කළා"),
+    receipt_list: L("Listed the matching receipts", "ගැළපෙන රිසිට්පත් ලැයිස්තුගත කළා"),
+    po_list: L("Listed the matching purchase orders", "ගැළපෙන ඇණවුම් ලැයිස්තුගත කළා"),
+    dn_list: L("Listed the matching delivery notes", "ගැළපෙන බෙදාහැරීමේ සටහන් ලැයිස්තුගත කළා"),
   };
+
+  const visibleMetrics = Object.entries(metrics).filter(([k]) => !isHiddenMetric(k));
 
   return (
     <div className="rounded-[18px] border border-[#e2e8f0] bg-[#f8fafc] px-5 py-5">
       <p className="mb-4 text-[11px] font-bold uppercase tracking-[0.12em] text-[#64748b]">
-        Derivation Trace — How This Answer Was Computed
+        {L("How this answer was worked out", "මෙම පිළිතුර ලැබුණු ආකාරය")}
       </p>
 
       <div className="space-y-5">
-        {/* Step 1 — Scope resolution */}
+        {/* Step 1 — Where we looked */}
         <div>
-          <StepBadge step={1} label="Scope Resolution" />
+          <StepBadge step={1} label={L("Where we looked", "අප සෙව්වේ කොහෙද")} />
           <div className="ml-10 mt-2 rounded-[12px] border border-[#e2e8f0] bg-white px-4 py-3 text-[13px] text-[#334155]">
-            Tenant-scoped query for company{" "}
+            {L("We searched only your own saved documents for", "ඔබගේ සුරැකි ලේඛන තුළ පමණක් සෙව්වා —")}{" "}
             <span className="font-semibold text-[#0f172a]">&quot;{companyName}&quot;</span>.{" "}
-            Found <span className="font-semibold">{docCount}</span> matching document
-            {docCount !== 1 ? "s" : ""}.
+            {L("Found", "හමු විය")} <span className="font-semibold">{docCount}</span>{" "}
+            {docCount === 1 ? L("matching document.", "ගැළපෙන ලේඛනයක්.") : L("matching documents.", "ගැළපෙන ලේඛන.")}
           </div>
         </div>
 
-        {/* Step 2 — Document matches */}
+        {/* Step 2 — Documents we used */}
         <div>
-          <StepBadge step={2} label="Document Match" />
+          <StepBadge step={2} label={L("Documents we used", "අප භාවිත කළ ලේඛන")} />
           <div className="ml-10 mt-2 space-y-2">
             {evidence.length === 0 ? (
               <div className="rounded-[12px] border border-amber-200 bg-amber-50 px-4 py-3 text-[13px] text-amber-700">
-                No documents matched the scope. Check the company name or add documents.
+                {L("No documents matched. Check the company name or add documents.",
+                   "ලේඛන කිසිවක් නොගැළපුණි. සමාගම් නම පරීක්ෂා කරන්න හෝ ලේඛන එක් කරන්න.")}
               </div>
             ) : (
               evidence.map((e, i) => (
@@ -100,7 +111,9 @@ export default function DerivationTrace({
                 >
                   <div>
                     <span className="font-semibold text-[#0f172a]">{e.document_id}</span>
-                    <span className="ml-2 text-[#64748b]">{e.document_type} · {e.flow_type}</span>
+                    <span className="ml-2 text-[#64748b]">
+                      {humanizeDocType(e.document_type, lang)} · {humanizeFlow(e.flow_type, lang)}
+                    </span>
                   </div>
                   <span className="font-semibold text-[#2563ff]">
                     {e.currency || "LKR"} {formatAmount(e.amount_used ?? e.final_total_amount)}
@@ -111,55 +124,55 @@ export default function DerivationTrace({
           </div>
         </div>
 
-        {/* Step 3 — Computation */}
+        {/* Step 3 — How we calculated */}
         <div>
-          <StepBadge step={3} label="Computation" />
+          <StepBadge step={3} label={L("How we calculated", "අප ගණනය කළ ආකාරය")} />
           <div className="ml-10 mt-2 rounded-[12px] border border-[#e2e8f0] bg-white px-4 py-3 text-[13px] text-[#334155]">
             <p>
-              <span className="font-semibold">Operation:</span>{" "}
-              {opLabel[questionType] || "Aggregate"}
+              <span className="font-semibold">{L("What we did:", "අප කළේ:")}</span>{" "}
+              {opLabel[questionType] || L("Combined the matching documents", "ගැළපෙන ලේඛන එකතු කළා")}
             </p>
             {docCount > 0 && (
               <p className="mt-1">
-                <span className="font-semibold">Formula:</span>{" "}
+                <span className="font-semibold">{L("Total:", "එකතුව:")}</span>{" "}
                 {currencies.map((c) => {
                   const cSum = evidence
                     .filter((e) => (e.currency || "LKR") === c)
                     .reduce((s, e) => s + Number(e.amount_used ?? e.final_total_amount ?? 0), 0);
                   return (
-                    <span key={c} className="mr-3 font-mono text-[#0f172a]">
+                    <span key={c} className="mr-3 font-semibold text-[#0f172a]">
                       {c} {formatAmount(cSum)}
                     </span>
                   );
                 })}
               </p>
             )}
-            {Object.keys(metrics).length > 0 && (
+            {visibleMetrics.length > 0 && (
               <div className="mt-3 border-t border-[#e2e8f0] pt-3">
-                <p className="font-semibold">Query metrics:</p>
+                <p className="font-semibold">{L("Details:", "විස්තර:")}</p>
                 <ul className="mt-1 space-y-0.5">
-                  {Object.entries(metrics)
-                    .filter(([k]) => !["user_id"].includes(k))
-                    .map(([k, v]) => (
-                      <li key={k} className="text-[12px]">
-                        <span className="text-[#64748b]">{k}:</span>{" "}
-                        <span className="font-medium text-[#0f172a]">{String(v)}</span>
-                      </li>
-                    ))}
+                  {visibleMetrics.map(([k, v]) => (
+                    <li key={k} className="text-[12px]">
+                      <span className="text-[#64748b]">{metricLabel(k, lang)}:</span>{" "}
+                      <span className="font-medium text-[#0f172a]">{metricValue(k, v, lang)}</span>
+                    </li>
+                  ))}
                 </ul>
               </div>
             )}
           </div>
         </div>
 
-        {/* Step 4 — Answer generation */}
+        {/* Step 4 — Your answer */}
         <div>
-          <StepBadge step={4} label="Answer Generation" />
+          <StepBadge step={4} label={L("Your answer", "ඔබගේ පිළිතුර")} />
           <div className="ml-10 mt-2 rounded-[12px] border border-[#e2e8f0] bg-white px-4 py-3 text-[13px] text-[#334155]">
             {docCount > 0 ? (
               <p>
-                Answer grounded in {docCount} document{docCount !== 1 ? "s" : ""}.
-                Total: <span className="font-mono font-semibold text-[#0f172a]">
+                {L("Based on", "පදනම් වී ඇත්තේ")} {docCount}{" "}
+                {docCount === 1 ? L("of your documents.", "ඔබගේ ලේඛනයක් මත.") : L("of your documents.", "ඔබගේ ලේඛන මත.")}{" "}
+                {L("Total:", "එකතුව:")}{" "}
+                <span className="font-semibold text-[#0f172a]">
                   {currencies.map((c) => `${c} ${formatAmount(
                     evidence.filter(e => (e.currency || "LKR") === c)
                       .reduce((s, e) => s + Number(e.amount_used ?? e.final_total_amount ?? 0), 0)
@@ -168,11 +181,13 @@ export default function DerivationTrace({
               </p>
             ) : (
               <p className="text-amber-700">
-                No documents contributed to this answer. The answer reflects an empty result set.
+                {L("No documents matched, so there is nothing to total.",
+                   "ලේඛන කිසිවක් නොගැළපුණි, එබැවින් එකතු කිරීමට කිසිවක් නැත.")}
               </p>
             )}
             <p className="mt-2 text-[12px] text-[#64748b]">
-              Source: tenant-isolated Postgres (FinancialDocument + LineItem tables)
+              {L("Based only on your own saved documents — every figure is traceable to a document above.",
+                 "ඔබගේ සුරැකි ලේඛන මත පමණක් පදනම්ව — සෑම අගයක්ම ඉහත ලේඛනයකට සම්බන්ධ කළ හැක.")}
             </p>
           </div>
         </div>
@@ -183,8 +198,9 @@ export default function DerivationTrace({
         <div className="mt-4 flex items-start gap-2 rounded-[12px] border border-amber-200 bg-amber-50 px-4 py-3 text-[13px] text-amber-700">
           <span className="material-symbols-outlined text-[16px]">warning</span>
           <span>
-            <strong>Low confidence:</strong> No documents matched this query. The answer
-            may be a fallback estimate. Verify the company name or add documents.
+            <strong>{L("Please check:", "කරුණාකර පරීක්ෂා කරන්න:")}</strong>{" "}
+            {L("No documents matched this question. Verify the company name or add documents.",
+               "මෙම ප්‍රශ්නයට ලේඛන කිසිවක් නොගැළපුණි. සමාගම් නම තහවුරු කරන්න හෝ ලේඛන එක් කරන්න.")}
           </span>
         </div>
       )}
