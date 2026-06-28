@@ -9,6 +9,7 @@ import ProvenancePanel, { type ArithmeticJson } from "@/components/ui/Provenance
 import BboxOverlayViewer from "@/components/ui/BboxOverlayViewer";
 import { AppLanguage, getStoredLanguage, ui } from "@/lib/i18n";
 import { addNotification } from "@/lib/notifications";
+import { humanizeFlow } from "@/lib/humanize";
 
 const BACKEND_URL = "http://127.0.0.1:8000";
 
@@ -577,13 +578,13 @@ export default function AnalysisDetailPage() {
                         onChange={(e) => updateField("flow_type", e.target.value)}
                         className="ml-2 rounded border border-slate-200 px-2 py-1 text-[13px]"
                       >
-                        <option value="unknown">unknown</option>
-                        <option value="payable">payable</option>
-                        <option value="receivable">receivable</option>
-                        <option value="cash_inflow">cash inflow</option>
-                        <option value="cash_outflow">cash outflow</option>
+                        <option value="unknown">{lang === "si" ? "නොදනී" : "Unknown"}</option>
+                        <option value="payable">{humanizeFlow("payable", lang)}</option>
+                        <option value="receivable">{humanizeFlow("receivable", lang)}</option>
+                        <option value="cash_inflow">{humanizeFlow("cash_inflow", lang)}</option>
+                        <option value="cash_outflow">{humanizeFlow("cash_outflow", lang)}</option>
                       </select>
-                    ) : target.flow_type || "NULL"}
+                    ) : (target.flow_type && target.flow_type !== "NULL" ? humanizeFlow(target.flow_type, lang) : "—")}
                     <br />
                     <span className="font-semibold text-[#0f172a]">{t.categoryLabel}:</span>{" "}
                     {(() => {

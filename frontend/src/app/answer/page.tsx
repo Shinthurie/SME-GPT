@@ -7,6 +7,7 @@ import BottomNav from "@/components/layout/BottomNav";
 import LanguageSwitcher from "@/components/layout/LanguageSwitcher";
 import DerivationTrace from "@/components/ui/DerivationTrace";
 import { AppLanguage, getStoredLanguage, ui } from "@/lib/i18n";
+import { isHiddenMetric, metricLabel, metricValue, humanizeFlow } from "@/lib/humanize";
 
 const BACKEND_URL = "http://127.0.0.1:8000";
 
@@ -108,8 +109,9 @@ export default function AnswerPage() {
 
   const filteredMetrics = useMemo(() => {
     const metrics = result?.metrics || {};
-    const hiddenKeys = new Set(["user_id"]);
-    return Object.entries(metrics).filter(([key]) => !hiddenKeys.has(key));
+    // Drop internal/technical metrics (operation, question_type, engine, …) so
+    // the SME owner only sees plain-language figures.
+    return Object.entries(metrics).filter(([key]) => !isHiddenMetric(key));
   }, [result]);
 
   const handleFollowUp = async () => {
@@ -434,9 +436,9 @@ export default function AnswerPage() {
               key={key}
               className="rounded-[14px] border border-slate-200 px-4 py-3"
             >
-              <p className="text-[11px] text-[#94a3b8]">{key}</p>
+              <p className="text-[11px] text-[#94a3b8]">{metricLabel(key, lang)}</p>
               <p className="mt-1 text-[15px] font-semibold text-[#0f172a]">
-                {formatValue(value)}
+                {metricValue(key, value, lang)}
               </p>
             </div>
           ))
@@ -493,7 +495,7 @@ export default function AnswerPage() {
                           <p className="text-[13px] text-[#334155]"><span className="font-semibold">Order ID:</span> {item.order_id}</p>
                           <p className="text-[13px] text-[#334155]"><span className="font-semibold">Company:</span> {item.company_name}</p>
                           <p className="text-[13px] text-[#334155]"><span className="font-semibold">Supplier:</span> {item.supplier_name}</p>
-                          <p className="text-[13px] text-[#334155]"><span className="font-semibold">Flow Type:</span> {item.flow_type}</p>
+                          <p className="text-[13px] text-[#334155]"><span className="font-semibold">{t.flowTypeLabel}:</span> {humanizeFlow(item.flow_type, lang)}</p>
                           <p className="text-[13px] text-[#334155]"><span className="font-semibold">Currency:</span> {formatValue(item.currency)}</p>
                           <p className="text-[13px] text-[#334155]"><span className="font-semibold">Final Total:</span> {formatValue(item.final_total_amount)}</p>
                           <p className="text-[13px] text-[#334155]"><span className="font-semibold">Payable Amount:</span> {formatValue(item.payable_amount)}</p>
@@ -615,6 +617,7 @@ export default function AnswerPage() {
                     (result.metrics?.question_type as string) || "summary"
                   }
                   companyName={result.company_name}
+                  lang={lang}
                 />
               </div>
             )}
