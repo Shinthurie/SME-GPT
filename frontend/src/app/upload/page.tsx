@@ -9,6 +9,7 @@ import ThemeToggle from "@/components/layout/ThemeToggle";
 import { AppLanguage, getStoredLanguage, ui } from "@/lib/i18n";
 import { addNotification } from "@/lib/notifications";
 import { getSession } from "@/lib/auth";
+import { otherPartyName } from "@/lib/format";
 
 type PreviewItem = {
   description: string;
@@ -169,7 +170,10 @@ export default function UploadPage() {
   const [activeStep, setActiveStep] = useState(0);
   const [preview, setPreview] = useState<PreviewData | null>(null);
   const [error, setError] = useState("");
-  const [successMessage, setSuccessMessage] = useState("");
+  // After a successful save we show a "what next?" card instead of silently
+  // resetting — lets the user query, view the doc, or keep uploading.
+  const [savedDoc, setSavedDoc] = useState<{ id: string; title: string } | null>(null);
+  const [uploadCount, setUploadCount] = useState(0);
   const [sessionId, setSessionId] = useState("");
   const [showDuplicateWarning, setShowDuplicateWarning] = useState(false);
   const [duplicateMessage, setDuplicateMessage] = useState("");
@@ -350,10 +354,10 @@ export default function UploadPage() {
 
       if (!res.ok || !data.success) throw new Error(data.message || "Save failed.");
 
-      setSuccessMessage(`Saved successfully. Document ID: ${data.document_id}`);
+      const docId = data.document_id ?? "";
+      const savedTitle = otherPartyName({ supplier_name: preview.supplier_name }) || docId;
 
       // Fire notification so the bell icon lights up
-      const docId = data.document_id ?? "";
       addNotification({
         title: lang === "si" ? "ලේඛනය සාර්ථකව සුරකිනු ලැබිණි" : "Document Saved",
         message: lang === "si"
@@ -363,6 +367,8 @@ export default function UploadPage() {
       });
 
       resetForm();
+      setSavedDoc({ id: docId, title: savedTitle });
+      setUploadCount((c) => c + 1);
     } catch (err) {
       if (err instanceof Error && err.name === "AbortError") {
         setError("Save timed out after 60 s. Please check your connection and try again.");
@@ -481,7 +487,7 @@ export default function UploadPage() {
             onChange={(e) => {
               const f = e.target.files?.[0] || null;
               setSelectedFile(f); setPreview(null); setError("");
-              setSuccessMessage(""); setSessionId(""); setShowDuplicateWarning(false);
+              setSavedDoc(null); setSessionId(""); setShowDuplicateWarning(false);
               setShowAmountMismatch(false);
             }}
           />
@@ -596,29 +602,83 @@ export default function UploadPage() {
             </div>
           )}
 
-          {successMessage && (
-            <div className="mt-5 rounded-xl px-4 py-3 text-[13px] text-emerald-700"
-              style={{ background: "rgba(22,163,74,0.08)", border: "1px solid rgba(22,163,74,0.2)" }}>
-              {successMessage}
+          {/* Post-save "what next?" card */}
+          {savedDoc && (
+            <div
+              className="mt-6 rounded-2xl p-6 text-center"
+              style={{ background: "var(--surface)", border: "1px solid var(--border)" }}
+            >
+              <div
+                className="mx-auto flex h-12 w-12 items-center justify-center rounded-full"
+                style={{ background: "rgba(22,163,74,0.12)" }}
+              >
+                <span className="material-symbols-outlined text-[26px]" style={{ color: "#16a34a" }}>
+                  check_circle
+                </span>
+              </div>
+              <p className="mt-3 text-[17px] font-extrabold text-[var(--text-1)]">
+                {lang === "si" ? "ලේඛනය සුරැකිණි" : "Document saved"}
+              </p>
+              <p className="mt-1 text-[13px]">
+                <span className="font-semibold text-[var(--text-1)]">{savedDoc.title}</span>
+                <span className="text-[var(--text-3)]"> · {savedDoc.id}</span>
+              </p>
+
+              <div className="mt-5 flex flex-col gap-2.5 sm:flex-row sm:justify-center">
+                <button
+                  onClick={() => router.push("/query")}
+                  className="flex items-center justify-center gap-2 rounded-2xl px-5 py-3 text-[14px] font-bold text-white transition hover:opacity-90"
+                  style={{ background: "var(--brand)" }}
+                >
+                  <span className="material-symbols-outlined text-[18px]">chat</span>
+                  {lang === "si" ? "ප්‍රශ්නයක් අසන්න" : "Ask a question"}
+                </button>
+                <button
+                  onClick={() => router.push(`/analysis/${savedDoc.id}`)}
+                  className="flex items-center justify-center gap-2 rounded-2xl px-5 py-3 text-[14px] font-bold transition hover:opacity-80"
+                  style={{ background: "var(--surface)", border: "1px solid var(--border)", color: "var(--text-1)" }}
+                >
+                  <span className="material-symbols-outlined text-[18px]">visibility</span>
+                  {lang === "si" ? "ලේඛනය බලන්න" : "View document"}
+                </button>
+                <button
+                  onClick={() => setSavedDoc(null)}
+                  className="flex items-center justify-center gap-2 rounded-2xl px-5 py-3 text-[14px] font-bold transition hover:opacity-80"
+                  style={{ background: "var(--surface)", border: "1px solid var(--border)", color: "var(--text-2)" }}
+                >
+                  <span className="material-symbols-outlined text-[18px]">add</span>
+                  {lang === "si" ? "තවත් උඩුගත කරන්න" : "Upload another"}
+                </button>
+              </div>
+
+              {uploadCount > 1 && (
+                <p className="mt-4 text-[12px] text-[var(--text-3)]">
+                  {lang === "si"
+                    ? `මෙම සැසියේදී ලේඛන ${uploadCount}ක් සුරැකිණි`
+                    : `${uploadCount} documents saved this session`}
+                </p>
+              )}
             </div>
           )}
 
-          <button
-            onClick={
-              preview
-                ? () => previewRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
-                : handleProcess
-            }
-            disabled={!selectedFile || isProcessing}
-            className="mt-6 w-full rounded-2xl py-4 text-[15px] font-bold text-white transition hover:opacity-90 disabled:opacity-50"
-            style={{ background: preview ? "#16a34a" : "var(--brand)" }}
-          >
-            {isProcessing
-              ? friendlyProgress
-              : preview
-              ? t.extractionDone
-              : t.beginExtraction}
-          </button>
+          {!savedDoc && (
+            <button
+              onClick={
+                preview
+                  ? () => previewRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
+                  : handleProcess
+              }
+              disabled={!selectedFile || isProcessing}
+              className="mt-6 w-full rounded-2xl py-4 text-[15px] font-bold text-white transition hover:opacity-90 disabled:opacity-50"
+              style={{ background: preview ? "#16a34a" : "var(--brand)" }}
+            >
+              {isProcessing
+                ? friendlyProgress
+                : preview
+                ? t.extractionDone
+                : t.beginExtraction}
+            </button>
+          )}
 
           {/* Preview */}
           {preview && (
