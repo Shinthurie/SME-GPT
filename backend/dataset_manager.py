@@ -596,13 +596,16 @@ def get_record_by_id_for_user(user_id: str, document_id: str):
 def generate_document_id(document_type: str) -> str:
     prefix = get_prefix_for_document_type(document_type)
     offset = len(prefix) + 1  # 1-based SUBSTRING offset for PostgreSQL
+    # NOTE: deliberately does NOT filter "deletedAt IS NULL". Soft-deleted rows
+    # still physically occupy the (tenantId, documentId) unique key, so the next
+    # number must account for them — otherwise deleting the highest doc and
+    # re-uploading regenerates the same id and the INSERT hits a UniqueViolation.
     with get_conn() as conn:
         cur = conn.cursor()
         cur.execute(
             'SELECT MAX(CAST(SUBSTRING("documentId" FROM %s) AS INTEGER)) '
             'FROM "FinancialDocument" '
             'WHERE "documentId" LIKE %s '
-            'AND "deletedAt" IS NULL '
             "AND SUBSTRING(\"documentId\" FROM %s) ~ '^[0-9]+$'",
             (offset, f"{prefix}%", offset),
         )
