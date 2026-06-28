@@ -571,6 +571,9 @@ def extract_named_entity(question: str):
     q = normalize_text(question)
 
     patterns = [
+        # "how much do we owe TechRent LK" / "owe to TechRent" — party follows "owe"
+        r"\bowe\s+(?:to\s+)?([a-zA-Z0-9 .,&'-]+)",
+        r"\bpay\s+(?:to\s+)?([a-zA-Z0-9 .,&'-]+)",
         r"\bfrom\s+([a-zA-Z0-9 .,&'-]+)",
         r"\bby\s+([a-zA-Z0-9 .,&'-]+)",
         r"\bfor\s+([a-zA-Z0-9 .,&'-]+)",
@@ -580,7 +583,10 @@ def extract_named_entity(question: str):
     stop_words = {
         "company", "invoice", "invoices", "receipt", "receipts", "po", "dn",
         "payable", "receivable", "amount", "total", "documents", "document",
-        "we", "have", "what", "is", "the", "a", "an"
+        "we", "have", "what", "is", "the", "a", "an",
+        # verbs/fillers that can precede the captured party token
+        "how", "much", "do", "does", "owe", "owes", "owed", "pay", "to",
+        "us", "me", "our", "still", "all", "much",
     }
 
     for pattern in patterns:
@@ -600,8 +606,20 @@ def filter_named_entity(records: pd.DataFrame, entity_name: str):
     if not target:
         return records.copy()
 
-    company_match = records["company_name"].apply(normalize_text).str.contains(target, na=False)
-    supplier_match = records["supplier_name"].apply(normalize_text).str.contains(target, na=False)
+    # Match space/punctuation-insensitively too, so "techrentlk" matches the
+    # stored supplier "TechRent LK" (and vice-versa).
+    target_compact = re.sub(r"[^a-z0-9]", "", target)
+
+    def _match(col: pd.Series) -> pd.Series:
+        norm = col.apply(normalize_text)
+        m = norm.str.contains(re.escape(target), na=False)
+        if target_compact:
+            compact = norm.str.replace(r"[^a-z0-9]", "", regex=True)
+            m = m | compact.str.contains(target_compact, na=False)
+        return m
+
+    company_match = _match(records["company_name"])
+    supplier_match = _match(records["supplier_name"])
 
     filtered = records[company_match | supplier_match].copy()
     return filtered
