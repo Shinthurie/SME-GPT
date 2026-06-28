@@ -174,6 +174,17 @@ export default function UploadPage() {
   // resetting — lets the user query, view the doc, or keep uploading.
   const [savedDoc, setSavedDoc] = useState<{ id: string; title: string } | null>(null);
   const [uploadCount, setUploadCount] = useState(0);
+
+  // Local object-URL for a visual thumbnail of the picked file (image or PDF),
+  // shown before the user starts extraction. Revoked when the file changes.
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const isPdf = selectedFile?.type.includes("pdf") ?? false;
+  useEffect(() => {
+    if (!selectedFile) { setPreviewUrl(null); return; }
+    const url = URL.createObjectURL(selectedFile);
+    setPreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [selectedFile]);
   const [sessionId, setSessionId] = useState("");
   const [showDuplicateWarning, setShowDuplicateWarning] = useState(false);
   const [duplicateMessage, setDuplicateMessage] = useState("");
@@ -540,11 +551,44 @@ export default function UploadPage() {
 
           {selectedFile && (
             <div className="mt-4 rounded-2xl p-4" style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
+              {/* Visual thumbnail — see the document before extracting */}
+              <div
+                className="mb-3 flex items-center justify-center overflow-hidden rounded-xl"
+                style={{ background: "var(--bg)", border: "1px solid var(--border)" }}
+              >
+                {previewUrl && !isPdf ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={previewUrl}
+                    alt={selectedFile.name}
+                    className="max-h-[260px] w-full object-contain"
+                  />
+                ) : previewUrl && isPdf ? (
+                  <object
+                    data={`${previewUrl}#toolbar=0&navpanes=0&scrollbar=0&view=FitH`}
+                    type="application/pdf"
+                    className="pointer-events-none h-[260px] w-full"
+                  >
+                    <div className="flex h-[260px] w-full items-center justify-center">
+                      <span className="material-symbols-outlined text-[40px]" style={{ color: "var(--brand-mid)" }}>
+                        picture_as_pdf
+                      </span>
+                    </div>
+                  </object>
+                ) : (
+                  <div className="flex h-[140px] w-full items-center justify-center">
+                    <span className="material-symbols-outlined text-[40px]" style={{ color: "var(--brand-mid)" }}>
+                      {isPdf ? "picture_as_pdf" : "image"}
+                    </span>
+                  </div>
+                )}
+              </div>
+
               <div className="flex items-center gap-4">
                 <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl"
                   style={{ background: "var(--brand-tint)", color: "var(--brand-mid)" }}>
                   <span className="material-symbols-outlined text-[22px]">
-                    {selectedFile.type.includes("pdf") ? "picture_as_pdf" : "image"}
+                    {isPdf ? "picture_as_pdf" : "image"}
                   </span>
                 </div>
                 <div className="min-w-0 flex-1">
