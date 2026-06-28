@@ -458,7 +458,7 @@ export default function AnalysisDetailPage() {
                 <div className="rounded-[16px] bg-white p-3">
                   {target.image_url ? (
                     <BboxOverlayViewer
-                      imageUrl={`${BACKEND_URL}${target.image_url}`}
+                      imageUrl={/^https?:\/\//.test(target.image_url) ? target.image_url : `${BACKEND_URL}${target.image_url}`}
                       documentId={target.document_id}
                       spatialChunksJson={target.spatial_chunks_json}
                       activeChunkId={activeChunkId}
