@@ -646,10 +646,15 @@ def merge_edited_preview_into_fields(original_fields: dict, edited_preview: dict
 # DOCUMENT FILE HELPERS
 # =========================
 def get_saved_image_url(document_id: str):
+    # Fast path: locally cached file (same machine that uploaded it).
     for ext in [".png", ".jpg", ".jpeg", ".webp"]:
         path = SAVED_DOCS_DIR / f"{document_id}{ext}"
         if path.exists():
             return f"/saved-documents/{path.name}"
+    # Cross-machine: fall back to a signed Supabase Storage URL (absolute).
+    import storage_client
+    if storage_client.is_enabled():
+        return storage_client.get_signed_url(document_id)
     return None
 
 
@@ -668,6 +673,13 @@ def save_document_image_from_session(session_meta: dict, document_id: str):
 
     dst = SAVED_DOCS_DIR / f"{document_id}{ext}"
     shutil.copy(src_path, dst)
+
+    # Persist to Supabase Storage so the image is viewable from any machine that
+    # shares this database (best-effort; the local copy remains as a fast cache).
+    import storage_client
+    if storage_client.is_enabled():
+        storage_client.upload_image(dst, document_id)
+
     return f"/saved-documents/{dst.name}"
 
 
