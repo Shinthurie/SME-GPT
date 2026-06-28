@@ -2,6 +2,20 @@ import os
 import requests
 
 
+# Which preprocessing variants to OCR. Colab runs OCR on every variant sent, so
+# fewer variants = proportionally faster. "orig" is always sent (the server
+# requires it). Extras default to the binarized "P" (printed-friendly) variant.
+# Override with OCR_VARIANTS, e.g. "orig" (fastest, ~3x) or "orig,p_img,m_img" (max accuracy).
+_VARIANT_FIELD_TO_KEY = {"p_img": "P", "m_img": "M"}
+
+
+def _selected_extra_variants() -> list[str]:
+    raw = os.getenv("OCR_VARIANTS", "orig,p_img")
+    fields = {v.strip().lower() for v in raw.split(",") if v.strip()}
+    # orig is mandatory and handled separately; keep only valid extras, preserve order
+    return [f for f in ("p_img", "m_img") if f in fields]
+
+
 def send_images_to_colab_ocr(processed_pages: list[dict], colab_url: str = None) -> dict:
     final_colab_url = (colab_url or os.getenv("COLAB_OCR_URL", "")).strip()
 
@@ -10,20 +24,29 @@ def send_images_to_colab_ocr(processed_pages: list[dict], colab_url: str = None)
 
     url = final_colab_url.rstrip("/") + "/ocr"
 
+    extra_variants = _selected_extra_variants()
+    print(
+        f"[COLAB-OCR] sending variants per page: {['orig'] + extra_variants} "
+        f"({len(extra_variants) + 1} OCR pass(es)/page)",
+        flush=True,
+    )
+
     opened_files = []
     multipart_files = []
 
     try:
         for idx, page in enumerate(processed_pages, start=1):
             orig_file = open(page["orig"], "rb")
-            p_file = open(page["P"], "rb")
-            m_file = open(page["M"], "rb")
-
-            opened_files.extend([orig_file, p_file, m_file])
-
+            opened_files.append(orig_file)
             multipart_files.append(("orig", (f"page_{idx:03d}_orig.png", orig_file, "image/png")))
-            multipart_files.append(("p_img", (f"page_{idx:03d}_p.png", p_file, "image/png")))
-            multipart_files.append(("m_img", (f"page_{idx:03d}_m.png", m_file, "image/png")))
+
+            for field in extra_variants:
+                variant_key = _VARIANT_FIELD_TO_KEY[field]
+                vfile = open(page[variant_key], "rb")
+                opened_files.append(vfile)
+                multipart_files.append(
+                    (field, (f"page_{idx:03d}_{field}.png", vfile, "image/png"))
+                )
 
         response = requests.post(
             url,

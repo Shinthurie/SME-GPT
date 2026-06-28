@@ -58,7 +58,7 @@ def test_extractor_uses_json_format(monkeypatch):
         captured["format"] = format
         return "{}"
 
-    monkeypatch.setattr(ex, "call_llm", fake_call_llm)
+    monkeypatch.setattr(ex, "call_pipeline_llm", fake_call_llm)
     ex.call_ollama("some prompt")
 
     assert captured.get("format") == "json"
