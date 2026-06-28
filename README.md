@@ -26,7 +26,10 @@ Full detail: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 ## Tech stack
 
 Python 3.12 · FastAPI · Next.js 16 / React 19 / TypeScript / Tailwind 4 · **Supabase Postgres +
-pgvector** · **DeepSeek API** · **Surya OCR** (standalone, pluggable) · Docker.
+pgvector** (Prisma 7 on the frontend, psycopg on the backend) · **Ollama** (local Llama 3 / a
+fine-tuned GGUF, routed via `llm_client.py`) · **Surya OCR** (remote via Colab, local fallback) ·
+`multilingual-e5-small` embeddings · **Supabase Storage** for document images · JWT + bcrypt auth
+with optional 2FA · Docker.
 
 ---
 
@@ -47,14 +50,25 @@ pgvector** · **DeepSeek API** · **Surya OCR** (standalone, pluggable) · Docke
 
 ## Quick start
 
+### Ollama (required before the backend)
+```bash
+ollama serve
+ollama pull llama3          # or import a fine-tuned GGUF and set OLLAMA_MODEL to its name
+```
+
 ### Backend
 ```bash
 cd backend
 python -m venv venv && source venv/Scripts/activate   # Windows Git Bash
 pip install -r requirements.txt
-cp .env.example .env        # fill in your keys
+cp .env.example .env        # fill in your keys (DATABASE_URL, JWT_SECRET, OLLAMA_*, SUPABASE_*)
 uvicorn app:app --reload --port 8000
 ```
+
+> **Document images** are uploaded to a Supabase Storage bucket (default name `documents`) and
+> served via short-lived signed URLs, so they display on any machine sharing the database. Set
+> `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, and `SUPABASE_STORAGE_BUCKET` in `backend/.env`.
+> If unset, images fall back to the backend's local `saved_documents/` folder (single-machine only).
 
 ### Frontend
 ```bash
@@ -73,8 +87,26 @@ Open `surya_ocr_colab.ipynb` in Google Colab, run all cells, copy the ngrok URL 
 
 ## Status
 
-Migrating from a prototype (CSV-backed) to the professional 4-component system above.
-See [docs/ROADMAP.md](docs/ROADMAP.md) for current progress.
+Working full-stack application on Supabase Postgres. The 4-component pipeline (C1–C4), the
+two-tier NL query engine (PAL + legacy), RBAC, audit logging, 2FA, GDPR export/delete, PWA, and
+the PO/DN/invoice workflow are all live. See [docs/ROADMAP.md](docs/ROADMAP.md) for the remaining
+roadmap (charts, supplier directory, cross-document comparison UI).
+
+## Recent changes
+
+Most recent first. See the git history / merged PRs for full detail.
+
+- **Document images via Supabase Storage** — images now upload to the `documents` bucket on save
+  and render anywhere through signed URLs (previously local-disk only, so they never showed on a
+  second machine). New `backend/storage_client.py`; graceful local fallback.
+- **Overdue payment alerts (IT-23)** — `GET /overdue-alerts` flags past-due / aging payables,
+  receivables and invoices; the dashboard surfaces them as notifications (deduped per document).
+- **PO approval workflow (IT-27)** — one-click Approve / Reject on the analysis page writing the
+  real `po_status` + `approved_by` (bilingual).
+- **Repository upload-date filter (IT-21)** — `GET /documents?from=&to=` with a date picker.
+- **Ollama JSON output mode (IT-28)** — extraction uses `format="json"` to cut JSON parse failures.
+- **Full Sinhala coverage + refined dark mode** — every page now honours the EN/SI toggle
+  (`frontend/src/lib/i18n.ts`, parity-checked); neutral dark-mode palette replacing the old one.
 
 ## Team
 
