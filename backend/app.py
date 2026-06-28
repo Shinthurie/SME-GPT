@@ -823,6 +823,9 @@ class UpdateDocumentRequest(BaseModel):
     status: Optional[str] = None
     language: Optional[str] = None
     items: Optional[List[dict]] = None
+    # IT-27 — PO approval workflow
+    po_status: Optional[str] = None
+    approved_by: Optional[str] = None
 
 
 # =========================
@@ -1442,6 +1445,19 @@ def dashboard_summary(authorization: str = Header(default=None)):
         "ready_for_query_count": summary.get("ready_for_query_count", 0),
         "mismatch_alerts": mismatch_docs,
     }
+
+
+@app.get("/overdue-alerts")
+def overdue_alerts(authorization: str = Header(default=None), days: int = Query(default=30, ge=1, le=365)):
+    """IT-23: payables/receivables/invoices that are past due or aging beyond
+    `days` days with no settlement. Tenant-scoped; deterministic (no LLM)."""
+    user_id = get_current_user_id(authorization)
+    from dataset_manager import parse_record_for_output
+    from overdue_alerts import compute_overdue_alerts
+
+    records = [parse_record_for_output(r) for r in load_records(user_id=user_id)]
+    alerts = compute_overdue_alerts(records, days_threshold=days)
+    return {"success": True, "count": len(alerts), "alerts": alerts}
 
 
 @app.post("/ask-query")
