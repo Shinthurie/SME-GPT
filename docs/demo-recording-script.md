@@ -22,6 +22,11 @@ Target length: **3–4 minutes.** Caption cards: ~3 seconds each, big readable f
 - [ ] Log in once beforehand; start the recording already on the dashboard.
 - [ ] **Seed data:** have a few documents already saved (a couple of invoices, a PO, a receipt,
       one with a past due date so the overdue alert fires). Keep the originals handy to re-upload.
+      Make sure **one supplier (e.g. "TechRent LK") has a payable**, so the supplier-specific
+      follow-up in Scene 7B returns just that supplier.
+- [ ] **Warm-up query:** ask one question *before* you start recording. The very first question
+      warms up the assistant (a few seconds, once); every question after that is fast. Record the
+      real take after the warm-up so there's no awkward wait.
 - [ ] Have **one clean sample invoice** (PDF or photo) ready to upload live.
 - [ ] Have **one Sinhala document** (or a Sinhala query typed out) ready, to prove bilingual support.
 - [ ] Set the language to **English** to start; you'll switch to Sinhala near the end.
@@ -94,6 +99,9 @@ Target length: **3–4 minutes.** Caption cards: ~3 seconds each, big readable f
 > AI concept: **provenance / explainable AI** — bbox overlay + field→source mapping (C2 spatial
 > chunks, click-to-source). This is a key research differentiator.
 
+> **Prep note:** document images are now stored in the cloud, so they display on any machine. If an
+> *older* document shows no preview image, re-upload it once (it'll save the image and the boxes).
+
 ---
 
 ## Scene 6 — Ask a question in plain language (30 s) ★ core AI
@@ -121,6 +129,22 @@ Target length: **3–4 minutes.** Caption cards: ~3 seconds each, big readable f
 
 > AI concept: **explainable, grounded answering** — the derivation trace + evidence. Note the
 > jargon-free wording (we deliberately hide internal terms like operations/field names).
+
+---
+
+## Scene 7B — Keep the conversation going (20 s) ★ core AI
+
+- **Action:** in the **"Ask a Follow-up"** box on the Answer page, type a narrower question about
+  one supplier, e.g. *"How much do I owe TechRent LK?"* and submit.
+- **Caption:** "Ask a follow-up — just like a chat."
+- **Action:** the page now shows a **conversation thread** — your first question and answer stay
+  on screen, with the new answer below. Point out that the new answer is **only that supplier's
+  amount**, not the full total.
+- **Caption:** "It keeps the whole conversation — and can zoom in on a single supplier."
+
+> AI concept: **conversational follow-up** with the running thread kept on screen, plus
+> **named-entity (party) filtering** — the question "how much do we owe <supplier>" is matched to
+> that supplier's documents and only their balance is computed (still arithmetic-safe, deterministic).
 
 ---
 
@@ -175,6 +199,7 @@ Tick these off when reviewing the final cut — the video should visibly demonst
 - [ ] **Layout-aware structuring & provenance** (Scene 5) — boxes + click-to-source.
 - [ ] **Neuro-symbolic QA (plan → validate → compute)** (Scenes 6–7) — arithmetic-safe answers.
 - [ ] **Explainable derivation trace + evidence** (Scene 7) — shows its working.
+- [ ] **Conversational follow-up + supplier filtering** (Scene 7B) — keeps the thread, focuses on one party.
 - [ ] **Cross-document relationship / discrepancy** (Scene 8).
 - [ ] **Bilingual understanding (Sinhala + English)** (Scene 9).
 - [ ] **Overdue / insight detection** (Scene 2).
