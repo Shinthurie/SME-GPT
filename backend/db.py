@@ -54,7 +54,19 @@ def _init_pool():
             conninfo=url,
             min_size=1,
             max_size=8,
-            kwargs={"row_factory": dict_row, "prepare_threshold": None},
+            kwargs={
+                "row_factory": dict_row,
+                "prepare_threshold": None,
+                # Bound new-connection time so a dead pooler doesn't hang a request.
+                "connect_timeout": 10,
+                # TCP keepalives — let the OS detect a silently-dropped Supabase
+                # pooler connection in ~20s instead of blocking until the 60s+
+                # app/socket timeout. Pairs with run_with_retry for fast recovery.
+                "keepalives": 1,
+                "keepalives_idle": 15,
+                "keepalives_interval": 5,
+                "keepalives_count": 3,
+            },
             open=True,
             # Supabase's PgBouncer closes idle connections, so a pooled
             # connection can be silently dead by the next request. check_connection
@@ -76,6 +88,38 @@ def _init_pool():
         print(f"[DB] Pool init failed ({exc}), using per-request connections.", flush=True)
 
 _init_pool()
+
+
+# Errors that mean "the connection died" rather than "the query was wrong".
+# These are safe to retry on a fresh connection.
+_RETRYABLE_DB_ERRORS = (psycopg.OperationalError, psycopg.InterfaceError)
+
+
+def run_with_retry(fn, *, attempts: int = 2):
+    """Run a read operation, retrying once if the pooled connection was aborted.
+
+    The connection health-check (check_connection) probes liveness at *checkout*,
+    but Supabase's PgBouncer / the network can still abort a connection in the
+    window between the probe and the actual query (seen as SSL SYSCALL error /
+    WSAECONNABORTED 10053). The pool discards the dead connection automatically,
+    so simply re-running the operation gets a fresh, healthy one.
+
+    `fn` MUST open its own `get_conn()` block (so the retry uses a new connection)
+    and MUST be idempotent — use only for reads, not for writes that may have
+    partially committed.
+    """
+    last_exc = None
+    for i in range(attempts):
+        try:
+            return fn()
+        except _RETRYABLE_DB_ERRORS as exc:
+            last_exc = exc
+            print(
+                f"[DB] connection aborted ({exc.__class__.__name__}: {exc}); "
+                f"retry {i + 1}/{attempts}",
+                flush=True,
+            )
+    raise last_exc
 
 
 @contextmanager

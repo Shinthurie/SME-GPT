@@ -14,6 +14,18 @@ OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3")
 # CPU inference on llama3 8B is slow — allow up to 10 min per call
 _TIMEOUT = int(os.getenv("OLLAMA_TIMEOUT_SECS", "600"))
 
+# ── DeepSeek (cloud) — used ONLY for the document-processing pipeline ─────────
+# (OCR correction + field extraction). Querying/answering stays on Ollama (the
+# finetuned model) via call_llm(). DeepSeek's API is OpenAI-compatible.
+DEEPSEEK_API_KEY  = os.getenv("DEEPSEEK_API_KEY", "").strip()
+DEEPSEEK_BASE_URL = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com").rstrip("/")
+DEEPSEEK_MODEL    = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
+_DEEPSEEK_TIMEOUT = int(os.getenv("DEEPSEEK_TIMEOUT_SECS", "120"))
+# Provider for the document pipeline: "deepseek" when a key is set, else "ollama".
+PIPELINE_PROVIDER = os.getenv(
+    "PIPELINE_LLM_PROVIDER", "deepseek" if DEEPSEEK_API_KEY else "ollama"
+).strip().lower()
+
 
 def call_llm(prompt: str, system: str = "", format: str | None = None) -> str:
     """
@@ -73,6 +85,56 @@ def call_llm(prompt: str, system: str = "", format: str | None = None) -> str:
         raise Exception(f"Ollama HTTP error: {e}. Response: {response.text}")
     except (KeyError, ValueError) as e:
         raise Exception(f"Unexpected Ollama response format: {e}")
+
+
+def _call_deepseek(prompt: str, system: str = "", format: str | None = None) -> str:
+    """Send a prompt to DeepSeek's OpenAI-compatible chat API. Raises on failure."""
+    messages = []
+    if system:
+        messages.append({"role": "system", "content": system})
+    messages.append({"role": "user", "content": prompt})
+
+    payload: dict = {
+        "model": DEEPSEEK_MODEL,
+        "messages": messages,
+        "temperature": 0,
+        "stream": False,
+    }
+    # DeepSeek JSON mode requires the word "json" to appear in the prompt/system;
+    # our extraction prompts already instruct the model to emit JSON.
+    if format == "json":
+        payload["response_format"] = {"type": "json_object"}
+
+    response = requests.post(
+        f"{DEEPSEEK_BASE_URL}/chat/completions",
+        json=payload,
+        headers={
+            "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+            "Content-Type": "application/json",
+        },
+        timeout=_DEEPSEEK_TIMEOUT,
+    )
+    response.raise_for_status()
+    return response.json()["choices"][0]["message"]["content"].strip()
+
+
+def call_pipeline_llm(prompt: str, system: str = "", format: str | None = None) -> str:
+    """LLM entry point for the document-processing pipeline (OCR correction +
+    field extraction). Routes to DeepSeek (cloud, fast) when configured, and
+    falls back to local Ollama on any failure or when no key is set.
+
+    Querying/answering does NOT use this — it stays on Ollama via call_llm()
+    so the finetuned query model remains in the loop.
+    """
+    if PIPELINE_PROVIDER == "deepseek" and DEEPSEEK_API_KEY:
+        try:
+            return _call_deepseek(prompt, system=system, format=format)
+        except Exception as exc:
+            print(
+                f"[LLM] DeepSeek call failed ({exc}); falling back to Ollama.",
+                flush=True,
+            )
+    return call_llm(prompt, system=system, format=format)
 
 
 def check_ollama_health() -> dict:

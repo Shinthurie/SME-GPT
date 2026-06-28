@@ -2,7 +2,7 @@ import json
 import os
 import re
 from llm_correction import clean_ocr_text
-from llm_client import call_llm
+from llm_client import call_pipeline_llm
 
 _EXTRACTION_SYSTEM = (
     "You are a financial document data extraction engine for Sri Lankan SME businesses. "
@@ -19,7 +19,7 @@ def call_ollama(prompt: str) -> str:
     preamble / markdown-fence noise that the regex scraping in extract_json_block()
     previously had to recover from, reducing JSON parse failures (IT-28).
     """
-    return call_llm(prompt, system=_EXTRACTION_SYSTEM, format="json")
+    return call_pipeline_llm(prompt, system=_EXTRACTION_SYSTEM, format="json")
 
 
 def extract_json_block(text: str) -> str:
