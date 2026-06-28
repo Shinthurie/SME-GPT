@@ -2,7 +2,7 @@ import os
 import re
 from pathlib import Path
 from symspellpy import SymSpell, Verbosity
-from llm_client import call_llm
+from llm_client import call_pipeline_llm
 
 _CORRECTION_SYSTEM = (
     "You are an OCR text correction assistant for financial documents from Sri Lanka. "
@@ -430,7 +430,7 @@ def dictionary_correct_text(text: str) -> str:
 
 def call_ollama(prompt: str) -> str:
     """Routes correction calls to local Ollama."""
-    return call_llm(prompt, system=_CORRECTION_SYSTEM)
+    return call_pipeline_llm(prompt, system=_CORRECTION_SYSTEM)
 
 
 def llm_refine_text(raw_text: str) -> str:

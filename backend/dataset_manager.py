@@ -20,7 +20,7 @@ from datetime import datetime, timedelta
 import pandas as pd
 from psycopg.types.json import Jsonb
 
-from db import get_conn, new_id
+from db import get_conn, new_id, run_with_retry
 
 INCOMING_JSON_DIR = "incoming_json"
 
@@ -551,22 +551,26 @@ def load_records(
         sql += " LIMIT %s OFFSET %s"
         params += [limit, offset]
 
-    with get_conn() as conn:
-        cur = conn.cursor()
-        cur.execute(sql, params)
-        docs = cur.fetchall()
-        if not docs:
-            return []
-        doc_ids = [d["id"] if isinstance(d, dict) else d[0] for d in docs]
-        cur.execute(
-            'SELECT * FROM "LineItem" WHERE "documentRef" = ANY(%s) ORDER BY "lineNo"',
-            (doc_ids,),
-        )
-        items_by_doc = {}
-        for li in cur.fetchall():
-            items_by_doc.setdefault(li["documentRef"], []).append(_li_to_item(li))
+    def _run():
+        with get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute(sql, params)
+            docs = cur.fetchall()
+            if not docs:
+                return []
+            doc_ids = [d["id"] if isinstance(d, dict) else d[0] for d in docs]
+            cur.execute(
+                'SELECT * FROM "LineItem" WHERE "documentRef" = ANY(%s) ORDER BY "lineNo"',
+                (doc_ids,),
+            )
+            items_by_doc = {}
+            for li in cur.fetchall():
+                items_by_doc.setdefault(li["documentRef"], []).append(_li_to_item(li))
 
-    return [_row_to_record(d, items_by_doc.get(d["id"], [])) for d in docs]
+        return [_row_to_record(d, items_by_doc.get(d["id"], [])) for d in docs]
+
+    # Read is idempotent — retry once if the pooled connection was aborted mid-query.
+    return run_with_retry(_run)
 
 
 def load_main_dataset(user_id: str = None) -> pd.DataFrame:
@@ -666,41 +670,48 @@ def _get_existing_columns(conn) -> set:
 
 
 def upsert_confirmed_record(data: dict, user_id: str):
-    duplicate = find_duplicate_record(data, user_id=user_id)
-    if duplicate:
-        return {"action": "duplicate_exists", "record": parse_record_for_output(duplicate)}
+    # Wrapped in run_with_retry so a connection aborted mid-write (Supabase pooler
+    # SSL EOF) recovers on a fresh connection. Idempotent: the duplicate check runs
+    # on every attempt, so a retry after a committed-but-aborted insert returns
+    # "duplicate_exists" instead of double-inserting.
+    def _run():
+        duplicate = find_duplicate_record(data, user_id=user_id)
+        if duplicate:
+            return {"action": "duplicate_exists", "record": parse_record_for_output(duplicate)}
 
-    record = normalize_record(data, user_id=user_id, force_generate_document_id=True)
-    doc_pk = new_id("fd")
+        record = normalize_record(data, user_id=user_id, force_generate_document_id=True)
+        doc_pk = new_id("fd")
 
-    all_values: dict = {"id": doc_pk}
-    for rec_key, db_col in RECORD_TO_DB.items():
-        all_values[db_col] = _record_to_db_value(rec_key, record.get(rec_key))
+        all_values: dict = {"id": doc_pk}
+        for rec_key, db_col in RECORD_TO_DB.items():
+            all_values[db_col] = _record_to_db_value(rec_key, record.get(rec_key))
 
-    items = normalize_items(json.loads(record.get("items_json", "[]") or "[]"))
+        items = normalize_items(json.loads(record.get("items_json", "[]") or "[]"))
 
-    with get_conn() as conn:
-        cur = conn.cursor()
+        with get_conn() as conn:
+            cur = conn.cursor()
 
-        # Only include columns that actually exist in the DB.
-        # This prevents "column X does not exist" errors when new columns are
-        # added to RECORD_TO_DB before the Supabase migration is run.
-        existing_cols = _get_existing_columns(conn)
-        if existing_cols:
-            db_values = {k: v for k, v in all_values.items()
-                         if k == "id" or k in existing_cols}
-        else:
-            db_values = all_values  # fallback: try full insert
+            # Only include columns that actually exist in the DB.
+            # This prevents "column X does not exist" errors when new columns are
+            # added to RECORD_TO_DB before the Supabase migration is run.
+            existing_cols = _get_existing_columns(conn)
+            if existing_cols:
+                db_values = {k: v for k, v in all_values.items()
+                             if k == "id" or k in existing_cols}
+            else:
+                db_values = all_values  # fallback: try full insert
 
-        columns = list(db_values.keys())
-        col_sql = ", ".join(f'"{c}"' for c in columns) + ', "updatedAt"'
-        placeholders = ", ".join(["%s"] * len(columns)) + ", NOW()"
-        sql = f'INSERT INTO "FinancialDocument" ({col_sql}) VALUES ({placeholders})'
+            columns = list(db_values.keys())
+            col_sql = ", ".join(f'"{c}"' for c in columns) + ', "updatedAt"'
+            placeholders = ", ".join(["%s"] * len(columns)) + ", NOW()"
+            sql = f'INSERT INTO "FinancialDocument" ({col_sql}) VALUES ({placeholders})'
 
-        cur.execute(sql, list(db_values.values()))
-        _insert_line_items(cur, doc_pk, record["user_id"], record.get("currency"), items)
+            cur.execute(sql, list(db_values.values()))
+            _insert_line_items(cur, doc_pk, record["user_id"], record.get("currency"), items)
 
-    return {"action": "inserted", "record": parse_record_for_output(record)}
+        return {"action": "inserted", "record": parse_record_for_output(record)}
+
+    return run_with_retry(_run)
 
 
 def update_record_for_user(user_id: str, document_id: str, updates: dict):

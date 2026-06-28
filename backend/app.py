@@ -994,8 +994,12 @@ async def process_document_stream(
             from correction_engine import correct_extracted_fields
 
             raw_file = save_uploaded_file(temp_path)
+            _t = time.time()
             orig_images = standardize_to_images(raw_file)
+            print(f"[PROCESS-STREAM] PDF->images: {len(orig_images)} page(s) in {time.time()-_t:.1f}s", flush=True)
+            _t = time.time()
             processed_pages = preprocess_images(orig_images)
+            print(f"[PROCESS-STREAM] preprocess: {len(processed_pages)} page(s) in {time.time()-_t:.1f}s", flush=True)
 
             if not processed_pages:
                 emit("error", 1, "No pages found in the uploaded document.")
@@ -1010,8 +1014,11 @@ async def process_document_stream(
                 return
 
             emit("ocr", 2, f"Running Colab OCR on {page_count} page(s)…")
+            print(f"[PROCESS-STREAM] POSTing {page_count} page(s) to Colab OCR…", flush=True)
+            _t = time.time()
             try:
                 ocr_result = send_images_to_colab_ocr(processed_pages, colab_url)
+                print(f"[PROCESS-STREAM] Colab OCR returned in {time.time()-_t:.1f}s", flush=True)
             except Exception as ocr_err:
                 print(f"[PROCESS-STREAM] Colab OCR failed: {ocr_err}", flush=True)
                 emit("error", 2, str(OCREngineUnavailableError()))
@@ -1242,65 +1249,75 @@ def confirm_save(payload: ConfirmSaveRequest, authorization: str = Header(defaul
         raise HTTPException(status_code=500, detail="Failed to retrieve saved document ID.")
     image_url = save_document_image_from_session(session["meta"], document_id)
 
-    # ── Iteration 9: embed spatial chunks + persist JSON blobs ───────────
+    # ── Post-save enrichment — runs in a background thread ───────────────
+    # Spatial embedding + C4 entity indexing are best-effort and DB/CPU heavy
+    # (embedding model + several extra round-trips). Running them inline made
+    # the save response wait — and risked the frontend's 60s timeout when a
+    # Supabase connection dropped mid-work. They now run after the response is
+    # sent, so the save returns instantly and can never time out on this work.
     _safe_boxes = session.get("meta", {}).get("safe_boxes", [])
-    if _safe_boxes and save_result["action"] == "inserted":
-        try:
-            from spatial_serialization import build_spatial_chunks as _bsc
-            from vector_index import flatten_chunks_for_embedding, embed_rows, upsert_chunk_embeddings
-            from embedding_service import get_embedding_service
+    _saved_action = save_result["action"]
 
-            _c1_pages = [
-                {"page": i + 1, "boxes": pb}
-                for i, pb in enumerate(_safe_boxes)
-            ]
-            _rich = _bsc(_c1_pages, tenant_id=user_id, document_id=document_id)
-            _rows = flatten_chunks_for_embedding(_rich)
-            if _rows:
-                _embedded = embed_rows(_rows, service=get_embedding_service())
-                upsert_chunk_embeddings(_embedded)
-                print(f"[CONFIRM-SAVE] {len(_embedded)} chunks embedded for {document_id}", flush=True)
-
-            # Persist JSON blobs directly via psycopg (no upsert_confirmed_record rewrite)
-            _safe_json = json.dumps(_safe_boxes, ensure_ascii=False)
-            _chunks_json = json.dumps(_rich, ensure_ascii=False)
-            with get_db_connection() as _conn:
-                with _conn.cursor() as _cur:
-                    _cur.execute(
-                        'UPDATE "FinancialDocument" '
-                        'SET "safeboxJson"=%s, "spatialChunksJson"=%s, "updatedAt"=NOW() '
-                        'WHERE "tenantId"=%s AND "documentId"=%s AND "deletedAt" IS NULL',
-                        (_safe_json, _chunks_json, str(user_id), str(document_id)),
-                    )
-                _conn.commit()
-            print(f"[CONFIRM-SAVE] spatial blobs persisted for {document_id}", flush=True)
-
-            # GAP-18C: build field→chunk map for click-to-source in ProvenancePanel (FR-24/26)
+    def _post_save_enrich():
+        # 1) Iteration 9: embed spatial chunks → pgvector + persist JSON blobs
+        if _safe_boxes and _saved_action == "inserted":
             try:
-                _field_chunk_map = _build_field_chunk_map(final_data, _rich)
-                _fcm_json = json.dumps(_field_chunk_map, ensure_ascii=False)
-                with get_db_connection() as _conn2:
-                    with _conn2.cursor() as _cur2:
-                        _cur2.execute(
-                            'UPDATE "FinancialDocument" '
-                            'SET "fieldChunkMapJson"=%s, "updatedAt"=NOW() '
-                            'WHERE "tenantId"=%s AND "documentId"=%s AND "deletedAt" IS NULL',
-                            (_fcm_json, str(user_id), str(document_id)),
-                        )
-                    _conn2.commit()
-            except Exception as _fcm_err:
-                print(f"[CONFIRM-SAVE] field-chunk-map failed (non-fatal): {_fcm_err}", flush=True)
-        except Exception as _emb_err:
-            # Embedding is best-effort — never block the save response
-            print(f"[CONFIRM-SAVE] embedding/persist failed (non-fatal): {_emb_err}", flush=True)
+                from spatial_serialization import build_spatial_chunks as _bsc
+                from vector_index import flatten_chunks_for_embedding, embed_rows, upsert_chunk_embeddings
+                from embedding_service import get_embedding_service
 
-    # GAP-18F: wire C4 entity index (DocLinks) — best-effort, never blocks save
-    try:
-        from entity_index import index_document as _index_doc
-        _index_doc(final_data, user_id)
-        print(f"[CONFIRM-SAVE] C4 entity index updated for {document_id}", flush=True)
-    except Exception as _c4_err:
-        print(f"[CONFIRM-SAVE] C4 entity index failed (non-fatal): {_c4_err}", flush=True)
+                _c1_pages = [
+                    {"page": i + 1, "boxes": pb}
+                    for i, pb in enumerate(_safe_boxes)
+                ]
+                _rich = _bsc(_c1_pages, tenant_id=user_id, document_id=document_id)
+                _rows = flatten_chunks_for_embedding(_rich)
+                if _rows:
+                    _embedded = embed_rows(_rows, service=get_embedding_service())
+                    upsert_chunk_embeddings(_embedded)
+                    print(f"[CONFIRM-SAVE] {len(_embedded)} chunks embedded for {document_id}", flush=True)
+
+                # Persist JSON blobs directly via psycopg (no upsert_confirmed_record rewrite)
+                _safe_json = json.dumps(_safe_boxes, ensure_ascii=False)
+                _chunks_json = json.dumps(_rich, ensure_ascii=False)
+                with get_db_connection() as _conn:
+                    with _conn.cursor() as _cur:
+                        _cur.execute(
+                            'UPDATE "FinancialDocument" '
+                            'SET "safeboxJson"=%s, "spatialChunksJson"=%s, "updatedAt"=NOW() '
+                            'WHERE "tenantId"=%s AND "documentId"=%s AND "deletedAt" IS NULL',
+                            (_safe_json, _chunks_json, str(user_id), str(document_id)),
+                        )
+                    _conn.commit()
+                print(f"[CONFIRM-SAVE] spatial blobs persisted for {document_id}", flush=True)
+
+                # GAP-18C: build field→chunk map for click-to-source in ProvenancePanel (FR-24/26)
+                try:
+                    _field_chunk_map = _build_field_chunk_map(final_data, _rich)
+                    _fcm_json = json.dumps(_field_chunk_map, ensure_ascii=False)
+                    with get_db_connection() as _conn2:
+                        with _conn2.cursor() as _cur2:
+                            _cur2.execute(
+                                'UPDATE "FinancialDocument" '
+                                'SET "fieldChunkMapJson"=%s, "updatedAt"=NOW() '
+                                'WHERE "tenantId"=%s AND "documentId"=%s AND "deletedAt" IS NULL',
+                                (_fcm_json, str(user_id), str(document_id)),
+                            )
+                        _conn2.commit()
+                except Exception as _fcm_err:
+                    print(f"[CONFIRM-SAVE] field-chunk-map failed (non-fatal): {_fcm_err}", flush=True)
+            except Exception as _emb_err:
+                print(f"[CONFIRM-SAVE] embedding/persist failed (non-fatal): {_emb_err}", flush=True)
+
+        # 2) GAP-18F: wire C4 entity index (DocLinks)
+        try:
+            from entity_index import index_document as _index_doc
+            _index_doc(final_data, user_id)
+            print(f"[CONFIRM-SAVE] C4 entity index updated for {document_id}", flush=True)
+        except Exception as _c4_err:
+            print(f"[CONFIRM-SAVE] C4 entity index failed (non-fatal): {_c4_err}", flush=True)
+
+    threading.Thread(target=_post_save_enrich, daemon=True).start()
     # ─────────────────────────────────────────────────────────────────────
 
     PROCESSING_SESSIONS.pop(payload.session_id, None)
