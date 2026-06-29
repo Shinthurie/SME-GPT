@@ -89,6 +89,7 @@ export default function AnalysisDetailPage() {
 
   const [lang, setLang] = useState<AppLanguage>("en");
   const [showProvenance, setShowProvenance] = useState(false);
+  const [relatedDocs, setRelatedDocs] = useState<Array<{document_id:string;document_type:string;date:string;supplier_name:string;final_total_amount:string|number;currency:string;link_reason:string}>>([]);
   const [activeChunkId, setActiveChunkId] = useState<string | null>(null);
   const t = ui[lang];
   const [document, setDocument] = useState<DocumentDetail | null>(null);
@@ -163,6 +164,15 @@ export default function AnalysisDetailPage() {
 
         setDocument(data.document);
         setEditedDocument(data.document);
+
+        // IT-22: fetch related documents (same order_id / same counterparty)
+        const relRes = await fetch(`${BACKEND_URL}/documents/${documentId}/related`, {
+          method: "GET", cache: "no-store", headers: { Authorization: `Bearer ${token}` },
+        });
+        if (relRes.ok) {
+          const relData = await relRes.json();
+          if (relData.success) setRelatedDocs(relData.related || []);
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to load document.");
       } finally {
@@ -945,6 +955,39 @@ export default function AnalysisDetailPage() {
                     </div>
                   </div>
                 </div>
+
+                {/* IT-22 — Related Documents (PO→DN→Invoice link) */}
+                {relatedDocs.length > 0 && (
+                  <div className="mt-4 rounded-[18px] border border-slate-200 bg-white p-5 shadow-sm">
+                    <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-[#64748b]">
+                      {lang === "si" ? "සම්බන්ධිත ලේඛන" : "Related Documents"}
+                    </p>
+                    <div className="mt-3 space-y-2">
+                      {relatedDocs.map((rd) => (
+                        <button
+                          key={rd.document_id}
+                          onClick={() => router.push(`/analysis/${rd.document_id}`)}
+                          className="flex w-full items-center justify-between rounded-[12px] border border-slate-100 bg-[#f8fafc] px-4 py-3 text-left transition hover:border-[#2252b5] hover:bg-[#eff6ff]"
+                        >
+                          <div>
+                            <span className="text-[11px] font-bold uppercase" style={{ color: rd.document_type === "po" ? "#7c3aed" : rd.document_type === "dn" ? "#ea6c0a" : "#2252b5" }}>
+                              {rd.document_type?.toUpperCase()}
+                            </span>
+                            <p className="text-[14px] font-semibold text-[#0f172a]">{rd.document_id}</p>
+                            <p className="text-[11px] text-[#64748b]">{rd.supplier_name} · {rd.date}</p>
+                            <p className="text-[10px] text-[#94a3b8]">{rd.link_reason}</p>
+                          </div>
+                          <div className="text-right">
+                            {rd.final_total_amount && String(rd.final_total_amount) !== "NULL" && (
+                              <p className="text-[13px] font-bold text-[#0f172a]">{rd.currency || "LKR"} {rd.final_total_amount}</p>
+                            )}
+                            <span className="material-symbols-outlined text-[16px] text-[#94a3b8]">chevron_right</span>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 {/* Provenance Panel — Iteration 7 */}
                 <div className="mt-4 rounded-[18px] border border-slate-200 bg-white shadow-sm">

@@ -127,7 +127,10 @@ def test_delete_account_purges_every_tenant_scoped_table(client, app_module, mon
     assert any("query_history" in q for q in tables_hit)
 
     # Every DELETE is scoped to the caller's id, never an unscoped wipe.
-    for _, params in calls:
+    # (We filter out non-DELETE statements such as the ACCOUNT_DELETED audit INSERT.)
+    delete_calls = [(q, p) for q, p in calls if q.strip().upper().startswith("DELETE")]
+    assert delete_calls, "No DELETE statements were executed"
+    for _, params in delete_calls:
         assert params == ("user-1",)
 
 
