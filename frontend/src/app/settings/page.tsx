@@ -7,10 +7,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import MobileShell from "@/components/layout/MobileShell";
-import BottomNav from "@/components/layout/BottomNav";
-import ThemeToggle from "@/components/layout/ThemeToggle";
-import LanguageSwitcher from "@/components/layout/LanguageSwitcher";
+import PageShell from "@/components/layout/PageShell";
 import { getSession, logoutUser, SessionUser, getStoredToken } from "@/lib/auth";
 import { AppLanguage, getStoredLanguage, ui, setStoredLanguage } from "@/lib/i18n";
 import { useTheme } from "@/lib/theme";
@@ -261,22 +258,11 @@ export default function SettingsPage() {
   if (!session) return null;
 
   return (
-    <MobileShell>
-      <div className="min-h-screen pb-28" style={{ background:"var(--bg)" }}>
-        <main className="mx-auto w-full max-w-[720px] px-4 py-6 sm:px-6">
-
-          {/* Header */}
-          <div className="mb-5 flex items-center justify-between">
-            <button onClick={() => router.back()} className="flex items-center gap-1.5 text-[13px] font-semibold hover:opacity-75" style={{ color:"var(--brand-mid)" }}>
-              <span className="material-symbols-outlined text-[16px]">arrow_back</span>
-              {t.backToDashboard}
-            </button>
-            <div className="flex items-center gap-2"><ThemeToggle /><LanguageSwitcher /></div>
-          </div>
-
-          <h1 className="text-[22px] font-extrabold tracking-tight text-[var(--text-1)]">
-            {lang === "si" ? "සැකසීම්" : "Settings"}
-          </h1>
+    <PageShell
+      backLabel={t.backToDashboard}
+      title={lang === "si" ? "සැකසීම්" : "Settings"}
+      width="narrow"
+    >
 
           {/* Tab strip */}
           <div className="mt-4 flex gap-1.5 overflow-x-auto pb-1 no-scrollbar">
@@ -360,12 +346,6 @@ export default function SettingsPage() {
                     {message}
                   </p>
                 )}
-
-                <SectionLabel icon="query_stats" title={t.activitySection} />
-                <Card>
-                  <ChevronRow icon="history" title={t.queryHistoryTitle} subtitle={t.savedQueriesCount}
-                    onClick={() => router.push("/profile/query-history")} />
-                </Card>
 
                 <button onClick={async () => { await logoutUser(); router.push("/login"); }}
                   className="mt-5 w-full rounded-2xl py-4 text-[15px] font-bold transition hover:opacity-90"
@@ -598,9 +578,6 @@ export default function SettingsPage() {
             )}
 
           </div>
-        </main>
-        <BottomNav />
-      </div>
-    </MobileShell>
+    </PageShell>
   );
 }

@@ -433,7 +433,7 @@ export default function UploadPage() {
   return (
     <MobileShell>
       <div className="min-h-screen pb-24" style={{ background: "var(--bg)" }}>
-        <main className="mx-auto w-full max-w-[980px] px-4 py-6 sm:px-6 lg:px-8">
+        <main className="mx-auto w-full max-w-[960px] px-4 py-6 sm:px-6">
 
           {/* Top bar */}
           <div className="mb-5 flex items-center justify-between">

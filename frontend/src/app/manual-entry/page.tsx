@@ -2,10 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import MobileShell from "@/components/layout/MobileShell";
-import BottomNav from "@/components/layout/BottomNav";
-import LanguageSwitcher from "@/components/layout/LanguageSwitcher";
-import ThemeToggle from "@/components/layout/ThemeToggle";
+import PageShell from "@/components/layout/PageShell";
 import { AppLanguage, getStoredLanguage, ui } from "@/lib/i18n";
 import { addNotification } from "@/lib/notifications";
 import { getSession } from "@/lib/auth";
@@ -401,29 +398,12 @@ export default function ManualEntryPage() {
   const color = DOC_COLORS[docType];
 
   return (
-    <MobileShell>
-      <div className="min-h-screen pb-24" style={{ background: "var(--bg)" }}>
-        <main className="mx-auto w-full max-w-[1100px] px-4 py-6 sm:px-6">
-
-          {/* Top bar */}
-          <div className="mb-5 flex items-center justify-between">
-            <button onClick={() => router.back()}
-              className="flex items-center gap-1.5 text-[13px] font-semibold hover:opacity-75 transition"
-              style={{ color: "var(--brand-mid)" }}>
-              <span className="material-symbols-outlined text-[16px]">arrow_back</span>
-              {t.backToDashboard}
-            </button>
-            <div className="flex items-center gap-2"><ThemeToggle /><LanguageSwitcher /></div>
-          </div>
-
-          <h1 className="text-[22px] font-extrabold tracking-tight text-[var(--text-1)]">
-            {lang === "si" ? "ලේඛනයක් අතින් නිර්මාණය කරන්න" : "Create Document Manually"}
-          </h1>
-          <p className="mt-1 text-[13px] text-[var(--text-2)]">
-            {lang === "si"
-              ? "බිල්පතක් නොලැබුණු හෝ නැතිවූ අවස්ථාවලදී — ගෙවීම සටහන් කර ලේඛනය සාදන්න."
-              : "No bill received, or lost a bill? Fill in the details and create your own receipt or invoice."}
-          </p>
+    <PageShell
+      backLabel={t.backToDashboard}
+      title={lang === "si" ? "ලේඛනයක් අතින් නිර්මාණය කරන්න" : "Create Document Manually"}
+      subtitle={lang === "si" ? "බිල්පතක් නොලැබුණු හෝ නැතිවූ අවස්ථාවලදී — ගෙවීම සටහන් කර ලේඛනය සාදන්න." : "No bill received, or lost a bill? Fill in the details and create your own receipt or invoice."}
+      width="wide"
+    >
 
           <div className="mt-6 grid gap-8 lg:grid-cols-[1fr_380px]">
 
@@ -660,9 +640,6 @@ export default function ManualEntryPage() {
             </div>
 
           </div>
-        </main>
-        <BottomNav />
-      </div>
-    </MobileShell>
+    </PageShell>
   );
 }

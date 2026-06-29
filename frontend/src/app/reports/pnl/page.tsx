@@ -2,10 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import MobileShell from "@/components/layout/MobileShell";
-import BottomNav from "@/components/layout/BottomNav";
-import LanguageSwitcher from "@/components/layout/LanguageSwitcher";
-import ThemeToggle from "@/components/layout/ThemeToggle";
+import PageShell from "@/components/layout/PageShell";
 import { AppLanguage, getStoredLanguage, ui } from "@/lib/i18n";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
@@ -60,46 +57,30 @@ export default function PnlPage() {
   const fmt = (n: number) => `LKR ${n.toLocaleString("en-US", { minimumFractionDigits: 2 })}`;
 
   return (
-    <MobileShell>
-      <div className="min-h-screen pb-24" style={{ background: "var(--bg)" }}>
-        <main className="mx-auto w-full max-w-[900px] px-4 py-6 sm:px-6">
-
-          <div className="mb-5 flex items-center justify-between">
-            <button onClick={() => router.back()}
-              className="flex items-center gap-1.5 text-[13px] font-semibold hover:opacity-75 transition"
-              style={{ color: "var(--brand-mid)" }}>
-              <span className="material-symbols-outlined text-[16px]">arrow_back</span>
-              {t.backToDashboard}
+    <PageShell
+      backLabel={t.backToDashboard}
+      title={lang === "si" ? "ලාභ සහ පාඩු වාර්තාව" : "Profit & Loss Report"}
+      subtitle={lang === "si" ? "ආදායම සහ වියදම් මාසික සාරාංශය" : "Monthly revenue vs expenses from your documents."}
+      width="standard"
+      topBarRight={
+        <div className="flex items-center gap-2">
+          <select value={months} onChange={(e) => setMonths(Number(e.target.value))}
+            className="field-input rounded-xl border px-3 py-2 text-[13px]">
+            {[3, 6, 12, 24].map((m) => (
+              <option key={m} value={m}>{m} {lang === "si" ? "මාස" : "months"}</option>
+            ))}
+          </select>
+          {data && data.data.length > 0 && (
+            <button onClick={exportExcel}
+              className="flex items-center gap-1.5 rounded-xl px-4 py-2 text-[12px] font-bold text-white transition hover:opacity-80"
+              style={{ background: "#16a34a" }}>
+              <span className="material-symbols-outlined text-[15px]">table_view</span>
+              {lang === "si" ? "Excel" : "Export"}
             </button>
-            <div className="flex items-center gap-2"><ThemeToggle /><LanguageSwitcher /></div>
-          </div>
-
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h1 className="text-[22px] font-extrabold tracking-tight text-[var(--text-1)]">
-                {lang === "si" ? "ලාභ සහ පාඩු වාර්තාව" : "Profit & Loss Report"}
-              </h1>
-              <p className="mt-1 text-[13px] text-[var(--text-2)]">
-                {lang === "si" ? "ආදායම සහ වියදම් මාසික සාරාංශය" : "Monthly revenue vs expenses from your documents."}
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              <select value={months} onChange={(e) => setMonths(Number(e.target.value))}
-                className="field-input rounded-xl border px-3 py-2 text-[13px]">
-                {[3, 6, 12, 24].map((m) => (
-                  <option key={m} value={m}>{m} {lang === "si" ? "මාස" : "months"}</option>
-                ))}
-              </select>
-              {data && data.data.length > 0 && (
-                <button onClick={exportExcel}
-                  className="flex items-center gap-1.5 rounded-xl px-4 py-2 text-[12px] font-bold text-white transition hover:opacity-80"
-                  style={{ background: "#16a34a" }}>
-                  <span className="material-symbols-outlined text-[15px]">table_view</span>
-                  {lang === "si" ? "Excel" : "Export"}
-                </button>
-              )}
-            </div>
-          </div>
+          )}
+        </div>
+      }
+    >
 
           {/* Summary cards */}
           {data && (
@@ -203,9 +184,6 @@ export default function PnlPage() {
               {lang === "si" ? "P&L දත්ත නොමැත." : "No P&L data found. Upload some invoices or receipts first."}
             </div>
           )}
-        </main>
-        <BottomNav />
-      </div>
-    </MobileShell>
+    </PageShell>
   );
 }

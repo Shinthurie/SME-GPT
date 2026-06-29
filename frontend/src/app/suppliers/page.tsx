@@ -2,10 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import MobileShell from "@/components/layout/MobileShell";
-import BottomNav from "@/components/layout/BottomNav";
-import LanguageSwitcher from "@/components/layout/LanguageSwitcher";
-import ThemeToggle from "@/components/layout/ThemeToggle";
+import PageShell from "@/components/layout/PageShell";
 import { AppLanguage, getStoredLanguage, ui } from "@/lib/i18n";
 
 const BACKEND_URL = "http://127.0.0.1:8000";
@@ -208,30 +205,16 @@ export default function SuppliersPage() {
   const typeColor = TYPE_COLOR;
 
   return (
-    <MobileShell>
+    <>
       {historyFor && (
         <HistoryDrawer name={historyFor} lang={lang} onClose={() => setHistoryFor(null)} />
       )}
-      <div className="min-h-screen pb-24" style={{ background: "var(--bg)" }}>
-        <main className="mx-auto w-full max-w-[900px] px-4 py-6 sm:px-6">
-
-          <div className="mb-5 flex items-center justify-between">
-            <button onClick={() => router.back()}
-              className="flex items-center gap-1.5 text-[13px] font-semibold hover:opacity-75 transition"
-              style={{ color: "var(--brand-mid)" }}>
-              <span className="material-symbols-outlined text-[16px]">arrow_back</span>
-              {t.backToDashboard}
-            </button>
-            <div className="flex items-center gap-2"><ThemeToggle /><LanguageSwitcher /></div>
-          </div>
-
-          <h1 className="text-[22px] font-extrabold tracking-tight text-[var(--text-1)]">
-            {lang === "si" ? "සැපයුම්කරුවන් සහ ගනුදෙනුකරුවන්" : "Suppliers & Customers"}
-          </h1>
-          <p className="mt-1 text-[13px] text-[var(--text-2)]">
-            {lang === "si" ? "ඔබගේ ලේඛනවල ඇති සියලු ගනුදෙනු පාර්ශ්ව"
-              : "All counterparties across your documents with full transaction history."}
-          </p>
+    <PageShell
+      backLabel={t.backToDashboard}
+      title={lang === "si" ? "සැපයුම්කරුවන් සහ ගනුදෙනුකරුවන්" : "Suppliers & Customers"}
+      subtitle={lang === "si" ? "ඔබගේ ලේඛනවල ඇති සියලු ගනුදෙනු පාර්ශ්ව" : "All counterparties across your documents with full transaction history."}
+      width="standard"
+    >
 
           {/* Duplicate vendor alert */}
           {dupGroups.map((group, gi) => (
@@ -383,9 +366,7 @@ export default function SuppliersPage() {
               ))}
             </div>
           )}
-        </main>
-        <BottomNav />
-      </div>
-    </MobileShell>
+    </PageShell>
+    </>
   );
 }

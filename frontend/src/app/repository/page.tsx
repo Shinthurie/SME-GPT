@@ -2,10 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import MobileShell from "@/components/layout/MobileShell";
-import BottomNav from "@/components/layout/BottomNav";
-import LanguageSwitcher from "@/components/layout/LanguageSwitcher";
-import ThemeToggle from "@/components/layout/ThemeToggle";
+import PageShell from "@/components/layout/PageShell";
 import { AppLanguage, getStoredLanguage, ui } from "@/lib/i18n";
 import { formatMoney, otherPartyName } from "@/lib/format";
 
@@ -193,32 +190,20 @@ export default function RepositoryPage() {
   const docTitle = (item: RepoDocument) => otherPartyName(item) || item.document_id;
 
   return (
-    <MobileShell>
-      <div className="min-h-screen pb-24" style={{ background: "var(--bg)" }}>
-        <main className="mx-auto w-full max-w-[920px] px-4 py-6 sm:px-6 lg:px-8">
-
-          {/* Header */}
-          <div className="mb-5 flex items-start justify-between gap-4">
-            <div>
-              <h1 className="text-[22px] font-extrabold tracking-tight text-[var(--text-1)] sm:text-[26px]">
-                {t.repositoryTitle}
-              </h1>
-              <p className="mt-0.5 text-[12px] text-[var(--text-3)]">
-                {t.repoSubtitle}
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              <ThemeToggle />
-              <LanguageSwitcher />
-              <button
-                onClick={() => router.push("/upload")}
-                className="flex h-9 w-9 items-center justify-center rounded-full text-white shadow-sm transition hover:opacity-90"
-                style={{ background: "var(--brand)" }}
-              >
-                <span className="material-symbols-outlined text-[20px]">add</span>
-              </button>
-            </div>
-          </div>
+    <PageShell
+      title={t.repositoryTitle}
+      subtitle={t.repoSubtitle}
+      width="standard"
+      topBarRight={
+        <div className="flex items-center gap-2">
+          <button onClick={() => router.push("/upload")}
+            className="flex h-9 w-9 items-center justify-center rounded-full text-white shadow-sm transition hover:opacity-90"
+            style={{ background: "var(--brand)" }}>
+            <span className="material-symbols-outlined text-[20px]">add</span>
+          </button>
+        </div>
+      }
+    >
 
           {/* Search bar */}
           <div className="mb-4 flex items-center gap-2 rounded-xl px-4 py-2.5"
@@ -508,10 +493,6 @@ export default function RepositoryPage() {
             </div>
             </>
           )}
-        </main>
-
-        <BottomNav />
-      </div>
-    </MobileShell>
+    </PageShell>
   );
 }

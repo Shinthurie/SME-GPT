@@ -2,10 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import MobileShell from "@/components/layout/MobileShell";
-import BottomNav from "@/components/layout/BottomNav";
-import LanguageSwitcher from "@/components/layout/LanguageSwitcher";
-import ThemeToggle from "@/components/layout/ThemeToggle";
+import PageShell from "@/components/layout/PageShell";
 import { AppLanguage, getStoredLanguage, ui } from "@/lib/i18n";
 import { addNotification } from "@/lib/notifications";
 
@@ -184,32 +181,12 @@ export default function BulkUploadPage() {
   };
 
   return (
-    <MobileShell>
-      <div className="min-h-screen pb-24" style={{ background: "var(--bg)" }}>
-        <main className="mx-auto w-full max-w-[900px] px-4 py-6 sm:px-6">
-
-          {/* Header */}
-          <div className="mb-5 flex items-center justify-between">
-            <button onClick={() => router.back()}
-              className="flex items-center gap-1.5 text-[13px] font-semibold hover:opacity-75 transition"
-              style={{ color: "var(--brand-mid)" }}>
-              <span className="material-symbols-outlined text-[16px]">arrow_back</span>
-              {t.backToDashboard}
-            </button>
-            <div className="flex items-center gap-2">
-              <ThemeToggle />
-              <LanguageSwitcher />
-            </div>
-          </div>
-
-          <h1 className="text-[22px] font-extrabold tracking-tight text-[var(--text-1)]">
-            {lang === "si" ? "ශ්‍රේණිගත ලේඛන උඩුගත කිරීම" : "Bulk Document Upload"}
-          </h1>
-          <p className="mt-1 text-[13px] text-[var(--text-2)]">
-            {lang === "si"
-              ? "ගොනු කිහිපයක් එකවර උඩුගත කර OCR ස්වයංක්‍රීයව කරන්න."
-              : "Upload multiple files at once — OCR and save happen automatically for each."}
-          </p>
+    <PageShell
+      backLabel={t.backToDashboard}
+      title={lang === "si" ? "ශ්‍රේණිගත ලේඛන උඩුගත කිරීම" : "Bulk Document Upload"}
+      subtitle={lang === "si" ? "ගොනු කිහිපයක් එකවර උඩුගත කර OCR ස්වයංක්‍රීයව කරන්න." : "Upload multiple files at once — OCR and save happen automatically for each."}
+      width="standard"
+    >
 
           {/* Drop zone */}
           <div
@@ -347,9 +324,6 @@ export default function BulkUploadPage() {
             </div>
           )}
 
-        </main>
-        <BottomNav />
-      </div>
-    </MobileShell>
+    </PageShell>
   );
 }

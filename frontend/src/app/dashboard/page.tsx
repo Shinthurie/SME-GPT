@@ -209,7 +209,7 @@ export default function DashboardPage() {
       <div className="min-h-screen pb-24" style={{ background: "var(--bg)" }}>
         {/* Header */}
         <header style={{ background: "var(--surface)", borderBottom: "1px solid var(--border)" }}>
-          <div className="mx-auto flex w-full max-w-[1180px] flex-col gap-3 px-4 py-4 sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:px-8">
+          <div className="mx-auto flex w-full max-w-[960px] flex-col gap-3 px-4 py-4 sm:px-6 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex items-center gap-3">
               <div
                 className="flex h-10 w-10 items-center justify-center rounded-xl shadow-sm"
@@ -260,7 +260,7 @@ export default function DashboardPage() {
           </div>
         </header>
 
-        <main className="mx-auto w-full max-w-[1180px] px-4 py-6 sm:px-6 lg:px-8">
+        <main className="mx-auto w-full max-w-[960px] px-4 py-6 sm:px-6">
           <section>
             <h2 className="text-[24px] font-extrabold tracking-tight text-[var(--text-1)] sm:text-[26px]">
               {t.welcomeTitle}
