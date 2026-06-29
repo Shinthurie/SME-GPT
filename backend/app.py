@@ -2638,65 +2638,6 @@ async def whatsapp_webhook(request: Request):
     return {"status": "queued", "document_id": doc_id}
 
 
-@app.get("/reports/vat")
-def vat_report(
-    authorization: str = Header(default=None),
-    year: int = Query(default=0, ge=0),
-):
-    """IT-25 — VAT/Tax summary report: groups tax by month."""
-    user_id = get_current_user_id(authorization)
-    from datetime import datetime
-
-    records = load_all_records(user_id=user_id)
-
-    monthly: dict[str, dict] = {}
-    total_tax = 0.0
-    for r in records:
-        tax = r.get("tax_amount")
-        if tax is None or str(tax).upper() in ("NULL", "", "NONE"):
-            continue
-        try:
-            tax_val = float(str(tax).replace(",", ""))
-        except ValueError:
-            continue
-        if tax_val <= 0:
-            continue
-
-        date_str = str(r.get("date") or "")
-        month_key = "Unknown"
-        for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y", "%d %b %Y"):
-            try:
-                dt = datetime.strptime(date_str[:10], fmt)
-                if year and dt.year != year:
-                    break
-                month_key = dt.strftime("%Y-%m")
-                break
-            except ValueError:
-                continue
-
-        if month_key not in monthly:
-            monthly[month_key] = {"month": month_key, "tax_total": 0.0, "document_count": 0, "documents": []}
-        monthly[month_key]["tax_total"] = round(monthly[month_key]["tax_total"] + tax_val, 2)
-        monthly[month_key]["document_count"] += 1
-        monthly[month_key]["documents"].append({
-            "document_id": r.get("document_id"),
-            "document_type": r.get("document_type"),
-            "supplier_name": r.get("supplier_name"),
-            "tax_amount": tax_val,
-            "tax_rate": r.get("tax_rate"),
-            "date": r.get("date"),
-        })
-        total_tax += tax_val
-
-    months_sorted = sorted(monthly.values(), key=lambda x: x["month"])
-    return {
-        "success": True,
-        "year": year or "all",
-        "total_tax": round(total_tax, 2),
-        "month_count": len(months_sorted),
-        "months": months_sorted,
-    }
-
 
 @app.get("/reports/pnl")
 def pnl_report(
