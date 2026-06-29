@@ -262,7 +262,7 @@ export default function DashboardPage() {
 
         <main className="mx-auto w-full max-w-[960px] px-4 py-6 sm:px-6">
           <section>
-            <h2 className="text-[24px] font-extrabold tracking-tight text-[var(--text-1)] sm:text-[26px]">
+            <h2 className="text-[24px] font-extrabold tracking-tight text-[var(--text-1)] sm:text-[28px]">
               {t.welcomeTitle}
             </h2>
             <p className="mt-1.5 text-[13px] leading-6 text-[var(--text-2)]">

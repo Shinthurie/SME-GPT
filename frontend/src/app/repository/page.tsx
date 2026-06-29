@@ -194,15 +194,6 @@ export default function RepositoryPage() {
       title={t.repositoryTitle}
       subtitle={t.repoSubtitle}
       width="standard"
-      topBarRight={
-        <div className="flex items-center gap-2">
-          <button onClick={() => router.push("/upload")}
-            className="flex h-9 w-9 items-center justify-center rounded-full text-white shadow-sm transition hover:opacity-90"
-            style={{ background: "var(--brand)" }}>
-            <span className="material-symbols-outlined text-[20px]">add</span>
-          </button>
-        </div>
-      }
     >
 
           {/* Search bar */}

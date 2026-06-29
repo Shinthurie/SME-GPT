@@ -103,7 +103,7 @@ export default function PageShell({
 
           {/* ── Page heading ─────────────────────────────────────────── */}
           {title && (
-            <h1 className="text-[22px] font-extrabold tracking-tight text-[var(--text-1)] sm:text-[24px]">
+            <h1 className="text-[24px] font-extrabold tracking-tight text-[var(--text-1)] sm:text-[28px]">
               {title}
             </h1>
           )}

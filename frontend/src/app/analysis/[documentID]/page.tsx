@@ -443,7 +443,7 @@ export default function AnalysisDetailPage() {
           </div>
 
           <div className="mb-5">
-            <h1 className="text-[24px] font-extrabold tracking-tight text-[#0f172a] sm:text-[28px]">
+            <h1 className="text-[24px] font-extrabold tracking-tight text-[var(--text-1)] sm:text-[28px]">
               {loading ? "Loading..." : target?.document_id || "Document"}
             </h1>
             <p className="mt-1 text-[11px] font-bold uppercase tracking-[0.12em] text-[#64748b]">
