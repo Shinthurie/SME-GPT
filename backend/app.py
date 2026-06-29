@@ -2002,8 +2002,10 @@ def get_suppliers(
             directory[key] = {
                 "name": name,
                 "document_count": 0,
-                "total_payable": 0.0,
-                "total_receivable": 0.0,
+                "total_payable":    0.0,   # all documents flowing out
+                "total_receivable": 0.0,   # all documents flowing in
+                "total_paid":       0.0,   # outflows actually settled (paid_status=paid)
+                "total_received":   0.0,   # inflows actually collected (received_status=received)
                 "document_types": set(),
                 "last_transaction": "",
             }
@@ -2019,10 +2021,16 @@ def get_suppliers(
                     break
                 except ValueError:
                     pass
+        paid_st     = str(r.get("paid_status")     or "").lower()
+        received_st = str(r.get("received_status") or "").lower()
         if ft in ("payable", "cash_outflow", "expense"):
             entry["total_payable"] += amt
+            if paid_st in ("paid", "received"):
+                entry["total_paid"] += amt
         elif ft in ("receivable", "cash_inflow", "income"):
             entry["total_receivable"] += amt
+            if received_st in ("received", "paid"):
+                entry["total_received"] += amt
         entry["document_types"].add(str(r.get("document_type") or "").lower())
         date_val = str(r.get("date") or "")
         if date_val and date_val > entry["last_transaction"]:
@@ -2032,10 +2040,12 @@ def get_suppliers(
     for entry in sorted(directory.values(), key=lambda x: -x["document_count"]):
         result.append({
             **entry,
-            "document_types": sorted(entry["document_types"]),
-            "total_payable": round(entry["total_payable"], 2),
+            "document_types":   sorted(entry["document_types"]),
+            "total_payable":    round(entry["total_payable"],    2),
             "total_receivable": round(entry["total_receivable"], 2),
-            "net_position": round(entry["total_receivable"] - entry["total_payable"], 2),
+            "total_paid":       round(entry["total_paid"],       2),
+            "total_received":   round(entry["total_received"],   2),
+            "net_position":     round(entry["total_receivable"] - entry["total_payable"], 2),
         })
 
     return {"success": True, "count": len(result), "suppliers": result}

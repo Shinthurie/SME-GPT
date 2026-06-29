@@ -10,6 +10,7 @@ const BACKEND_URL = "http://127.0.0.1:8000";
 type Supplier = {
   name: string; document_count: number;
   total_payable: number; total_receivable: number; net_position: number;
+  total_paid: number; total_received: number;
   document_types: string[]; last_transaction: string;
 };
 type Transaction = {
@@ -84,21 +85,44 @@ function HistoryDrawer({ name, lang, onClose }: { name: string; lang: string; on
           <p className="py-8 text-center text-[13px] text-red-500">Failed to load</p>
         ) : (
           <>
-            {/* Summary row */}
-            <div className="mb-4 grid grid-cols-3 gap-3">
+            {/* Row 1 — Receivable | Payable */}
+            <div className="mb-2 grid grid-cols-2 gap-2">
               {[
-                { lbl: lang === "si" ? "ගෙව්වා" : "Total Paid",   val: data.summary.total_paid,     color: "#dc2626" },
-                { lbl: lang === "si" ? "ලැබුණා" : "Total Received", val: data.summary.total_received, color: "#16a34a" },
-                { lbl: lang === "si" ? "ශේෂය"   : "Net",           val: data.summary.net,            color: data.summary.net >= 0 ? "#2252b5" : "#ea6c0a" },
-              ].map(({ lbl, val, color }) => (
-                <div key={lbl} className="rounded-xl p-3 text-center"
-                  style={{ background: "var(--bg)", border: "1px solid var(--border)" }}>
-                  <p className="text-[10px] font-bold uppercase text-[var(--text-3)]">{lbl}</p>
-                  <p className="mt-1 text-[13px] font-extrabold" style={{ color }}>
-                    {val === 0 ? "—" : `LKR ${val.toLocaleString()}`}
-                  </p>
+                { lbl: lang === "si" ? "ලැබිය යුතු" : "Receivable", val: data.summary.total_received, color:"#16a34a", bg:"rgba(22,163,74,0.06)",   border:"rgba(22,163,74,0.2)"  },
+                { lbl: lang === "si" ? "ගෙවිය යුතු" : "Payable",    val: data.summary.total_paid,     color:"#dc2626", bg:"rgba(220,38,38,0.06)",  border:"rgba(220,38,38,0.2)" },
+              ].map(({ lbl, val, color, bg, border }) => (
+                <div key={lbl} className="rounded-xl p-3 text-center" style={{ background: bg, border: `1px solid ${border}` }}>
+                  <p className="text-[9px] font-bold uppercase tracking-wider" style={{ color }}>{lbl}</p>
+                  <p className="mt-1 text-[14px] font-extrabold" style={{ color }}>{val === 0 ? "—" : `LKR ${val.toLocaleString()}`}</p>
                 </div>
               ))}
+            </div>
+            {/* Row 2 — Total Received | Total Paid */}
+            <div className="mb-2 grid grid-cols-2 gap-2">
+              {[
+                { lbl: lang === "si" ? "ලැබුණු මුදල" : "Total Received", val: data.summary.total_received, color:"#0891b2", bg:"rgba(8,145,178,0.06)",  border:"rgba(8,145,178,0.2)"  },
+                { lbl: lang === "si" ? "ගෙව්වා"       : "Total Paid",     val: data.summary.total_paid,     color:"#7c3aed", bg:"rgba(124,58,237,0.06)", border:"rgba(124,58,237,0.2)" },
+              ].map(({ lbl, val, color, bg, border }) => (
+                <div key={lbl} className="rounded-xl p-3 text-center" style={{ background: bg, border: `1px solid ${border}` }}>
+                  <p className="text-[9px] font-bold uppercase tracking-wider" style={{ color }}>{lbl}</p>
+                  <p className="mt-1 text-[14px] font-extrabold" style={{ color }}>{val === 0 ? "—" : `LKR ${val.toLocaleString()}`}</p>
+                </div>
+              ))}
+            </div>
+            {/* Net Position */}
+            <div className="mb-4 flex items-center justify-between rounded-xl px-4 py-2.5"
+              style={{
+                background: data.summary.net >= 0 ? "rgba(34,82,181,0.06)" : "rgba(234,108,10,0.06)",
+                border: `1px solid ${data.summary.net >= 0 ? "rgba(34,82,181,0.15)" : "rgba(234,108,10,0.2)"}`,
+              }}>
+              <p className="text-[10px] font-bold uppercase tracking-wider"
+                style={{ color: data.summary.net >= 0 ? "#2252b5" : "#ea6c0a" }}>
+                {lang === "si" ? "ශේෂය" : "Net Position"}
+              </p>
+              <p className="text-[15px] font-extrabold"
+                style={{ color: data.summary.net >= 0 ? "#2252b5" : "#ea6c0a" }}>
+                {data.summary.net === 0 ? "—" : `${data.summary.net >= 0 ? "+" : ""}LKR ${data.summary.net.toLocaleString()}`}
+              </p>
             </div>
 
             {/* Transaction list */}
@@ -332,20 +356,50 @@ export default function SuppliersPage() {
                     </div>
                   </div>
 
-                  <div className="mt-3 grid grid-cols-3 gap-3">
+                  {/* Row 1 — Receivable | Payable */}
+                  <div className="mt-3 grid grid-cols-2 gap-2">
                     {[
-                      { label: lang === "si" ? "ලැබිය යුතු" : "Receivable", value: s.total_receivable, color: "#16a34a" },
-                      { label: lang === "si" ? "ගෙවිය යුතු" : "Payable",    value: s.total_payable,    color: "#dc2626" },
-                      { label: lang === "si" ? "ශේෂය" : "Net Position",      value: s.net_position,     color: s.net_position >= 0 ? "#2252b5" : "#ea6c0a" },
-                    ].map(({ label, value, color }) => (
-                      <div key={label} className="rounded-xl p-3 text-center"
-                        style={{ background: "var(--bg)", border: "1px solid var(--border)" }}>
-                        <p className="text-[10px] font-bold uppercase text-[var(--text-3)]">{label}</p>
-                        <p className="mt-1 text-[13px] font-extrabold" style={{ color }}>
+                      { label: lang === "si" ? "ලැබිය යුතු" : "Receivable",  value: s.total_receivable, color: "#16a34a", bg: "rgba(22,163,74,0.06)",   border: "rgba(22,163,74,0.2)"  },
+                      { label: lang === "si" ? "ගෙවිය යුතු" : "Payable",     value: s.total_payable,    color: "#dc2626", bg: "rgba(220,38,38,0.06)",  border: "rgba(220,38,38,0.2)" },
+                    ].map(({ label, value, color, bg, border }) => (
+                      <div key={label} className="rounded-xl p-3 text-center" style={{ background: bg, border: `1px solid ${border}` }}>
+                        <p className="text-[9px] font-bold uppercase tracking-wider" style={{ color }}>{label}</p>
+                        <p className="mt-1 text-[14px] font-extrabold" style={{ color }}>
                           {value === 0 ? "—" : `LKR ${value.toLocaleString()}`}
                         </p>
                       </div>
                     ))}
+                  </div>
+
+                  {/* Row 2 — Total Received | Total Paid */}
+                  <div className="mt-2 grid grid-cols-2 gap-2">
+                    {[
+                      { label: lang === "si" ? "ලැබුණු මුදල" : "Total Received", value: s.total_received, color: "#0891b2", bg: "rgba(8,145,178,0.06)",  border: "rgba(8,145,178,0.2)"  },
+                      { label: lang === "si" ? "ගෙව්වා"       : "Total Paid",     value: s.total_paid,     color: "#7c3aed", bg: "rgba(124,58,237,0.06)", border: "rgba(124,58,237,0.2)" },
+                    ].map(({ label, value, color, bg, border }) => (
+                      <div key={label} className="rounded-xl p-3 text-center" style={{ background: bg, border: `1px solid ${border}` }}>
+                        <p className="text-[9px] font-bold uppercase tracking-wider" style={{ color }}>{label}</p>
+                        <p className="mt-1 text-[14px] font-extrabold" style={{ color }}>
+                          {value === 0 ? "—" : `LKR ${value.toLocaleString()}`}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Net Position — full width */}
+                  <div className="mt-2 flex items-center justify-between rounded-xl px-4 py-2.5"
+                    style={{
+                      background: s.net_position >= 0 ? "rgba(34,82,181,0.06)" : "rgba(234,108,10,0.06)",
+                      border: `1px solid ${s.net_position >= 0 ? "rgba(34,82,181,0.15)" : "rgba(234,108,10,0.2)"}`,
+                    }}>
+                    <p className="text-[10px] font-bold uppercase tracking-wider"
+                      style={{ color: s.net_position >= 0 ? "#2252b5" : "#ea6c0a" }}>
+                      {lang === "si" ? "ශේෂය" : "Net Position"}
+                    </p>
+                    <p className="text-[15px] font-extrabold"
+                      style={{ color: s.net_position >= 0 ? "#2252b5" : "#ea6c0a" }}>
+                      {s.net_position === 0 ? "—" : `${s.net_position >= 0 ? "+" : ""}LKR ${s.net_position.toLocaleString()}`}
+                    </p>
                   </div>
 
                   <div className="mt-3 flex items-center gap-4">
