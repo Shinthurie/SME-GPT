@@ -200,11 +200,28 @@ export default function SettingsPage() {
   };
 
   const handleToggle2FA = async () => {
-    const token = getToken();
-    const res  = await fetch("/api/auth/2fa", { method:"PUT", headers:{"Content-Type":"application/json","Authorization":`Bearer ${token}`}, body:JSON.stringify({ enable:!form.twoFactorEnabled }) });
-    const data = await res.json();
-    if (res.ok) update("twoFactorEnabled", !form.twoFactorEnabled);
-    setMessage(data.message || "");
+    // Optimistic update — flip immediately so the toggle moves right away
+    const next = !form.twoFactorEnabled;
+    update("twoFactorEnabled", next);
+    try {
+      const token = getToken();
+      const res  = await fetch("/api/auth/2fa", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+        body: JSON.stringify({ enable: next }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        // Revert on failure
+        update("twoFactorEnabled", !next);
+        setMessage(data.error || "Failed to update 2FA");
+      } else {
+        setMessage(next ? "Two-factor authentication enabled" : "Two-factor authentication disabled");
+      }
+    } catch {
+      update("twoFactorEnabled", !next);
+      setMessage("Network error — please try again");
+    }
   };
 
   const handleExportData = async () => {
