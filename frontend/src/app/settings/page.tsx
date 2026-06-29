@@ -362,14 +362,14 @@ export default function SettingsPage() {
                     iconBg="rgba(220,38,38,0.1)" iconColor="#dc2626"
                     onClick={() => router.push("/forgot-password")} />
                   <Divider />
-                  <div className="flex items-center justify-between px-5 py-4">
-                    <div className="flex items-center gap-4">
-                      <span className="flex h-10 w-10 items-center justify-center rounded-xl" style={{ background:"var(--brand-tint)", color:"var(--brand-mid)" }}>
-                        <span className="material-symbols-outlined text-[18px]">shield</span>
+                  <div className="flex w-full items-center justify-between gap-4 px-5 py-4">
+                    <div className="flex min-w-0 flex-1 items-center gap-4">
+                      <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl" style={{ background:"var(--brand-tint)", color:"var(--brand-mid)" }}>
+                        <span className="material-symbols-outlined text-[20px]">shield</span>
                       </span>
-                      <div>
-                        <p className="text-[13px] font-medium text-[var(--text-1)]">{t.twoFactor}</p>
-                        <p className="text-[11px] text-[var(--text-3)]">{t.twoFactorSubtitle}</p>
+                      <div className="min-w-0">
+                        <p className="text-[14px] font-semibold text-[var(--text-1)]">{t.twoFactor}</p>
+                        <p className="text-[12px] text-[var(--text-3)] mt-0.5">{t.twoFactorSubtitle}</p>
                       </div>
                     </div>
                     <Toggle enabled={form.twoFactorEnabled} onClick={handleToggle2FA} />
@@ -421,7 +421,7 @@ export default function SettingsPage() {
               <>
                 <SectionLabel icon="language" title={t.documentProcessing} />
                 <Card>
-                  <div className="flex items-center justify-between px-5 py-4">
+                  <div className="flex w-full items-center justify-between gap-4 px-5 py-4">
                     <p className="text-[13px] text-[var(--text-1)]">{t.primaryLanguage}</p>
                     <select value={form.primaryLanguage}
                       onChange={e => { update("primaryLanguage",e.target.value); setLang(e.target.value as AppLanguage); setStoredLanguage(e.target.value as AppLanguage); handleSave(); }}
@@ -431,10 +431,10 @@ export default function SettingsPage() {
                     </select>
                   </div>
                   <Divider />
-                  <div className="flex items-center justify-between px-5 py-4">
-                    <div>
-                      <p className="text-[13px] font-medium text-[var(--text-1)]">{t.autoClassify}</p>
-                      <p className="text-[11px] text-[var(--text-3)]">Invoice / PO / DN</p>
+                  <div className="flex w-full items-center justify-between gap-4 px-5 py-4">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[14px] font-semibold text-[var(--text-1)]">{t.autoClassify}</p>
+                      <p className="text-[12px] text-[var(--text-3)] mt-0.5">Invoice / PO / DN</p>
                     </div>
                     <Toggle enabled={form.autoClassify} onClick={() => { update("autoClassify",!form.autoClassify); setTimeout(handleSave,100); }} />
                   </div>
@@ -442,14 +442,14 @@ export default function SettingsPage() {
 
                 <SectionLabel icon="palette" title={t.appearanceSection} />
                 <Card>
-                  <div className="flex items-center justify-between px-5 py-4">
-                    <div className="flex items-center gap-4">
-                      <span className="flex h-10 w-10 items-center justify-center rounded-xl" style={{ background:"var(--brand-tint)", color:"var(--brand-mid)" }}>
-                        <span className="material-symbols-outlined text-[18px]">{theme === "dark" ? "dark_mode" : "light_mode"}</span>
+                  <div className="flex w-full items-center justify-between gap-4 px-5 py-4">
+                    <div className="flex min-w-0 flex-1 items-center gap-4">
+                      <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl" style={{ background:"var(--brand-tint)", color:"var(--brand-mid)" }}>
+                        <span className="material-symbols-outlined text-[20px]">{theme === "dark" ? "dark_mode" : "light_mode"}</span>
                       </span>
-                      <div>
-                        <p className="text-[13px] font-medium text-[var(--text-1)]">{t.nightMode}</p>
-                        <p className="text-[11px] text-[var(--text-3)]">{theme === "dark" ? t.darkThemeActive : t.lightThemeActive}</p>
+                      <div className="min-w-0">
+                        <p className="text-[14px] font-semibold text-[var(--text-1)]">{t.nightMode}</p>
+                        <p className="text-[12px] text-[var(--text-3)] mt-0.5">{theme === "dark" ? t.darkThemeActive : t.lightThemeActive}</p>
                       </div>
                     </div>
                     <Toggle enabled={theme === "dark"} onClick={toggleTheme} />
@@ -461,8 +461,8 @@ export default function SettingsPage() {
             {/* ─── BUDGET TAB ──────────────────────────────────────────────── */}
             {tab === "budget" && (
               <Card>
-                <div className="flex items-center justify-between px-6 py-5">
-                  <div>
+                <div className="flex w-full items-center justify-between gap-4 px-6 py-5">
+                  <div className="min-w-0 flex-1">
                     <p className="text-[15px] font-bold text-[var(--text-1)]">
                       {lang === "si" ? "මාසික අයවැය" : "Monthly Budget Tracker"}
                     </p>
@@ -554,7 +554,7 @@ export default function SettingsPage() {
                 </Card>
 
                 <Card>
-                  <div className="flex items-center justify-between px-6 py-5">
+                  <div className="flex w-full items-center justify-between gap-4 px-6 py-5">
                     <div>
                       <p className="text-[15px] font-bold text-[var(--text-1)]">
                         {lang === "si" ? "මාසික P&L ඊමේල්" : "Monthly P&L Email"}
