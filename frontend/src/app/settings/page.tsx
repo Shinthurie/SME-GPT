@@ -19,7 +19,7 @@ type ProfileData = {
   phone: string; jobTitle: string; country: string;
 };
 
-const BUDGET_CATS = ["Transport","Food","Supplies","Utilities","Services","Rent","Marketing","Other"];
+const BUDGET_CATS = ["Budgeted Cost","Revenue","Cash Inflow","Cash Outflow"];
 const PERIOD_OPTIONS = [
   { key:"this_week",  en:"This Week",    si:"මේ සතිය"      },
   { key:"this_month", en:"This Month",   si:"මේ මාසය"      },
@@ -478,7 +478,7 @@ export default function SettingsPage() {
                   <>
                     <Divider />
                     <div className="px-6 py-5 space-y-3">
-                      <div className="grid gap-3 sm:grid-cols-2">
+                      <div className="grid gap-3">
                         {BUDGET_CATS.map(cat => (
                           <div key={cat} className="flex items-center gap-3 rounded-xl border px-4 py-3"
                             style={{ background:"var(--bg)", borderColor:"var(--border)" }}>
