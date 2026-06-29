@@ -2563,6 +2563,101 @@ async def whatsapp_webhook(request: Request):
 
 
 
+@app.get("/reports/payables")
+def payables_report(authorization: str = Header(default=None)):
+    """Payables Analysis — avoids double-counting PO + Invoice for same transaction.
+
+    Logic:
+      - Outstanding Invoices  → invoice/receipt docs with paid_status NOT 'paid'
+      - Committed POs         → PO docs where po_status is pending/approved (not yet invoiced)
+      - Settled               → any payable doc with paid_status = 'paid'
+
+    A PO in 'fulfilled' state is excluded from Committed because a real Invoice should
+    already exist for it. A PO in 'pending'/'approved' state is a future obligation only.
+    """
+    user_id = get_current_user_id(authorization)
+    from dataset_manager import parse_record_for_output
+    from datetime import datetime
+
+    records = [parse_record_for_output(r) for r in load_all_records(user_id=user_id)]
+
+    outstanding: list[dict] = []   # invoices/receipts not yet paid
+    committed:   list[dict] = []   # POs that are pending/approved (promise, no invoice yet)
+    settled:     list[dict] = []   # already paid
+
+    def _amt(r: dict) -> float:
+        for f in ("payable_amount", "final_total_amount"):
+            v = r.get(f)
+            if v not in (None, "NULL", "", "NONE"):
+                try: return float(str(v).replace(",", ""))
+                except: pass
+        return 0.0
+
+    def _days_old(date_str: str) -> int:
+        if not date_str or date_str == "NULL": return 0
+        for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y", "%d %b %Y", "%B %d, %Y"):
+            try:
+                d = datetime.strptime(date_str[:10], fmt)
+                return (datetime.today() - d).days
+            except: pass
+        return 0
+
+    for r in records:
+        ft   = str(r.get("effective_flow_type") or r.get("flow_type") or "").lower()
+        dt   = str(r.get("document_type") or "").lower()
+        paid = str(r.get("paid_status") or "").lower()
+        pos  = str(r.get("po_status")   or "").lower()
+        amt  = _amt(r)
+
+        if ft not in ("payable", "cash_outflow", "expense") or amt == 0:
+            continue
+
+        row = {
+            "document_id":   r.get("document_id"),
+            "document_type": dt,
+            "supplier_name": r.get("supplier_name") or r.get("company_name") or "—",
+            "amount":        amt,
+            "currency":      r.get("currency") or "LKR",
+            "date":          r.get("date") or "",
+            "days_old":      _days_old(str(r.get("date") or "")),
+            "paid_status":   paid,
+            "po_status":     pos,
+            "order_id":      r.get("order_id") or "",
+            "notes":         r.get("notes") or "",
+        }
+
+        if paid in ("paid", "received"):
+            settled.append(row)
+        elif dt == "po":
+            # PO fulfilled/cancelled → real invoice exists; exclude from committed to avoid double-count
+            if pos in ("fulfilled", "cancelled", "rejected"):
+                pass   # omit — these should have matching invoices
+            else:
+                committed.append(row)   # pending/approved/partially_delivered
+        else:
+            outstanding.append(row)   # invoice/receipt not yet paid
+
+    # Sort by amount descending
+    outstanding.sort(key=lambda x: -x["amount"])
+    committed.sort(key=lambda x: -x["amount"])
+    settled.sort(key=lambda x: -x["amount"])
+
+    return {
+        "success": True,
+        "summary": {
+            "outstanding_total": round(sum(x["amount"] for x in outstanding), 2),
+            "committed_total":   round(sum(x["amount"] for x in committed),   2),
+            "settled_total":     round(sum(x["amount"] for x in settled),     2),
+            "outstanding_count": len(outstanding),
+            "committed_count":   len(committed),
+            "settled_count":     len(settled),
+        },
+        "outstanding": outstanding,
+        "committed":   committed,
+        "settled":     settled,
+    }
+
+
 @app.get("/reports/pnl")
 def pnl_report(
     authorization: str = Header(default=None),
