@@ -29,6 +29,131 @@ const DOC_LABELS: Record<DocType, { en: string; si: string; icon: string }> = {
   dn:      { en: "Delivery Note",  si: "බෙදාහැරීම",    icon: "local_shipping"  },
 };
 
+// ── Company Role Configuration ─────────────────────────────────────────────
+// For each doc type there are 2 roles: we can be the "issuer" or the "receiver".
+// This drives the flow_type and the label for the other party field.
+type RoleKey = "issuer" | "receiver";
+
+type RoleConfig = {
+  key: RoleKey;
+  label_en: string;        // dropdown option label
+  label_si: string;
+  desc_en: string;         // short description shown under dropdown
+  desc_si: string;
+  party_label_en: string;  // label for the "other party" field
+  party_label_si: string;
+  flow_type: string;       // auto-set on role selection
+  company_is_en: string;   // what our company is in this role
+  company_is_si: string;
+};
+
+const ROLE_CONFIGS: Record<DocType, [RoleConfig, RoleConfig]> = {
+  receipt: [
+    {
+      key: "issuer",
+      label_en:        "We issued this receipt",
+      label_si:        "අපි රිසිට් නිකුත් කළා",
+      desc_en:         "We received payment from a customer and gave them a receipt",
+      desc_si:         "ගනුදෙනුකරුවෙකුගෙන් ගෙවීමක් ලැබී රිසිට් දිනා",
+      party_label_en:  "Customer (paid us)",
+      party_label_si:  "ගනුදෙනුකරු (අපට ගෙව්වා)",
+      flow_type:       "cash_inflow",
+      company_is_en:   "Seller / Service Provider",
+      company_is_si:   "අලෙවිකරු / සේවා සැපයුම්කරු",
+    },
+    {
+      key: "receiver",
+      label_en:        "We received this receipt",
+      label_si:        "අපට රිසිට් ලැබුණා",
+      desc_en:         "We paid a vendor and they gave us a receipt",
+      desc_si:         "අපි සැපයුම්කරුවෙකුට ගෙවා රිසිට් ලැබුණා",
+      party_label_en:  "Supplier (we paid them)",
+      party_label_si:  "සැපයුම්කරු (අපි ගෙව්වා)",
+      flow_type:       "cash_outflow",
+      company_is_en:   "Buyer / Customer",
+      company_is_si:   "ගැනුම්කරු / ගනුදෙනුකරු",
+    },
+  ],
+  invoice: [
+    {
+      key: "issuer",
+      label_en:        "We issued this invoice",
+      label_si:        "අපි ඉන්වොයිස් නිකුත් කළා",
+      desc_en:         "We billed a client for goods or services we provided",
+      desc_si:         "අපි සේවා/භාණ්ඩ සැපයීමෙන් පසු ගනුදෙනුකරුට ඉල්ලුම් කළා",
+      party_label_en:  "Client / Bill To",
+      party_label_si:  "ගනුදෙනුකරු / ඉල්ලුම්",
+      flow_type:       "receivable",
+      company_is_en:   "Seller / Service Provider",
+      company_is_si:   "අලෙවිකරු / සේවා සැපයුම්කරු",
+    },
+    {
+      key: "receiver",
+      label_en:        "We received this invoice",
+      label_si:        "අපට ඉන්වොයිසයක් ලැබුණා",
+      desc_en:         "A supplier sent us an invoice — we owe them money",
+      desc_si:         "සැපයුම්කරු ඉන්වොයිසයක් යැව්වා — අපට ගෙවිය යුතුයි",
+      party_label_en:  "Supplier (billed us)",
+      party_label_si:  "සැපයුම්කරු (ඉල්ලුම් කළා)",
+      flow_type:       "payable",
+      company_is_en:   "Buyer / Customer",
+      company_is_si:   "ගැනුම්කරු / ගනුදෙනුකරු",
+    },
+  ],
+  po: [
+    {
+      key: "issuer",
+      label_en:        "We sent this Purchase Order",
+      label_si:        "අපි PO නිකුත් කළා",
+      desc_en:         "We are ordering goods/services from a supplier",
+      desc_si:         "අපි සැපයුම්කරුවෙකුගෙන් භාණ්ඩ/සේවා ඇණවුම් කළා",
+      party_label_en:  "Supplier (we're ordering from)",
+      party_label_si:  "සැපයුම්කරු (ඇණවුම් කළා)",
+      flow_type:       "payable",
+      company_is_en:   "Buyer / Purchaser",
+      company_is_si:   "ගැනුම්කරු",
+    },
+    {
+      key: "receiver",
+      label_en:        "We received a Purchase Order",
+      label_si:        "අපට PO ලැබුණා",
+      desc_en:         "A client sent us a PO — they are ordering from us",
+      desc_si:         "ගනුදෙනුකරු PO යැව්වා — ඔවුන් අපෙන් ඇණවුම් කළා",
+      party_label_en:  "Client (ordering from us)",
+      party_label_si:  "ගනුදෙනුකරු (අපෙන් ඇණවුම් කළා)",
+      flow_type:       "receivable",
+      company_is_en:   "Seller / Supplier",
+      company_is_si:   "අලෙවිකරු / සැපයුම්කරු",
+    },
+  ],
+  dn: [
+    {
+      key: "receiver",
+      label_en:        "We received this delivery",
+      label_si:        "අපි භාණ්ඩ ලැබුණා",
+      desc_en:         "A supplier delivered goods to us",
+      desc_si:         "සැපයුම්කරු භාණ්ඩ ලබා දුන්නා",
+      party_label_en:  "Supplier / Delivered By",
+      party_label_si:  "සැපයුම්කරු / ලබා දිනා",
+      flow_type:       "expense",
+      company_is_en:   "Receiver",
+      company_is_si:   "ලැබුම්කරු",
+    },
+    {
+      key: "issuer",
+      label_en:        "We made this delivery",
+      label_si:        "අපි භාණ්ඩ ලබා දුන්නා",
+      desc_en:         "We delivered goods to a client",
+      desc_si:         "අපි ගනුදෙනුකරුට භාණ්ඩ ලබා දුන්නා",
+      party_label_en:  "Client / Delivered To",
+      party_label_si:  "ගනුදෙනුකරු / ලබා දුන්නා",
+      flow_type:       "income",
+      company_is_en:   "Supplier / Deliverer",
+      company_is_si:   "සැපයුම්කරු / ලබා දෙන්නා",
+    },
+  ],
+};
+
 function getAuthToken() {
   if (typeof window === "undefined") return "";
   return localStorage.getItem("token") || sessionStorage.getItem("token") || "";
@@ -182,7 +307,8 @@ function DocPreview({
 export default function ManualEntryPage() {
   const router = useRouter();
   const [lang, setLang]         = useState<AppLanguage>("en");
-  const [docType, setDocType]   = useState<DocType>("receipt");
+  const [docType, setDocType]     = useState<DocType>("receipt");
+  const [companyRole, setCompanyRole] = useState<RoleKey>("receiver"); // "receiver" = most common for receipts
   const [orderRef, setOrderRef] = useState("");
   const [date, setDate]         = useState(new Date().toISOString().slice(0, 10));
   const [company, setCompany]   = useState("");
@@ -203,6 +329,10 @@ export default function ManualEntryPage() {
   }, []);
 
   const t = ui[lang];
+
+  // Active role config for current doc type + selected role
+  const roleOptions = ROLE_CONFIGS[docType];
+  const activeRole  = roleOptions.find(r => r.key === companyRole) || roleOptions[0];
 
   const updateItem = (idx: number, key: keyof Item, val: string) => {
     const next = [...items];
@@ -238,6 +368,8 @@ export default function ManualEntryPage() {
       tax_rate:      taxRate ? parseFloat(taxRate) : undefined,
       notes:         notes.trim() || undefined,
       force_save:    false,
+      // Pass role-derived flow_type so backend uses the user's intent
+      flow_type_override: activeRole.flow_type,
     };
 
     try {
@@ -305,7 +437,8 @@ export default function ManualEntryPage() {
                 </p>
                 <div className="flex flex-wrap gap-2">
                   {(["receipt","invoice","po","dn"] as DocType[]).map((dt) => (
-                    <button key={dt} onClick={() => setDocType(dt)}
+                    <button key={dt}
+                      onClick={() => { setDocType(dt); setCompanyRole(ROLE_CONFIGS[dt][0].key); }}
                       className="flex items-center gap-2 rounded-xl px-4 py-2.5 text-[13px] font-semibold transition"
                       style={docType === dt
                         ? { background: DOC_COLORS[dt], color: "#fff", boxShadow: `0 2px 8px ${DOC_COLORS[dt]}44` }
@@ -314,6 +447,37 @@ export default function ManualEntryPage() {
                       {DOC_LABELS[dt][lang === "si" ? "si" : "en"]}
                     </button>
                   ))}
+                </div>
+              </div>
+
+              {/* Company Role dropdown — key to the whole feature */}
+              <div>
+                <label className="mb-1.5 block text-[12px] font-semibold text-[var(--text-2)]">
+                  {lang === "si" ? "ඔබගේ සමාගමේ භූමිකාව" : "Your Company's Role in this Document"} *
+                </label>
+                <select
+                  value={companyRole}
+                  onChange={e => setCompanyRole(e.target.value as RoleKey)}
+                  className="field-input w-full rounded-xl border px-4 py-3 text-[14px] font-semibold transition"
+                  style={{ borderColor: color, boxShadow: `0 0 0 2px ${color}18` }}
+                >
+                  {roleOptions.map(r => (
+                    <option key={r.key} value={r.key}>
+                      {lang === "si" ? r.label_si : r.label_en}
+                    </option>
+                  ))}
+                </select>
+                {/* Context description */}
+                <div className="mt-2 flex items-start gap-2 rounded-xl px-3 py-2.5 text-[12px]"
+                  style={{ background: `${color}08`, border: `1px solid ${color}18`, color: "var(--text-2)" }}>
+                  <span className="material-symbols-outlined text-[15px] mt-0.5 shrink-0" style={{ color }}>info</span>
+                  <div>
+                    <p>{lang === "si" ? activeRole.desc_si : activeRole.desc_en}</p>
+                    <p className="mt-0.5 font-semibold" style={{ color }}>
+                      {lang === "si" ? "ඔබ:" : "Your company is:"}{" "}
+                      {lang === "si" ? activeRole.company_is_si : activeRole.company_is_en}
+                    </p>
+                  </div>
                 </div>
               </div>
 
@@ -337,19 +501,18 @@ export default function ManualEntryPage() {
                 <div>
                   <label className="mb-1.5 block text-[12px] font-semibold text-[var(--text-2)]">
                     {lang === "si" ? "ඔබගේ සමාගම" : "Your Company"}{" "}
-                    <span className="text-[10px] opacity-50">({lang === "si" ? "ස්වයංක්‍රීය" : "auto"})</span>
+                    <span className="text-[10px] opacity-50">
+                      ({lang === "si" ? activeRole.company_is_si : activeRole.company_is_en})
+                    </span>
                   </label>
                   <input value={company} readOnly
                     className="field-input w-full rounded-xl border px-4 py-2.5 text-[14px]"
                     style={{ background: "var(--input-bg-ro)", cursor: "not-allowed" }} />
                 </div>
                 <div>
+                  {/* Label comes from the active role config */}
                   <label className="mb-1.5 block text-[12px] font-semibold text-[var(--text-2)]">
-                    {docType === "dn" || docType === "po"
-                      ? (lang === "si" ? "සැපයුම්කරු" : "Supplier *")
-                      : docType === "invoice"
-                      ? (lang === "si" ? "ගනුදෙනුකරු" : "Customer *")
-                      : (lang === "si" ? "ගෙව්වේ / ලැබුනේ" : "Paid To / Received From *")}
+                    {lang === "si" ? activeRole.party_label_si : activeRole.party_label_en} *
                   </label>
                   <input value={supplier} onChange={e => setSupplier(e.target.value)}
                     placeholder={lang === "si" ? "නම ඇතුළත් කරන්න" : "Enter name"}

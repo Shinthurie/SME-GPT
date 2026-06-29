@@ -891,6 +891,7 @@ class ManualDocumentRequest(BaseModel):
     notes: Optional[str] = None
     due_date: Optional[str] = None       # for PO/Invoice
     force_save: bool = False
+    flow_type_override: Optional[str] = None  # from company-role dropdown
 
 
 class QueryRequest(BaseModel):
@@ -1559,14 +1560,23 @@ def create_manual_document(
     tax_amount = round(subtotal * tax_rate / 100, 2) if tax_rate else (payload.tax_amount or 0.0)
     grand_total = round(subtotal + tax_amount, 2)
 
-    # Auto-set flow_type
+    # Auto-set flow_type — use the role-aware override from the frontend dropdown
+    # if provided, otherwise fall back to the default for the document type.
+    _VALID_FLOW_TYPES = {
+        "payable", "receivable", "cash_inflow", "cash_outflow",
+        "expense", "income", "unknown",
+    }
     flow_map = {
         "receipt": "cash_outflow",
         "invoice": "receivable",
         "po":      "payable",
         "dn":      "expense",
     }
-    flow_type = flow_map.get(doc_type, "cash_outflow")
+    _override = str(payload.flow_type_override or "").strip().lower()
+    if _override and _override in _VALID_FLOW_TYPES:
+        flow_type = _override
+    else:
+        flow_type = flow_map.get(doc_type, "cash_outflow")
 
     # ── Build data dict (same shape as OCR extraction output) ─────────────────
     doc_data: dict = {
