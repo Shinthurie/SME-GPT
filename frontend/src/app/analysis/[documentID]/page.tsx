@@ -602,8 +602,8 @@ export default function AnalysisDetailPage() {
                     <br />
                     <span className="font-semibold text-[#0f172a]">{t.partyLabel}:</span> {formatParty()}
                     <br />
-                    {/* Hide Flow Type and Category for Delivery Notes */}
-                    {target.document_type !== "dn" && (
+                    {/* Hide Flow Type and Category for DN (no amounts) and PO (always payable) */}
+                    {target.document_type !== "dn" && target.document_type !== "po" && (
                       <>
                         <span className="font-semibold text-[#0f172a]">{t.flowTypeLabel}:</span>{" "}
                         {editMode ? (
