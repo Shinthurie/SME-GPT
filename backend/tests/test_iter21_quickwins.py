@@ -97,7 +97,8 @@ class _FakeConn:
     def __exit__(self, *a): pass
 
 
-def test_load_records_date_filter_in_sql(monkeypatch):
+def test_load_records_date_filter_no_sql_clause(monkeypatch):
+    """load_records does NOT add a docDate SQL clause — filtering is done in Python."""
     import dataset_manager as dm
     sink = {"sql": [], "params": []}
     monkeypatch.setattr(dm, "get_conn", lambda: _FakeConn(sink))
@@ -105,10 +106,11 @@ def test_load_records_date_filter_in_sql(monkeypatch):
     dm.load_records(user_id="u1", date_from="2026-03-01", date_to="2026-03-31")
 
     sql = sink["sql"][0]
-    assert '"createdAt" >= %s' in sql
-    assert '"createdAt" < %s' in sql
-    assert datetime(2026, 3, 1) in sink["params"][0]
-    assert datetime(2026, 4, 1) in sink["params"][0]
+    # SQL should NOT contain docDate — Python-side filter handles it
+    assert '"docDate" >=' not in sql
+    assert '"docDate" <' not in sql
+    # But it must still filter by tenantId
+    assert '"tenantId"' in sql
 
 
 def test_load_records_no_date_filter_omits_clause(monkeypatch):
@@ -118,19 +120,19 @@ def test_load_records_no_date_filter_omits_clause(monkeypatch):
 
     dm.load_records(user_id="u1")
 
-    assert '"createdAt" >=' not in sink["sql"][0]
-    assert '"createdAt" <' not in sink["sql"][0]
+    assert '"docDate"' not in sink["sql"][0]
 
 
-def test_count_records_date_filter_in_sql(monkeypatch):
+def test_count_records_date_filter_python_side(monkeypatch):
+    """count_records with date range fetches docDate column and filters in Python."""
     import dataset_manager as dm
     sink = {"sql": [], "params": []}
     monkeypatch.setattr(dm, "get_conn", lambda: _FakeConn(sink))
 
     total = dm.count_records("u1", date_from="2026-03-01", date_to="2026-03-31")
 
-    assert total == 0
+    assert total == 0   # FakeConn returns empty rows
     sql = sink["sql"][0]
-    assert "COUNT(*)" in sql.upper()
-    assert '"createdAt" >= %s' in sql
-    assert '"createdAt" < %s' in sql
+    # It fetches documentId + docDate, not COUNT(*)
+    assert '"docDate"' in sql
+    assert "%s" in sql
