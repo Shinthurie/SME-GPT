@@ -15,7 +15,6 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from "recharts";
 import HealthScoreCard from "@/components/ui/HealthScoreCard";
-import ExpenseDonut    from "@/components/ui/ExpenseDonut";
 import WhoOwesWho     from "@/components/ui/WhoOwesWho";
 import ActivityFeed   from "@/components/ui/ActivityFeed";
 
@@ -29,7 +28,6 @@ type MismatchAlert = {
 };
 
 type HealthScore    = { net: number; trend_pct: number; color: "green"|"red"; this_month: string };
-type ExpenseSlice   = { category: string; amount: number; pct: number };
 type BalanceEntry   = { document_id: string; document_type: string; supplier_name: string; amount: number; currency: string; date: string };
 type ActivityItem   = { event_type: string; content: string; created_at: string };
 
@@ -45,7 +43,6 @@ type SummaryData = {
   mismatch_alerts?: MismatchAlert[];
   // Feature 2 analytics
   health_score?:      HealthScore;
-  expense_breakdown?: ExpenseSlice[];
   top_receivables?:   BalanceEntry[];
   top_payables?:      BalanceEntry[];
   activity_feed?:     ActivityItem[];
@@ -509,13 +506,6 @@ export default function DashboardPage() {
                 lang={lang}
                 currency="LKR"
               />
-            </section>
-          )}
-
-          {/* ── Feature 2: Widget 3 — Expense Donut ────────────────────── */}
-          {summary?.expense_breakdown && summary.expense_breakdown.length > 0 && (
-            <section className="mt-6">
-              <ExpenseDonut data={summary.expense_breakdown} lang={lang} currency="LKR" />
             </section>
           )}
 

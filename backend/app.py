@@ -1779,39 +1779,6 @@ def dashboard_summary(authorization: str = Header(default=None)):
         "this_month": this_month,
     }
 
-    # ── Widget 3: Expense Category Donut ──────────────────────────────────────
-    _CATEGORIES: dict[str, list[str]] = {
-        "Transport":  ["transport","fuel","tuk","bus","cab","taxi","vehicle","petrol","diesel"],
-        "Supplies":   ["supplies","stationery","office","paper","printer","ink","pen","book"],
-        "Food":       ["food","meal","lunch","dinner","restaurant","beverage","tea","coffee"],
-        "Services":   ["service","consultation","design","software","website","maintenance","repair"],
-        "Rent":       ["rent","lease","venue","hall","room","space","accommodation"],
-        "Utilities":  ["electricity","water","internet","phone","mobile","slt","dialog","mobitel"],
-        "Marketing":  ["marketing","advertising","promotion","banner","brochure","print"],
-    }
-    cat_totals: dict[str, float] = {}
-    for r in records:
-        ft = str(r.get("effective_flow_type") or r.get("flow_type") or "").lower()
-        if ft not in ("payable", "cash_outflow", "expense"): continue
-        amt = 0.0
-        for f in ("payable_amount", "final_total_amount"):
-            v = r.get(f)
-            if v not in (None, "NULL", ""):
-                try: amt = float(str(v).replace(",", "")); break
-                except: pass
-        if not amt: continue
-        desc = (str(r.get("corrected_text") or r.get("supplier_name") or "")).lower()
-        cat = "Other"
-        for name, keywords in _CATEGORIES.items():
-            if any(kw in desc for kw in keywords): cat = name; break
-        cat_totals[cat] = round(cat_totals.get(cat, 0) + amt, 2)
-    total_exp = sum(cat_totals.values()) or 1
-    expense_breakdown = sorted(
-        [{"category": k, "amount": v, "pct": round(v / total_exp * 100, 1)}
-         for k, v in cat_totals.items()],
-        key=lambda x: -x["amount"]
-    )
-
     # ── Widget 4: Who Owes Me / Who I Owe ─────────────────────────────────────
     top_receivables, top_payables = [], []
     for r in records:
@@ -1877,7 +1844,6 @@ def dashboard_summary(authorization: str = Header(default=None)):
         "mismatch_alerts": mismatch_docs,
         # Feature 2 — Analytics widgets
         "health_score":      health_score,
-        "expense_breakdown": expense_breakdown,
         "top_receivables":   top_receivables,
         "top_payables":      top_payables,
         "activity_feed":     activity_feed,
