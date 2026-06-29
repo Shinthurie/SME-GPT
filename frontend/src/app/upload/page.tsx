@@ -447,6 +447,14 @@ export default function UploadPage() {
             </button>
             <div className="flex items-center gap-2">
               <button
+                onClick={() => router.push("/manual-entry")}
+                className="flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-[12px] font-semibold transition hover:opacity-80"
+                style={{ background: "rgba(234,108,10,0.1)", color: "#ea6c0a" }}
+              >
+                <span className="material-symbols-outlined text-[15px]">edit_note</span>
+                {lang === "si" ? "අතින් ඇතුළත් කරන්න" : "Manual Entry"}
+              </button>
+              <button
                 onClick={() => router.push("/bulk-upload")}
                 className="flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-[12px] font-semibold transition hover:opacity-80"
                 style={{ background: "var(--brand-tint)", color: "var(--brand-mid)" }}

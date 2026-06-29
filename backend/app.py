@@ -878,6 +878,21 @@ class ConfirmSaveRequest(BaseModel):
     force_save: bool = False
 
 
+class ManualDocumentRequest(BaseModel):
+    """IT: Manual document entry — no OCR, data entered by the user."""
+    document_type: str = "receipt"       # receipt | invoice | po | dn
+    order_id: Optional[str] = None       # auto-generated if blank
+    date: Optional[str] = None           # defaults to today
+    supplier_name: str = ""              # the other party
+    currency: str = "LKR"
+    items: List[dict] = []               # [{description, quantity, unit_price, line_total}]
+    tax_rate: Optional[float] = None
+    tax_amount: Optional[float] = None
+    notes: Optional[str] = None
+    due_date: Optional[str] = None       # for PO/Invoice
+    force_save: bool = False
+
+
 class QueryRequest(BaseModel):
     company_name: str
     question: str
@@ -1481,6 +1496,156 @@ def delete_document(document_id: str, authorization: str = Header(default=None))
         "message": "Document deleted successfully.",
         "document_id": document_id,
     }
+
+@app.post("/documents/manual")
+def create_manual_document(
+    payload: ManualDocumentRequest,
+    authorization: str = Header(default=None),
+):
+    """Create a document from manually entered data (no OCR pipeline).
+
+    Generates a professional PNG image using Pillow templates and stores it
+    alongside the structured data — exactly like an OCR-processed document,
+    but with source='manual' so it can be filtered/badged in the UI.
+    """
+    user_id = get_current_user_id(authorization)
+    require_write_role(authorization)
+
+    from datetime import date as _date
+    from dataset_manager import parse_record_for_output
+    from manual_doc_generator import generate_document_image, save_document_image_bytes
+
+    # ── Normalise inputs ──────────────────────────────────────────────────────
+    doc_type = str(payload.document_type or "receipt").lower().strip()
+    doc_date = str(payload.date or "").strip() or _date.today().strftime("%d/%m/%Y")
+
+    # Auto-generate reference number if not provided
+    prefix_map = {"receipt": "R", "invoice": "IN", "po": "PO", "dn": "DN"}
+    prefix = prefix_map.get(doc_type, "DOC")
+    from dataset_manager import generate_document_id
+    order_id = str(payload.order_id or "").strip() or generate_document_id(doc_type)
+
+    # ── Look up user's company name ───────────────────────────────────────────
+    user_company = ""
+    try:
+        with get_db_connection() as _uc:
+            with _uc.cursor() as _cur:
+                _cur.execute('SELECT "companyName" FROM "User" WHERE id = %s', (str(user_id),))
+                _row = _cur.fetchone()
+        if _row:
+            user_company = (_row.get("companyName") if isinstance(_row, dict) else _row[0]) or ""
+    except Exception as _e:
+        print(f"[MANUAL] could not fetch company name: {_e}", flush=True)
+
+    # ── Calculate totals from items ───────────────────────────────────────────
+    items = []
+    subtotal = 0.0
+    for item in (payload.items or []):
+        desc  = str(item.get("description", "") or "").strip()
+        if not desc:
+            continue
+        try:
+            qty   = float(str(item.get("quantity",   1)   or 1))
+            price = float(str(item.get("unit_price", 0)   or 0).replace(",", ""))
+            total = round(qty * price, 2) if price else float(
+                str(item.get("line_total", 0) or 0).replace(",", "")
+            )
+        except (ValueError, TypeError):
+            qty, price, total = 1, 0.0, 0.0
+        subtotal += total
+        items.append({"description": desc, "quantity": qty, "unit_price": price, "line_total": total})
+
+    tax_rate = payload.tax_rate or 0.0
+    tax_amount = round(subtotal * tax_rate / 100, 2) if tax_rate else (payload.tax_amount or 0.0)
+    grand_total = round(subtotal + tax_amount, 2)
+
+    # Auto-set flow_type
+    flow_map = {
+        "receipt": "cash_outflow",
+        "invoice": "receivable",
+        "po":      "payable",
+        "dn":      "expense",
+    }
+    flow_type = flow_map.get(doc_type, "cash_outflow")
+
+    # ── Build data dict (same shape as OCR extraction output) ─────────────────
+    doc_data: dict = {
+        "document_type":      doc_type,
+        "order_id":           order_id,
+        "flow_type":          flow_type,
+        "effective_flow_type": flow_type,
+        "company_name":       user_company,
+        "supplier_name":      str(payload.supplier_name or "").strip() or (
+                                  "Customer" if flow_type in ("receivable","cash_inflow")
+                                  else "Supplier"),
+        "date":               doc_date,
+        "currency":           str(payload.currency or "LKR"),
+        "raw_total_amount":   grand_total,
+        "final_total_amount": grand_total,
+        "payable_amount":     grand_total,
+        "cash_return":        "",
+        "tax_amount":         tax_amount or "",
+        "tax_rate":           tax_rate or "",
+        "received_status":    "NULL",
+        "paid_status":        "paid" if doc_type == "receipt" else "not_paid",
+        "status":             "ready",
+        "language":           "en",
+        "items_json":         __import__("json").dumps(items, ensure_ascii=False),
+        "corrected_text":     f"Manual entry: {doc_type} {order_id}",
+        "raw_text":           "",
+        "ocr_selected_version": "manual",
+        "structured_json":    "",
+        "correction_json":    "",
+        "arithmetic_status":  "matched",
+        "arithmetic_json":    "",
+        "source":             "manual",          # marks this as manual entry
+        "notes":              str(payload.notes or ""),
+        "due_date":           str(payload.due_date or ""),
+    }
+
+    # ── Duplicate check ───────────────────────────────────────────────────────
+    duplicate = find_duplicate_record(doc_data, user_id=user_id)
+    if duplicate and not payload.force_save:
+        return {
+            "success": False,
+            "duplicate_found": True,
+            "message": "A similar document already exists.",
+            "existing_document_id": duplicate.get("document_id", "NULL"),
+        }
+
+    # ── Save to DB ────────────────────────────────────────────────────────────
+    save_result = upsert_confirmed_record(doc_data, user_id=user_id)
+    document_id = save_result["record"]["document_id"]
+
+    # ── Generate document image ───────────────────────────────────────────────
+    image_data = {**doc_data, "order_id": order_id, "items": items}
+    image_url = None
+    try:
+        png_bytes = generate_document_image(image_data)
+        image_url = save_document_image_bytes(
+            png_bytes, document_id, save_dir=str(SAVED_DOCS_DIR)
+        )
+    except Exception as _img_err:
+        print(f"[MANUAL] image generation failed (non-fatal): {_img_err}", flush=True)
+
+    _log_audit_event(user_id, "DOCUMENT_SAVED",
+                     f"document_id={document_id} action=manual_entry")
+
+    # ── Wire C4 entity index ──────────────────────────────────────────────────
+    try:
+        from entity_index import index_document as _index_doc
+        _index_doc(doc_data, user_id)
+    except Exception:
+        pass
+
+    return {
+        "success": True,
+        "document_id": document_id,
+        "image_url":   image_url,
+        "action":      save_result.get("action", "inserted"),
+        "message":     f"Document {document_id} created successfully.",
+    }
+
 
 @app.get("/documents")
 def get_documents(

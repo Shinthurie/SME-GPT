@@ -24,6 +24,7 @@ type RepoDocument = {
   status: string;
   flow_type?: string;
   file_size_kb?: number | null;
+  source?: string | null;
   // Iteration 10: workflow status fields
   po_status?: string | null;
   dn_status?: string | null;
@@ -396,7 +397,15 @@ export default function RepositoryPage() {
                       </div>
 
                       <div className="min-w-0 flex-1">
-                        <p className="truncate text-[15px] font-bold text-[var(--text-1)]">{docTitle(item)}</p>
+                        <div className="flex items-center gap-2">
+                          <p className="truncate text-[15px] font-bold text-[var(--text-1)]">{docTitle(item)}</p>
+                          {item.source === "manual" && (
+                            <span className="shrink-0 rounded-md px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider"
+                              style={{ background: "rgba(234,108,10,0.1)", color: "#ea6c0a" }}>
+                              {lang === "si" ? "අතින්" : "MANUAL"}
+                            </span>
+                          )}
+                        </div>
                         <p className="mt-0.5 text-[11px] font-semibold uppercase tracking-[0.06em] text-[var(--text-3)]">{docSubLabel(item)}</p>
 
                         <div className="mt-2 grid gap-2 sm:grid-cols-2">

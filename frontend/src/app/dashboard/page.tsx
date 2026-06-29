@@ -288,7 +288,8 @@ export default function DashboardPage() {
               { label: lang === "si" ? "ලාභ/පාඩු" : "P&L Report", icon: "trending_up", path: "/reports/pnl", color: "#2252b5" },
               { label: lang === "si" ? "VAT වාර්තාව" : "VAT Report", icon: "receipt_long", path: "/reports/vat", color: "#7c3aed" },
               { label: lang === "si" ? "සැපයුම්කරුවන්" : "Suppliers", icon: "contacts", path: "/suppliers", color: "#16a34a" },
-              { label: lang === "si" ? "ශ්‍රේණිගත" : "Bulk Upload", icon: "file_copy", path: "/bulk-upload", color: "#ea6c0a" },
+              { label: lang === "si" ? "ශ්‍රේණිගත" : "Bulk Upload",    icon: "file_copy",  path: "/bulk-upload",    color: "#ea6c0a" },
+              { label: lang === "si" ? "අතින් ලේඛනය" : "Manual Entry", icon: "edit_note",  path: "/manual-entry",   color: "#64748b" },
             ].map(({ label, icon, path, color }) => (
               <button key={path} onClick={() => router.push(path)}
                 className="flex items-center gap-2 rounded-xl px-4 py-2 text-[12px] font-bold transition hover:opacity-80"
