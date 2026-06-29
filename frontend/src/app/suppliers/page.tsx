@@ -409,12 +409,6 @@ export default function SuppliersPage() {
                       <span className="material-symbols-outlined text-[15px]">history</span>
                       {lang === "si" ? "ඉතිහාසය බලන්න" : "View history"}
                     </button>
-                    <button onClick={() => router.push(`/repository?q=${encodeURIComponent(s.name)}`)}
-                      className="flex items-center gap-1.5 text-[12px] font-bold transition hover:opacity-75"
-                      style={{ color: "var(--text-3)" }}>
-                      <span className="material-symbols-outlined text-[15px]">folder_open</span>
-                      {lang === "si" ? "ලේඛන" : "Documents"}
-                    </button>
                   </div>
                 </div>
               ))}
