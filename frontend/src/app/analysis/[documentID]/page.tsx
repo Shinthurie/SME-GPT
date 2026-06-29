@@ -602,37 +602,43 @@ export default function AnalysisDetailPage() {
                     <br />
                     <span className="font-semibold text-[#0f172a]">{t.partyLabel}:</span> {formatParty()}
                     <br />
-                    <span className="font-semibold text-[#0f172a]">{t.flowTypeLabel}:</span>{" "}
-                    {editMode ? (
-                      <select
-                        value={target.flow_type || "unknown"}
-                        onChange={(e) => updateField("flow_type", e.target.value)}
-                        className="ml-2 rounded border border-slate-200 px-2 py-1 text-[13px]"
-                      >
-                        <option value="unknown">{lang === "si" ? "නොදනී" : "Unknown"}</option>
-                        <option value="payable">{humanizeFlow("payable", lang)}</option>
-                        <option value="receivable">{humanizeFlow("receivable", lang)}</option>
-                        <option value="cash_inflow">{humanizeFlow("cash_inflow", lang)}</option>
-                        <option value="cash_outflow">{humanizeFlow("cash_outflow", lang)}</option>
-                      </select>
-                    ) : (target.flow_type && target.flow_type !== "NULL" ? humanizeFlow(target.flow_type, lang) : "—")}
-                    <br />
-                    <span className="font-semibold text-[#0f172a]">{t.categoryLabel}:</span>{" "}
-                    {(() => {
-                      const ft = (target.flow_type || "").toLowerCase();
-                      const derived = (target.category && target.category !== "NULL")
-                        ? target.category
-                        : ["receivable","cash_inflow"].includes(ft) ? t.categoryRevenue
-                        : ["payable","cash_outflow"].includes(ft) ? t.categoryExpenses
-                        : t.categoryUnknown;
-                      return (
-                        <span className={`ml-1 inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-bold ${
-                          derived === "Revenue"  ? "bg-green-50 text-green-700" :
-                          derived === "Expenses" ? "bg-red-50 text-red-700"    :
-                                                   "bg-slate-50 text-slate-500"
-                        }`}>{derived}</span>
-                      );
-                    })()}
+                    {/* Hide Flow Type and Category for Delivery Notes */}
+                    {target.document_type !== "dn" && (
+                      <>
+                        <span className="font-semibold text-[#0f172a]">{t.flowTypeLabel}:</span>{" "}
+                        {editMode ? (
+                          <select
+                            value={target.flow_type || "unknown"}
+                            onChange={(e) => updateField("flow_type", e.target.value)}
+                            className="ml-2 rounded border border-slate-200 px-2 py-1 text-[13px]"
+                          >
+                            <option value="unknown">{lang === "si" ? "නොදනී" : "Unknown"}</option>
+                            <option value="payable">{humanizeFlow("payable", lang)}</option>
+                            <option value="receivable">{humanizeFlow("receivable", lang)}</option>
+                            <option value="cash_inflow">{humanizeFlow("cash_inflow", lang)}</option>
+                            <option value="cash_outflow">{humanizeFlow("cash_outflow", lang)}</option>
+                          </select>
+                        ) : (target.flow_type && target.flow_type !== "NULL" ? humanizeFlow(target.flow_type, lang) : "—")}
+                        <br />
+                        <span className="font-semibold text-[#0f172a]">{t.categoryLabel}:</span>{" "}
+                        {(() => {
+                          const ft = (target.flow_type || "").toLowerCase();
+                          const derived = (target.category && target.category !== "NULL")
+                            ? target.category
+                            : ["receivable","cash_inflow"].includes(ft) ? t.categoryRevenue
+                            : ["payable","cash_outflow"].includes(ft) ? t.categoryExpenses
+                            : t.categoryUnknown;
+                          return (
+                            <span className={`ml-1 inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-bold ${
+                              derived === "Revenue"  ? "bg-green-50 text-green-700" :
+                              derived === "Expenses" ? "bg-red-50 text-red-700"    :
+                                                       "bg-slate-50 text-slate-500"
+                            }`}>{derived}</span>
+                          );
+                        })()}
+                        <br />
+                      </>
+                    )}
                   </InfoCard>
 
                   <InfoCard title={t.partiesTitle}>
@@ -647,32 +653,67 @@ export default function AnalysisDetailPage() {
                       />
                     ) : target.company_name || "NULL"}
                     <br />
-                    <span className="font-semibold text-[#0f172a]">
-                      {(() => {
-                        const dt = target.document_type || "";
-                        const ft = target.flow_type || "";
-                        if (dt === "dn") return lang === "si" ? "ලබාදෙන්නා:" : "Delivered By (Supplier):";
-                        if (dt === "po") return lang === "si" ? "සැපයුම්කරු:" : "Supplier:";
-                        if (dt === "invoice") {
-                          if (["receivable","cash_inflow"].includes(ft)) return lang === "si" ? "ගනුදෙනුකරු:" : "Bill To (Customer):";
-                          return lang === "si" ? "සැපයුම්කරු:" : "Bill From (Supplier):";
-                        }
-                        if (dt === "receipt") {
-                          if (["cash_inflow","receivable"].includes(ft)) return lang === "si" ? "ලැබුනේ:" : "Received From (Customer):";
-                          return lang === "si" ? "ගෙව්වේ:" : "Paid To (Supplier):";
-                        }
-                        return ["receivable","cash_inflow"].includes(ft)
-                          ? (lang === "si" ? "ගනුදෙනුකරු:" : "Customer:")
-                          : (lang === "si" ? "සැපයුම්කරු:" : "Supplier:");
-                      })()}
-                    </span>{" "}
-                    {editMode ? (
-                      <input
-                        value={target.supplier_name || ""}
-                        onChange={(e) => updateField("supplier_name", e.target.value)}
-                        className="ml-2 rounded border border-slate-200 px-2 py-1 text-[13px]"
-                      />
-                    ) : target.supplier_name || "NULL"}
+
+                    {/* DN: role selector — Delivered By or Delivered To */}
+                    {target.document_type === "dn" && (
+                      <>
+                        <span className="font-semibold text-[#0f172a]">
+                          {lang === "si" ? "භූමිකාව:" : "Role:"}
+                        </span>{" "}
+                        <select
+                          value={target.flow_type === "income" ? "delivered_to" : "delivered_by"}
+                          onChange={(e) => updateField("flow_type", e.target.value === "delivered_to" ? "income" : "expense")}
+                          className="ml-2 rounded border border-slate-200 px-2 py-1 text-[13px]"
+                        >
+                          <option value="delivered_by">{lang === "si" ? "අපට ලබා දෙනු ලැබිණි (Delivered By)" : "Delivered By (we received goods)"}</option>
+                          <option value="delivered_to">{lang === "si" ? "අපි ලබා දුන්නෙමු (Delivered To)" : "Delivered To (we sent goods)"}</option>
+                        </select>
+                        <br />
+                        <span className="font-semibold text-[#0f172a]">
+                          {target.flow_type === "income"
+                            ? (lang === "si" ? "ලබා දුන් ගනුදෙනුකරු:" : "Delivered To (Customer):")
+                            : (lang === "si" ? "ලබාදෙන්නා (සැපයුම්කරු):" : "Delivered By (Supplier):")}
+                        </span>{" "}
+                        {editMode ? (
+                          <input
+                            value={target.supplier_name || ""}
+                            onChange={(e) => updateField("supplier_name", e.target.value)}
+                            className="ml-2 rounded border border-slate-200 px-2 py-1 text-[13px]"
+                          />
+                        ) : target.supplier_name || "NULL"}
+                      </>
+                    )}
+
+                    {/* Non-DN: standard supplier label */}
+                    {target.document_type !== "dn" && (
+                      <>
+                        <span className="font-semibold text-[#0f172a]">
+                          {(() => {
+                            const dt = target.document_type || "";
+                            const ft = target.flow_type || "";
+                            if (dt === "po") return lang === "si" ? "සැපයුම්කරු:" : "Supplier:";
+                            if (dt === "invoice") {
+                              if (["receivable","cash_inflow"].includes(ft)) return lang === "si" ? "ගනුදෙනුකරු:" : "Bill To (Customer):";
+                              return lang === "si" ? "සැපයුම්කරු:" : "Bill From (Supplier):";
+                            }
+                            if (dt === "receipt") {
+                              if (["cash_inflow","receivable"].includes(ft)) return lang === "si" ? "ලැබුනේ:" : "Received From (Customer):";
+                              return lang === "si" ? "ගෙව්වේ:" : "Paid To (Supplier):";
+                            }
+                            return ["receivable","cash_inflow"].includes(ft)
+                              ? (lang === "si" ? "ගනුදෙනුකරු:" : "Customer:")
+                              : (lang === "si" ? "සැපයුම්කරු:" : "Supplier:");
+                          })()}
+                        </span>{" "}
+                        {editMode ? (
+                          <input
+                            value={target.supplier_name || ""}
+                            onChange={(e) => updateField("supplier_name", e.target.value)}
+                            className="ml-2 rounded border border-slate-200 px-2 py-1 text-[13px]"
+                          />
+                        ) : target.supplier_name || "NULL"}
+                      </>
+                    )}
                   </InfoCard>
 
                   {target.document_type !== "dn" && <InfoCard title={target.document_type === "po" ? (lang === "si" ? "ඇණවුම් සාරාංශය" : "Order Summary") : t.financialSummaryTitle}>
