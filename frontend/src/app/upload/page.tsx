@@ -129,7 +129,7 @@ function getFieldRows(docType: string, flowType: string = ""): FieldRow[] {
     { key: "supplier_name",      label: supplierLabel          },
     { key: "date",               label: "Order Date"           },
     { key: "currency",           label: "Currency"             },
-    { key: "final_total_amount", label: "Order Total",         readonly: true },
+    { key: "final_total_amount", label: "Order Total"          },
     { key: "paid_status",        label: "PO Status",           opts: PO_STATUS_OPTS },
   ];
 
@@ -143,7 +143,7 @@ function getFieldRows(docType: string, flowType: string = ""): FieldRow[] {
     { key: "date",               label: "Date"                 },
     { key: "currency",           label: "Currency"             },
     { key: "raw_total_amount",   label: "Raw Total (OCR)",     readonly: true },
-    { key: "final_total_amount", label: "Final Total",         readonly: true },
+    { key: "final_total_amount", label: "Final Total"          },
     { key: "payable_amount",     label: "Payable / Receivable",readonly: true },
     { key: "cash_return",        label: "Cash Return"          },
     { key: "received_status",    label: "Received Status",     opts: RECEIVED_STATUS_OPTS },
@@ -167,6 +167,9 @@ export default function UploadPage() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  // True once the user manually edits the final total (e.g. to add tax / discount),
+  // so item-sum recalculation stops overwriting their value.
+  const [finalTotalEdited, setFinalTotalEdited] = useState(false);
   const [activeStep, setActiveStep] = useState(0);
   const [preview, setPreview] = useState<PreviewData | null>(null);
   const [error, setError] = useState("");
@@ -207,6 +210,9 @@ export default function UploadPage() {
       const q = parseAmt(item.quantity), u = parseAmt(item.unit_price);
       return { ...item, line_total: q > 0 && u > 0 ? +(q * u).toFixed(2) : item.line_total };
     });
+    // Once the user has manually set the final total (tax / discount), keep it —
+    // only the per-line totals are refreshed, not the document total.
+    if (finalTotalEdited) return { ...p, items };
     const total = +(items.reduce((s, i) => s + parseAmt(i.line_total), 0)).toFixed(2);
     return { ...p, items, final_total_amount: total, payable_amount: total };
   };
@@ -215,6 +221,7 @@ export default function UploadPage() {
     setPreview(null); setSelectedFile(null); setSessionId("");
     setShowDuplicateWarning(false); setDuplicateMessage(""); setExistingDocumentId("");
     setShowAmountMismatch(false); setError(""); setActiveStep(0);
+    setFinalTotalEdited(false);
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
@@ -309,6 +316,8 @@ export default function UploadPage() {
           if (event.stage === "error") throw new Error(event.message || "Processing failed.");
           if (typeof event.step === "number") setActiveStep(event.step);
           if (event.stage === "done") {
+            // Fresh document — start with the extracted total, not a prior override.
+            setFinalTotalEdited(false);
             // Auto-fill company_name from user profile so it's always correct
             const rawPreview = event.preview ?? null;
             if (rawPreview) {
@@ -339,7 +348,7 @@ export default function UploadPage() {
     const token = getAuthToken();
     if (!token) { router.push("/login"); return; }
 
-    if (!force && parseAmt(preview.raw_total_amount) !== parseAmt(preview.final_total_amount)) {
+    if (!force && !finalTotalEdited && parseAmt(preview.raw_total_amount) !== parseAmt(preview.final_total_amount)) {
       setShowAmountMismatch(true); return;
     }
 
@@ -763,7 +772,17 @@ export default function UploadPage() {
                       ) : (
                         <input
                           value={val}
-                          onChange={(e) => !row.readonly && setPreview({ ...preview, [row.key]: e.target.value })}
+                          onChange={(e) => {
+                            if (row.readonly) return;
+                            const v = e.target.value;
+                            if (row.key === "final_total_amount") {
+                              // Manual total wins over the item subtotal; payable mirrors it.
+                              setFinalTotalEdited(true);
+                              setPreview({ ...preview, final_total_amount: v, payable_amount: v });
+                            } else {
+                              setPreview({ ...preview, [row.key]: v });
+                            }
+                          }}
                           readOnly={row.readonly}
                           className="field-input w-full rounded-xl border px-4 py-2.5 text-[14px] transition"
                           style={row.readonly ? { background: "var(--input-bg-ro)", cursor: "not-allowed" } : {}}
