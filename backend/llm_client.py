@@ -5,8 +5,44 @@ Ollama must be running: `ollama serve`
 Model must be pulled:   `ollama pull llama3`
 """
 
+import hashlib
 import os
+import threading
+import time
 import requests
+
+# ── In-process LLM response cache ────────────────────────────────────────────
+# Caches pipeline LLM responses (OCR correction + extraction) so identical
+# prompts (same document re-uploaded, same OCR text) skip the LLM entirely.
+# TTL=1h, max=500 entries. Thread-safe via a simple lock.
+_CACHE: dict[str, tuple[str, float]] = {}   # key → (response, expiry)
+_CACHE_LOCK = threading.Lock()
+_CACHE_TTL_SECS = int(os.getenv("LLM_CACHE_TTL_SECS", "3600"))
+_CACHE_MAX = int(os.getenv("LLM_CACHE_MAX_ENTRIES", "500"))
+
+
+def _cache_key(prompt: str, system: str) -> str:
+    return hashlib.sha256(f"{system}\x00{prompt}".encode()).hexdigest()
+
+
+def _cache_get(key: str) -> str | None:
+    with _CACHE_LOCK:
+        entry = _CACHE.get(key)
+        if entry and time.time() < entry[1]:
+            return entry[0]
+        if entry:
+            del _CACHE[key]
+    return None
+
+
+def _cache_set(key: str, value: str) -> None:
+    with _CACHE_LOCK:
+        if len(_CACHE) >= _CACHE_MAX:
+            # Evict oldest quarter
+            oldest = sorted(_CACHE.items(), key=lambda x: x[1][1])
+            for k, _ in oldest[: _CACHE_MAX // 4]:
+                del _CACHE[k]
+        _CACHE[key] = (value, time.time() + _CACHE_TTL_SECS)
 
 OLLAMA_HOST  = os.getenv("OLLAMA_HOST",  "http://localhost:11434")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3")
@@ -125,16 +161,32 @@ def call_pipeline_llm(prompt: str, system: str = "", format: str | None = None) 
 
     Querying/answering does NOT use this — it stays on Ollama via call_llm()
     so the finetuned query model remains in the loop.
+
+    Responses are cached for LLM_CACHE_TTL_SECS (default 1 h) so identical
+    documents (re-uploads, test runs) skip the LLM entirely.
     """
+    ck = _cache_key(prompt, system)
+    cached = _cache_get(ck)
+    if cached is not None:
+        print("[LLM] Cache hit — skipping LLM call.", flush=True)
+        return cached
+
+    t0 = time.time()
     if PIPELINE_PROVIDER == "deepseek" and DEEPSEEK_API_KEY:
         try:
-            return _call_deepseek(prompt, system=system, format=format)
+            result = _call_deepseek(prompt, system=system, format=format)
+            print(f"[LLM] DeepSeek call in {time.time()-t0:.1f}s", flush=True)
+            _cache_set(ck, result)
+            return result
         except Exception as exc:
             print(
                 f"[LLM] DeepSeek call failed ({exc}); falling back to Ollama.",
                 flush=True,
             )
-    return call_llm(prompt, system=system, format=format)
+    result = call_llm(prompt, system=system, format=format)
+    print(f"[LLM] Ollama call in {time.time()-t0:.1f}s", flush=True)
+    _cache_set(ck, result)
+    return result
 
 
 def check_ollama_health() -> dict:

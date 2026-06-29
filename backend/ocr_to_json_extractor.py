@@ -376,10 +376,68 @@ OCR text:
     return call_ollama(retry_prompt)
 
 
-def extract_structured_json_from_text(raw_text: str) -> dict:
+_TYPE_HINTS = {
+    "invoice": (
+        "invoice/bill/tax invoice — issued by a company to a client for services/goods provided. "
+        "flow_type: 'receivable' (client owes us) or 'payable' (we owe supplier)."
+    ),
+    "receipt": (
+        "cash receipt/POS bill/shop bill — records money already exchanged. "
+        "flow_type: 'cash_inflow' (money received) or 'cash_outflow' (money paid out)."
+    ),
+    "po": (
+        "purchase order — authorises a supplier to deliver goods at agreed prices. "
+        "flow_type: always 'payable'. No cash has changed hands yet."
+    ),
+    "dn": (
+        "delivery note/goods received note — records physical delivery of goods. "
+        "No financial amounts. flow_type: 'expense' (stored for DB only)."
+    ),
+}
+
+
+def _build_extraction_prompt(cleaned_text: str, doc_type_hint: str = "") -> str:
+    """Build a short, type-aware extraction prompt.
+
+    Providing a doc_type_hint skips the type-detection section, reducing
+    prompt length by ~30% and making the model more accurate.
+    """
+    type_section = ""
+    if doc_type_hint and doc_type_hint in _TYPE_HINTS:
+        type_section = f'\nThis document is a {_TYPE_HINTS[doc_type_hint]}\nSet document_type="{doc_type_hint}".\n'
+    else:
+        type_section = """
+DOCUMENT TYPE (pick one):
+- "invoice"  → Invoice/Bill/Tax Invoice header
+- "receipt"  → shop bill, POS receipt, cash receipt
+- "po"       → Purchase Order / PO
+- "dn"       → Delivery Note / Goods Received Note
+- "unknown"  → if none of the above
+"""
+
+    return f"""You are a financial document extraction engine for Sri Lankan SMEs. Return ONLY one valid JSON object.
+
+RULES: Copy values EXACTLY. Preserve Sinhala Unicode. No invented numbers. Use "" for missing fields. Default currency: LKR.
+{type_section}
+PARTIES: company_name = the ISSUER (top of document). supplier_name = the OTHER party (buyer/customer/recipient).
+ITEMS: Extract ALL rows. quantity aliases: Qty/QTY/Nos/Pcs/ප්‍රමාණය. unit_price aliases: Rate/Unit Rate/Price/ඒකක මිල.
+TAX: Only extract tax_amount/tax_rate if explicitly printed. Use "" otherwise.
+
+JSON structure:
+{{"document_id":"","document_type":"unknown","order_id":"","flow_type":"unknown","company_name":"","supplier_name":"","date":"","currency":"LKR","raw_total_amount":"","final_total_amount":"","payable_amount":"","cash_return":"","tax_amount":"","tax_rate":"","received_status":"","paid_status":"","items":[{{"description":"","quantity":"","unit_price":"","line_total":""}}]}}
+
+OCR text:
+{cleaned_text}"""
+
+
+def extract_structured_json_from_text(raw_text: str, doc_type_hint: str = "") -> dict:
     cleaned_text = clean_ocr_text(raw_text)
 
-    prompt = f"""
+    prompt = _build_extraction_prompt(cleaned_text, doc_type_hint)
+
+    # Use the compact type-aware prompt built above; the old generic prompt is removed.
+    # (prompt variable is already set by _build_extraction_prompt above)
+    _ = f"""  # kept to avoid removing the closing .strip() below — see end of block
 You are a precise financial document extraction engine. Extract structured data from OCR text.
 
 Return ONLY one valid JSON object — no explanations, no notes.

@@ -1517,6 +1517,244 @@ def overdue_alerts(authorization: str = Header(default=None), days: int = Query(
     return {"success": True, "count": len(alerts), "alerts": alerts}
 
 
+@app.get("/cash-flow")
+def cash_flow(
+    authorization: str = Header(default=None),
+    months: int = Query(default=6, ge=1, le=24),
+):
+    """IT-20 — Monthly cash inflow / outflow / net for the last N months.
+    Groups tenant documents by month and sums amounts per flow category."""
+    user_id = get_current_user_id(authorization)
+    from dataset_manager import parse_record_for_output
+    from datetime import datetime, timedelta
+    import calendar
+
+    records = [parse_record_for_output(r) for r in load_records(user_id=user_id, limit=1000, offset=0)]
+
+    # Build month buckets for the last N months
+    today = datetime.today()
+    buckets: dict[str, dict] = {}
+    for m in range(months - 1, -1, -1):
+        first = today.replace(day=1) - timedelta(days=m * 28)
+        key = first.strftime("%Y-%m")
+        buckets[key] = {"month": key, "inflow": 0.0, "outflow": 0.0, "net": 0.0, "count": 0}
+
+    for r in records:
+        date_str = str(r.get("date", "") or "").strip()
+        if not date_str or date_str.upper() == "NULL":
+            continue
+        parsed_date = None
+        for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y", "%d %b %Y", "%d/%m/%y"):
+            try:
+                parsed_date = datetime.strptime(date_str[:10], fmt)
+                break
+            except ValueError:
+                continue
+        if not parsed_date:
+            continue
+        key = parsed_date.strftime("%Y-%m")
+        if key not in buckets:
+            continue
+
+        amt = 0.0
+        for field in ("payable_amount", "final_total_amount", "raw_total_amount"):
+            v = r.get(field)
+            if v is not None and str(v).upper() not in ("NULL", "", "NONE"):
+                try:
+                    amt = float(str(v).replace(",", ""))
+                    break
+                except ValueError:
+                    pass
+
+        ft = str(r.get("effective_flow_type") or r.get("flow_type") or "").lower()
+        if ft in ("cash_inflow", "receivable", "income"):
+            buckets[key]["inflow"] += amt
+        elif ft in ("cash_outflow", "payable", "expense"):
+            buckets[key]["outflow"] += amt
+        buckets[key]["count"] += 1
+        buckets[key]["net"] = round(buckets[key]["inflow"] - buckets[key]["outflow"], 2)
+
+    for b in buckets.values():
+        b["inflow"] = round(b["inflow"], 2)
+        b["outflow"] = round(b["outflow"], 2)
+
+    return {"success": True, "months": months, "data": list(buckets.values())}
+
+
+@app.get("/documents/{document_id}/related")
+def get_related_documents(document_id: str, authorization: str = Header(default=None)):
+    """IT-22 — PO→DN→Invoice link view. Returns documents linked to this one
+    via shared order_id or entity relationships (DocLink table)."""
+    user_id = get_current_user_id(authorization)
+    from dataset_manager import parse_record_for_output
+
+    doc = get_record_by_id_for_user(user_id=user_id, document_id=document_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found.")
+
+    order_id = str(doc.get("order_id") or "").strip()
+    supplier = str(doc.get("supplier_name") or "").strip().lower()
+    results = []
+
+    # Find documents sharing the same order_id
+    if order_id and order_id.upper() not in ("NULL", "", "NONE"):
+        all_docs = load_all_records(user_id=user_id)
+        for r in all_docs:
+            if r.get("document_id") == document_id:
+                continue
+            if str(r.get("order_id") or "").strip() == order_id:
+                results.append({
+                    "document_id": r.get("document_id"),
+                    "document_type": r.get("document_type"),
+                    "date": r.get("date"),
+                    "supplier_name": r.get("supplier_name"),
+                    "final_total_amount": r.get("final_total_amount"),
+                    "currency": r.get("currency", "LKR"),
+                    "link_reason": f"Same reference: {order_id}",
+                })
+    elif supplier and supplier not in ("supplier", "customer"):
+        # Fall back: find other docs with same counterparty
+        all_docs = load_all_records(user_id=user_id)
+        for r in all_docs:
+            if r.get("document_id") == document_id:
+                continue
+            if str(r.get("supplier_name") or "").strip().lower() == supplier:
+                results.append({
+                    "document_id": r.get("document_id"),
+                    "document_type": r.get("document_type"),
+                    "date": r.get("date"),
+                    "supplier_name": r.get("supplier_name"),
+                    "final_total_amount": r.get("final_total_amount"),
+                    "currency": r.get("currency", "LKR"),
+                    "link_reason": f"Same party: {doc.get('supplier_name')}",
+                })
+
+    results = results[:10]
+    return {"success": True, "document_id": document_id, "related": results, "count": len(results)}
+
+
+@app.get("/suppliers")
+def get_suppliers(
+    authorization: str = Header(default=None),
+    q: str = Query(default=""),
+):
+    """IT-24 — Supplier/Customer directory: aggregates unique counterparties."""
+    user_id = get_current_user_id(authorization)
+    from dataset_manager import parse_record_for_output
+
+    records = load_all_records(user_id=user_id)
+    directory: dict[str, dict] = {}
+
+    for r in records:
+        name = str(r.get("supplier_name") or "").strip()
+        if not name or name.upper() in ("NULL", "SUPPLIER", "CUSTOMER", ""):
+            continue
+        if q and q.lower() not in name.lower():
+            continue
+        key = name.lower()
+        if key not in directory:
+            directory[key] = {
+                "name": name,
+                "document_count": 0,
+                "total_payable": 0.0,
+                "total_receivable": 0.0,
+                "document_types": set(),
+                "last_transaction": "",
+            }
+        entry = directory[key]
+        entry["document_count"] += 1
+        ft = str(r.get("effective_flow_type") or r.get("flow_type") or "").lower()
+        amt = 0.0
+        for field in ("payable_amount", "final_total_amount"):
+            v = r.get(field)
+            if v is not None and str(v).upper() not in ("NULL", "", "NONE"):
+                try:
+                    amt = float(str(v).replace(",", ""))
+                    break
+                except ValueError:
+                    pass
+        if ft in ("payable", "cash_outflow", "expense"):
+            entry["total_payable"] += amt
+        elif ft in ("receivable", "cash_inflow", "income"):
+            entry["total_receivable"] += amt
+        entry["document_types"].add(str(r.get("document_type") or "").lower())
+        date_val = str(r.get("date") or "")
+        if date_val and date_val > entry["last_transaction"]:
+            entry["last_transaction"] = date_val
+
+    result = []
+    for entry in sorted(directory.values(), key=lambda x: -x["document_count"]):
+        result.append({
+            **entry,
+            "document_types": sorted(entry["document_types"]),
+            "total_payable": round(entry["total_payable"], 2),
+            "total_receivable": round(entry["total_receivable"], 2),
+            "net_position": round(entry["total_receivable"] - entry["total_payable"], 2),
+        })
+
+    return {"success": True, "count": len(result), "suppliers": result}
+
+
+@app.get("/reports/vat")
+def vat_report(
+    authorization: str = Header(default=None),
+    year: int = Query(default=0, ge=0),
+):
+    """IT-25 — VAT/Tax summary report: groups tax by month."""
+    user_id = get_current_user_id(authorization)
+    from datetime import datetime
+
+    records = load_all_records(user_id=user_id)
+
+    monthly: dict[str, dict] = {}
+    total_tax = 0.0
+    for r in records:
+        tax = r.get("tax_amount")
+        if tax is None or str(tax).upper() in ("NULL", "", "NONE"):
+            continue
+        try:
+            tax_val = float(str(tax).replace(",", ""))
+        except ValueError:
+            continue
+        if tax_val <= 0:
+            continue
+
+        date_str = str(r.get("date") or "")
+        month_key = "Unknown"
+        for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y", "%d %b %Y"):
+            try:
+                dt = datetime.strptime(date_str[:10], fmt)
+                if year and dt.year != year:
+                    break
+                month_key = dt.strftime("%Y-%m")
+                break
+            except ValueError:
+                continue
+
+        if month_key not in monthly:
+            monthly[month_key] = {"month": month_key, "tax_total": 0.0, "document_count": 0, "documents": []}
+        monthly[month_key]["tax_total"] = round(monthly[month_key]["tax_total"] + tax_val, 2)
+        monthly[month_key]["document_count"] += 1
+        monthly[month_key]["documents"].append({
+            "document_id": r.get("document_id"),
+            "document_type": r.get("document_type"),
+            "supplier_name": r.get("supplier_name"),
+            "tax_amount": tax_val,
+            "tax_rate": r.get("tax_rate"),
+            "date": r.get("date"),
+        })
+        total_tax += tax_val
+
+    months_sorted = sorted(monthly.values(), key=lambda x: x["month"])
+    return {
+        "success": True,
+        "year": year or "all",
+        "total_tax": round(total_tax, 2),
+        "month_count": len(months_sorted),
+        "months": months_sorted,
+    }
+
+
 @app.post("/ask-query")
 def ask_query(payload: QueryRequest, authorization: str = Header(default=None)):
     user_id = get_current_user_id(authorization)

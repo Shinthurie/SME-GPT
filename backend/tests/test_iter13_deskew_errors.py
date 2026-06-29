@@ -98,10 +98,11 @@ def test_error_response_model_shape(app_module):
 
 
 def test_global_handler_hides_exception_message(client, app_module, monkeypatch):
-    def _boom(user_id):
+    def _boom(*_args, **_kwargs):
         raise RuntimeError("secret_path/db_connection_string_leak")
 
-    monkeypatch.setattr(app_module, "load_all_records", _boom)
+    # GET /documents now uses count_records + load_records (not load_all_records).
+    monkeypatch.setattr(app_module, "count_records", _boom)
 
     resp = client.get("/documents", headers={"Authorization": _bearer(app_module, userId="user-1")})
 
