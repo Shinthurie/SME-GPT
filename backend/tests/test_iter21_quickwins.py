@@ -98,6 +98,7 @@ class _FakeConn:
 
 
 def test_load_records_date_filter_in_sql(monkeypatch):
+    """Date filter now uses docDate (document date) not createdAt (upload time)."""
     import dataset_manager as dm
     sink = {"sql": [], "params": []}
     monkeypatch.setattr(dm, "get_conn", lambda: _FakeConn(sink))
@@ -105,10 +106,13 @@ def test_load_records_date_filter_in_sql(monkeypatch):
     dm.load_records(user_id="u1", date_from="2026-03-01", date_to="2026-03-31")
 
     sql = sink["sql"][0]
-    assert '"createdAt" >= %s' in sql
-    assert '"createdAt" < %s' in sql
-    assert datetime(2026, 3, 1) in sink["params"][0]
-    assert datetime(2026, 4, 1) in sink["params"][0]
+    # Now filters by docDate (ISO text comparison) instead of createdAt
+    assert '"docDate"' in sql
+    assert "%s" in sql
+    # Both bounds are string dates
+    all_params = [p for batch in sink["params"] for p in batch]
+    assert "2026-03-01" in all_params
+    assert "2026-04-01" in all_params
 
 
 def test_load_records_no_date_filter_omits_clause(monkeypatch):
@@ -118,11 +122,11 @@ def test_load_records_no_date_filter_omits_clause(monkeypatch):
 
     dm.load_records(user_id="u1")
 
-    assert '"createdAt" >=' not in sink["sql"][0]
-    assert '"createdAt" <' not in sink["sql"][0]
+    assert '"docDate"' not in sink["sql"][0]
 
 
 def test_count_records_date_filter_in_sql(monkeypatch):
+    """count_records must also filter by docDate when date_from/date_to supplied."""
     import dataset_manager as dm
     sink = {"sql": [], "params": []}
     monkeypatch.setattr(dm, "get_conn", lambda: _FakeConn(sink))
@@ -132,5 +136,5 @@ def test_count_records_date_filter_in_sql(monkeypatch):
     assert total == 0
     sql = sink["sql"][0]
     assert "COUNT(*)" in sql.upper()
-    assert '"createdAt" >= %s' in sql
-    assert '"createdAt" < %s' in sql
+    assert '"docDate"' in sql
+    assert "%s" in sql

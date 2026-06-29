@@ -498,14 +498,29 @@ def parse_date_bounds(date_from: str | None, date_to: str | None):
 
 
 def _created_at_clause(date_from, date_to, where: list, params: list) -> None:
-    """Append createdAt range predicates to an existing WHERE list / params."""
+    """Append docDate range predicates (the date ON the document, not upload time).
+
+    docDate is stored as ISO text (YYYY-MM-DD) for documents uploaded via the
+    date picker or processed with normalization.  For legacy docs in other formats
+    (DD/MM/YYYY etc.) we gracefully include them rather than silently hide them.
+    """
     lower, upper = parse_date_bounds(date_from, date_to)
-    if lower is not None:
-        where.append('"createdAt" >= %s')
-        params.append(lower)
-    if upper is not None:
-        where.append('"createdAt" < %s')
-        params.append(upper)
+    # Convert datetime → date string for text comparison
+    lo_str = lower.strftime("%Y-%m-%d") if lower is not None else None
+    hi_str = upper.strftime("%Y-%m-%d") if upper is not None else None
+    if lo_str:
+        # Include row if docDate is ISO format and >= lower, OR if it's non-ISO (can't compare)
+        where.append(
+            "(\"docDate\" >= %s OR \"docDate\" IS NULL "
+            "OR \"docDate\" = '' OR \"docDate\" NOT LIKE '____-__-__')"
+        )
+        params.append(lo_str)
+    if hi_str:
+        where.append(
+            "(\"docDate\" < %s OR \"docDate\" IS NULL "
+            "OR \"docDate\" = '' OR \"docDate\" NOT LIKE '____-__-__')"
+        )
+        params.append(hi_str)
 
 
 def count_records(user_id: str, date_from: str | None = None, date_to: str | None = None) -> int:

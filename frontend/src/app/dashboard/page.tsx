@@ -316,12 +316,11 @@ export default function DashboardPage() {
           </section>
 
           {/* Stats */}
-          <section className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-            <StatCard label={t.totalDocs} value={String(summary?.total ?? 0)} />
-            <StatCard label={t.pending} value={String(summary?.pending_processing_count ?? 0)} color="#ea6c0a" />
-            <StatCard label={t.ready} value={String(summary?.ready_for_query_count ?? 0)} color="#16a34a" />
-            <StatCard label={lang === "si" ? "ඉන්වොයිස්" : "Invoices"} value={String(summary?.invoice ?? 0)} color="var(--brand-mid)" />
-            <StatCard label="PO / DN" value={String((summary?.po ?? 0) + (summary?.dn ?? 0))} color="#7c3aed" />
+          <section className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <StatCard label={lang === "si" ? "මුළු ලේඛන"  : "Total Documents"} value={String(summary?.total   ?? 0)} />
+            <StatCard label={lang === "si" ? "ඉන්වොයිස්"  : "Invoices"}        value={String(summary?.invoice ?? 0)} color="var(--brand-mid)" />
+            <StatCard label={lang === "si" ? "රිසිට්"      : "Receipts"}        value={String(summary?.receipt ?? 0)} color="#16a34a" />
+            <StatCard label="PO / DN"                                            value={String((summary?.po ?? 0) + (summary?.dn ?? 0))} color="#7c3aed" />
           </section>
 
           {/* Recent docs */}
