@@ -20,15 +20,15 @@ type ProfileData = {
 };
 
 const BUDGET_CATS = ["Budgeted Cost","Revenue","Cash Inflow","Cash Outflow"];
-const PERIOD_OPTIONS = [
-  { key:"this_week",  en:"This Week",    si:"මේ සතිය"      },
-  { key:"this_month", en:"This Month",   si:"මේ මාසය"      },
-  { key:"last_month", en:"Last Month",   si:"ගිය මාසය"     },
-  { key:"this_year",  en:"This Year",    si:"මේ අවුරුද්ද"  },
-  { key:"custom",     en:"Custom Range", si:"අභිමත"         },
-];
-
 type Tab = "account" | "security" | "preferences" | "budget" | "export";
+
+const PERIOD_OPTIONS = [
+  { key:"this_week",  en:"This Week",   si:"මේ සතිය"     },
+  { key:"this_month", en:"This Month",  si:"මේ මාසය"     },
+  { key:"last_month", en:"Last Month",  si:"ගිය මාසය"    },
+  { key:"this_year",  en:"This Year",   si:"මේ අවුරුද්ද" },
+  { key:"custom",     en:"Custom Range",si:"අභිමත"        },
+];
 
 function getToken() {
   if (typeof window === "undefined") return "";
@@ -38,7 +38,7 @@ function getToken() {
 // ── Shared UI primitives (copied from profile) ────────────────────────────────
 function Card({ children }: { children: React.ReactNode }) {
   return (
-    <div className="overflow-hidden rounded-2xl" style={{ background:"var(--surface)", border:"1px solid var(--border)", boxShadow:"0 1px 4px rgba(0,0,0,0.04)" }}>
+    <div className="rounded-2xl" style={{ background:"var(--surface)", border:"1px solid var(--border)", boxShadow:"0 1px 4px rgba(0,0,0,0.05)" }}>
       {children}
     </div>
   );
@@ -62,8 +62,37 @@ function FieldRow({ label, value }: { label:string; value:string }) {
 }
 function Toggle({ enabled, onClick }: { enabled:boolean; onClick:()=>void }) {
   return (
-    <button onClick={onClick} className="relative h-6 w-11 shrink-0 rounded-full transition" style={{ background: enabled ? "var(--brand-mid)" : "#d1d5db" }}>
-      <span className="absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white transition-transform" style={{ transform: enabled ? "translateX(20px)" : "none" }} />
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        position: "relative",
+        display: "inline-flex",
+        height: 28,
+        width: 52,
+        flexShrink: 0,
+        borderRadius: 999,
+        border: "none",
+        cursor: "pointer",
+        transition: "background-color 0.2s",
+        background: enabled ? "#2563eb" : "#9ca3af",
+        outline: "none",
+        padding: 0,
+      }}
+    >
+      <span
+        style={{
+          position: "absolute",
+          top: 3,
+          left: enabled ? 27 : 3,
+          height: 22,
+          width: 22,
+          borderRadius: 999,
+          background: "#ffffff",
+          boxShadow: "0 1px 4px rgba(0,0,0,0.3)",
+          transition: "left 0.2s ease",
+        }}
+      />
     </button>
   );
 }
@@ -107,17 +136,16 @@ export default function SettingsPage() {
   const [deleting, setDeleting]   = useState(false);
 
   // Budget state
-  const [budgetOn, setBudgetOn]   = useState(false);
-  const [budgets, setBudgets]     = useState<Record<string,string>>({});
+  const [budgetOn, setBudgetOn]       = useState(false);
+  const [budgets, setBudgets]         = useState<Record<string,string>>({});
   const [budgetSaved, setBudgetSaved] = useState(false);
 
   // Export state
-  const [period, setPeriod]       = useState("this_month");
-  const [customFrom, setCustomFrom] = useState("");
-  const [customTo, setCustomTo]   = useState("");
+  const [period, setPeriod]           = useState("this_month");
+  const [customFrom, setCustomFrom]   = useState("");
+  const [customTo, setCustomTo]       = useState("");
   const [downloading, setDownloading] = useState(false);
 
-  const [monthlyEmail, setMonthlyEmail] = useState(false);
 
   useEffect(() => {
     setLang(getStoredLanguage());
@@ -231,15 +259,27 @@ export default function SettingsPage() {
     setDownloading(true);
     const token = getToken();
     const body: Record<string,string> = { period };
-    if (period === "custom") { body.date_from = customFrom; body.date_to = customTo; }
+    if (period === "custom") {
+      if (!customFrom || !customTo) { alert("Please select both From and To dates."); setDownloading(false); return; }
+      body.date_from = customFrom;
+      body.date_to   = customTo;
+    }
     try {
-      const res  = await fetch(`${BACKEND_URL}/reports/audit-pack`, { method:"POST", headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`}, body:JSON.stringify(body) });
-      if (!res.ok) { alert("Export failed"); return; }
+      const res = await fetch(`${BACKEND_URL}/reports/audit-pack`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) { alert("Export failed — please try again."); return; }
       const blob = await res.blob();
       const url  = URL.createObjectURL(blob);
-      const a    = document.createElement("a"); a.href = url; a.download = `audit_pack_${period}.zip`; a.click();
+      const a    = document.createElement("a");
+      a.href = url;
+      a.download = `sme_gpt_export_${period}.zip`;
+      a.click();
       URL.revokeObjectURL(url);
-    } finally { setDownloading(false); }
+    } catch { alert("Export failed — make sure the backend is running."); }
+    finally { setDownloading(false); }
   };
 
   const t  = ui[lang];
@@ -507,81 +547,60 @@ export default function SettingsPage() {
 
             {/* ─── EXPORT TAB ──────────────────────────────────────────────── */}
             {tab === "export" && (
-              <>
-                <Card>
-                  <div className="px-6 py-5">
-                    <p className="text-[15px] font-bold text-[var(--text-1)]">
-                      {lang === "si" ? "විගණන ඇසුරුම" : "Audit Pack Export"}
-                    </p>
-                    <p className="mt-0.5 text-[12px] text-[var(--text-2)]">
-                      {lang === "si"
-                        ? "ලේඛන + Excel + JSON ZIP ලෙස."
-                        : "Download all documents for a period as a ZIP with images, Excel ledger and JSON summary."}
-                    </p>
-                    <div className="mt-4 flex flex-wrap gap-2">
-                      {PERIOD_OPTIONS.map(p => (
-                        <button key={p.key} onClick={() => setPeriod(p.key)}
-                          className="rounded-xl px-4 py-2 text-[12px] font-semibold transition"
-                          style={period === p.key
-                            ? { background:"var(--brand-mid)", color:"#fff" }
-                            : { background:"var(--bg)", border:"1px solid var(--border)", color:"var(--text-2)" }}>
-                          {lang === "si" ? p.si : p.en}
-                        </button>
-                      ))}
-                    </div>
-                    {period === "custom" && (
-                      <div className="mt-3 flex flex-wrap items-center gap-3">
+              <Card>
+                <div className="px-6 py-5">
+                  <p className="text-[15px] font-bold text-[var(--text-1)]">
+                    {lang === "si" ? "ලේඛන නිර්යාත" : "Document Export"}
+                  </p>
+                  <p className="mt-0.5 text-[12px] text-[var(--text-2)]">
+                    {lang === "si"
+                      ? "ඔබ ඇති කාලසීමාව සඳහා සියලු ලේඛන Excel සහ JSON ලෙස ZIP ගොනුවකට."
+                      : "Download all your documents for a selected period as a ZIP containing an Excel ledger and JSON summary."}
+                  </p>
+
+                  {/* Period selector */}
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {PERIOD_OPTIONS.map(p => (
+                      <button key={p.key} onClick={() => setPeriod(p.key)}
+                        className="rounded-xl px-4 py-2 text-[12px] font-semibold transition"
+                        style={period === p.key
+                          ? { border:"2px solid var(--brand-mid)", color:"var(--brand-mid)", background:"var(--brand-tint)" }
+                          : { border:"1px solid var(--border)", color:"var(--text-2)", background:"var(--surface)" }}>
+                        {lang === "si" ? p.si : p.en}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Custom date range */}
+                  {period === "custom" && (
+                    <div className="mt-3 flex flex-wrap items-center gap-3">
+                      <div>
+                        <p className="mb-1 text-[11px] text-[var(--text-3)]">{lang === "si" ? "සිට" : "From"}</p>
                         <input type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)}
                           className="rounded-xl border px-3 py-2 text-[13px]"
                           style={{ background:"var(--bg)", borderColor:"var(--border)", color:"var(--text-1)" }} />
-                        <span className="text-[12px] text-[var(--text-3)]">{lang === "si" ? "සිට" : "to"}</span>
+                      </div>
+                      <div>
+                        <p className="mb-1 text-[11px] text-[var(--text-3)]">{lang === "si" ? "දක්වා" : "To"}</p>
                         <input type="date" value={customTo} onChange={e => setCustomTo(e.target.value)}
                           className="rounded-xl border px-3 py-2 text-[13px]"
                           style={{ background:"var(--bg)", borderColor:"var(--border)", color:"var(--text-1)" }} />
                       </div>
-                    )}
-                    <button onClick={downloadAuditPack} disabled={downloading}
-                      className="mt-5 flex items-center gap-2 rounded-xl px-5 py-2.5 text-[13px] font-bold text-white disabled:opacity-60 hover:opacity-90 transition"
-                      style={{ background:"#16a34a" }}>
-                      {downloading
-                        ? <span className="material-symbols-outlined animate-spin text-[16px]">progress_activity</span>
-                        : <span className="material-symbols-outlined text-[16px]">download</span>}
-                      {downloading
-                        ? (lang === "si" ? "සකස් කරමින්..." : "Generating…")
-                        : (lang === "si" ? "ZIP බාගන්න" : "Download ZIP")}
-                    </button>
-                  </div>
-                </Card>
-
-                <Card>
-                  <div className="flex w-full items-center justify-between gap-4 px-6 py-5">
-                    <div>
-                      <p className="text-[15px] font-bold text-[var(--text-1)]">
-                        {lang === "si" ? "මාසික P&L ඊමේල්" : "Monthly P&L Email"}
-                      </p>
-                      <p className="mt-0.5 text-[12px] text-[var(--text-2)]">
-                        {lang === "si"
-                          ? "සෑම මාසයේ 1 වැනිදා සාරාංශ ඊමේල් ලැබේ."
-                          : "Receive a profit & loss summary email on the 1st of every month."}
-                      </p>
                     </div>
-                    <Toggle enabled={monthlyEmail} onClick={() => setMonthlyEmail(m => !m)} />
-                  </div>
-                  {monthlyEmail && (
-                    <>
-                      <Divider />
-                      <div className="px-6 py-4 text-[12px] rounded-b-2xl"
-                        style={{ background:"rgba(34,82,181,0.04)", color:"#2252b5" }}>
-                        Set <code className="rounded px-1 py-0.5 text-[11px]" style={{ background:"rgba(34,82,181,0.08)" }}>MONTHLY_EMAIL_ENABLED=true</code> in{" "}
-                        <code className="rounded px-1 py-0.5 text-[11px]" style={{ background:"rgba(34,82,181,0.08)" }}>backend/.env</code>{" "}
-                        and restart the backend. Scheduler fires at 08:00 on the 1st of each month.
-                      </div>
-                    </>
                   )}
-                </Card>
-              </>
-            )}
 
+                  <button onClick={downloadAuditPack} disabled={downloading}
+                    className="mt-5 flex items-center gap-2 rounded-xl bg-green-600 px-5 py-2.5 text-[13px] font-bold text-white transition hover:bg-green-700 disabled:opacity-60">
+                    {downloading
+                      ? <span className="material-symbols-outlined animate-spin text-[16px]">progress_activity</span>
+                      : <span className="material-symbols-outlined text-[16px]">download</span>}
+                    {downloading
+                      ? (lang === "si" ? "සකස් කරමින්..." : "Generating…")
+                      : (lang === "si" ? "ZIP බාගන්න" : "Download ZIP")}
+                  </button>
+                </div>
+              </Card>
+            )}
 
           </div>
     </PageShell>

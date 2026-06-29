@@ -2369,10 +2369,10 @@ def save_budget_settings(
     return {"success": True, "message": "Budget settings saved"}
 
 
-# ── IT-47: Audit Pack Export ──────────────────────────────────────────────────
+# ── IT-47: Audit Pack Export ─────────────────────────────────────────────────
 
 class AuditPackRequest(BaseModel):
-    period: str = "this_month"   # this_week | this_month | last_month | this_year | custom
+    period: str = "this_month"
     date_from: Optional[str] = None
     date_to: Optional[str] = None
 
@@ -2382,171 +2382,95 @@ def export_audit_pack(
     payload: AuditPackRequest,
     authorization: str = Header(default=None),
 ):
-    """IT-47 — Generate and download an audit pack ZIP for the selected period."""
+    """Generate a ZIP containing an Excel ledger + JSON summary for the selected period."""
     user_id = get_current_user_id(authorization)
     from datetime import datetime, timedelta
     import io, zipfile, json as _json
+    from dataset_manager import parse_record_for_output, filter_records_by_doc_date
 
     today = datetime.today()
     if payload.period == "this_week":
-        lo = today - timedelta(days=today.weekday())
-        hi = today
+        lo = (today - timedelta(days=today.weekday())).strftime("%Y-%m-%d")
+        hi = today.strftime("%Y-%m-%d")
     elif payload.period == "this_month":
-        lo = today.replace(day=1)
-        hi = today
+        lo = today.replace(day=1).strftime("%Y-%m-%d")
+        hi = today.strftime("%Y-%m-%d")
     elif payload.period == "last_month":
-        hi = today.replace(day=1) - timedelta(days=1)
-        lo = hi.replace(day=1)
+        end = today.replace(day=1) - timedelta(days=1)
+        lo  = end.replace(day=1).strftime("%Y-%m-%d")
+        hi  = end.strftime("%Y-%m-%d")
     elif payload.period == "this_year":
-        lo = today.replace(month=1, day=1)
-        hi = today
+        lo = today.replace(month=1, day=1).strftime("%Y-%m-%d")
+        hi = today.strftime("%Y-%m-%d")
     elif payload.period == "custom":
-        try:
-            lo = datetime.strptime(payload.date_from, "%Y-%m-%d")
-            hi = datetime.strptime(payload.date_to,   "%Y-%m-%d")
-        except (TypeError, ValueError):
-            raise HTTPException(status_code=400, detail="date_from and date_to required for custom period (YYYY-MM-DD)")
+        lo = str(payload.date_from or "").strip()
+        hi = str(payload.date_to   or "").strip()
+        if not lo or not hi:
+            raise HTTPException(status_code=400, detail="date_from and date_to required for custom period")
     else:
-        lo = today.replace(day=1)
-        hi = today
+        lo = today.replace(day=1).strftime("%Y-%m-%d")
+        hi = today.strftime("%Y-%m-%d")
 
-    lo_str = lo.strftime("%Y-%m-%d")
-    hi_str = hi.strftime("%Y-%m-%d")
-
-    from dataset_manager import parse_record_for_output
+    # Load all records then filter using the multi-format date parser
     all_recs = [parse_record_for_output(r) for r in load_all_records(user_id=user_id)]
+    records  = filter_records_by_doc_date(all_recs, lo, hi)
 
-    def _in_range(r: dict) -> bool:
-        ds = str(r.get("date") or "").strip()[:10]
-        return lo_str <= ds <= hi_str if len(ds) == 10 else True
-
-    records = [r for r in all_recs if _in_range(r)]
-
-    # ── Build Excel ──────────────────────────────────────────────────────────
+    # ── Excel ─────────────────────────────────────────────────────────────────
+    excel_bytes = b""
     try:
         import openpyxl
         wb = openpyxl.Workbook()
         ws = wb.active
-        ws.title = "Transactions"
-        headers = ["Document ID","Type","Date","Company","Counterparty","Amount","Currency","Flow","Status"]
-        ws.append(headers)
+        ws.title = "Documents"
+        ws.append(["Document ID","Type","Date","Company","Counterparty","Amount","Currency","Flow","Status"])
         for r in records:
             status = r.get("paid_status") or r.get("received_status") or r.get("invoice_status") or ""
             ws.append([
                 r.get("document_id",""), r.get("document_type",""), r.get("date",""),
                 r.get("company_name",""), r.get("supplier_name",""),
                 r.get("final_total_amount",""), r.get("currency","LKR"),
-                r.get("effective_flow_type") or r.get("flow_type",""),
-                status,
+                r.get("effective_flow_type") or r.get("flow_type",""), status,
             ])
-        excel_buf = io.BytesIO()
-        wb.save(excel_buf)
-        excel_bytes = excel_buf.getvalue()
-    except ImportError:
-        excel_bytes = b""
+        buf = io.BytesIO(); wb.save(buf); excel_bytes = buf.getvalue()
+    except Exception as e:
+        print(f"[AUDIT-PACK] Excel failed: {e}", flush=True)
 
-    # ── Build ZIP ────────────────────────────────────────────────────────────
+    # ── Summary JSON ──────────────────────────────────────────────────────────
+    income  = round(sum(float(str(r.get("final_total_amount") or 0).replace(",","") or 0)
+                        for r in records
+                        if (r.get("effective_flow_type") or r.get("flow_type","")).lower()
+                        in ("receivable","cash_inflow","income")), 2)
+    expense = round(sum(float(str(r.get("final_total_amount") or 0).replace(",","") or 0)
+                        for r in records
+                        if (r.get("effective_flow_type") or r.get("flow_type","")).lower()
+                        in ("payable","cash_outflow","expense")), 2)
+    summary = {
+        "period": payload.period, "from": lo, "to": hi,
+        "total_documents": len(records),
+        "total_income": income, "total_expense": expense,
+        "net": round(income - expense, 2),
+    }
+
+    # ── ZIP ───────────────────────────────────────────────────────────────────
     zip_buf = io.BytesIO()
     with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
         if excel_bytes:
-            zf.writestr(f"transactions_{lo_str}_to_{hi_str}.xlsx", excel_bytes)
-        # Include document images if they exist
+            zf.writestr(f"documents_{lo}_to_{hi}.xlsx", excel_bytes)
+        zf.writestr("summary.json", _json.dumps(summary, indent=2, ensure_ascii=False))
         for r in records:
-            doc_id = r.get("document_id","")
+            doc_id   = r.get("document_id","")
             img_path = Path(SAVED_DOCS_DIR) / f"{doc_id}.png"
             if img_path.exists():
-                zf.write(img_path, f"documents/{doc_id}.png")
-        # Summary JSON
-        summary = {
-            "period": payload.period, "from": lo_str, "to": hi_str,
-            "total_documents": len(records),
-            "total_income":    round(sum(float(str(r.get("final_total_amount") or 0).replace(",","") or 0) for r in records if (r.get("effective_flow_type") or r.get("flow_type","")).lower() in ("receivable","cash_inflow","income")), 2),
-            "total_expense":   round(sum(float(str(r.get("final_total_amount") or 0).replace(",","") or 0) for r in records if (r.get("effective_flow_type") or r.get("flow_type","")).lower() in ("payable","cash_outflow","expense")), 2),
-        }
-        zf.writestr("summary.json", _json.dumps(summary, indent=2))
+                zf.write(img_path, f"images/{doc_id}.png")
 
     zip_buf.seek(0)
     _log_audit_event(user_id, "AUDIT_PACK_EXPORTED", f"period={payload.period} docs={len(records)}")
 
     from fastapi.responses import StreamingResponse
     return StreamingResponse(
-        zip_buf,
-        media_type="application/zip",
-        headers={"Content-Disposition": f"attachment; filename=audit_pack_{lo_str}_{hi_str}.zip"},
+        zip_buf, media_type="application/zip",
+        headers={"Content-Disposition": f"attachment; filename=sme_gpt_export_{lo}_{hi}.zip"},
     )
-
-
-# ── IT-48: Monthly P&L Email Scheduler ───────────────────────────────────────
-
-def _send_monthly_pnl_emails():
-    """Called by APScheduler on the 1st of each month at 08:00."""
-    import smtplib, json as _json
-    from email.mime.text import MIMEText
-    from email.mime.multipart import MIMEMultipart
-    from datetime import datetime, timedelta
-    from dataset_manager import parse_record_for_output
-
-    smtp_host = os.getenv("SMTP_HOST", "")
-    smtp_user = os.getenv("SMTP_USER", "")
-    smtp_pass = os.getenv("SMTP_PASS", "")
-    smtp_port = int(os.getenv("SMTP_PORT", "587"))
-    if not smtp_host or not smtp_user:
-        print("[PNL-EMAIL] SMTP not configured, skipping", flush=True)
-        return
-
-    today = datetime.today()
-    last_month_end   = today.replace(day=1) - timedelta(days=1)
-    last_month_start = last_month_end.replace(day=1)
-    lo = last_month_start.strftime("%Y-%m-%d")
-    hi = last_month_end.strftime("%Y-%m-%d")
-
-    try:
-        with get_db_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute('SELECT id, email, "companyName" FROM "User" WHERE "deletedAt" IS NULL')
-                users = cur.fetchall() or []
-    except Exception as e:
-        print(f"[PNL-EMAIL] DB error: {e}", flush=True)
-        return
-
-    for row in users:
-        uid   = (row.get("id")          if isinstance(row, dict) else row[0]) or ""
-        email = (row.get("email")       if isinstance(row, dict) else row[1]) or ""
-        co    = (row.get("companyName") if isinstance(row, dict) else row[2]) or "Your Company"
-        if not email: continue
-
-        recs = [parse_record_for_output(r) for r in load_all_records(user_id=uid)]
-        period_recs = [r for r in recs if lo <= str(r.get("date") or "")[:10] <= hi]
-        income  = round(sum(float(str(r.get("final_total_amount") or 0).replace(",","") or 0) for r in period_recs if (r.get("effective_flow_type") or r.get("flow_type","")).lower() in ("receivable","cash_inflow","income")), 2)
-        expense = round(sum(float(str(r.get("final_total_amount") or 0).replace(",","") or 0) for r in period_recs if (r.get("effective_flow_type") or r.get("flow_type","")).lower() in ("payable","cash_outflow","expense")), 2)
-        net     = round(income - expense, 2)
-        color   = "#16a34a" if net >= 0 else "#dc2626"
-
-        html = f"""<div style="font-family:sans-serif;max-width:580px;margin:0 auto">
-          <h2 style="color:#2252b5">Monthly P&L — {last_month_end.strftime('%B %Y')}</h2>
-          <p>Hi {co},</p>
-          <table style="width:100%;border-collapse:collapse;margin:16px 0">
-            <tr><td style="padding:10px;background:#f3f4f6;font-weight:bold">Total Income</td>
-                <td style="padding:10px;color:#16a34a;font-weight:bold;text-align:right">LKR {income:,.2f}</td></tr>
-            <tr><td style="padding:10px;background:#f3f4f6;font-weight:bold">Total Expenses</td>
-                <td style="padding:10px;color:#dc2626;font-weight:bold;text-align:right">LKR {expense:,.2f}</td></tr>
-            <tr style="background:{color}15"><td style="padding:10px;font-weight:bold">Net Profit / Loss</td>
-                <td style="padding:10px;color:{color};font-weight:bold;font-size:18px;text-align:right">LKR {net:,.2f}</td></tr>
-          </table>
-          <p style="color:#666;font-size:12px">Powered by SME-GPT · Log in for full details</p></div>"""
-
-        try:
-            msg = MIMEMultipart("alternative")
-            msg["Subject"] = f"SME-GPT P&L Summary — {last_month_end.strftime('%B %Y')}"
-            msg["From"]    = smtp_user
-            msg["To"]      = email
-            msg.attach(MIMEText(html, "html"))
-            with smtplib.SMTP(smtp_host, smtp_port) as s:
-                s.starttls(); s.login(smtp_user, smtp_pass)
-                s.sendmail(smtp_user, [email], msg.as_string())
-            print(f"[PNL-EMAIL] sent to {email}", flush=True)
-        except Exception as e:
-            print(f"[PNL-EMAIL] failed for {email}: {e}", flush=True)
 
 
 # ── IT-49: WhatsApp Webhook ───────────────────────────────────────────────────
