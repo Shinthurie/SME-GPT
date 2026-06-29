@@ -153,7 +153,7 @@ export const ui = {
     lineTotal: "Line Total",
 
     // ── Query ─────────────────────────────────────────────────────────────────
-    askQuestion: "Query Invoices & POs",
+    askQuestion: "Query Documents",
     querySubtitle: "Ask questions about your invoices, delivery notes, or purchase orders in English or Sinhala.",
     querySubtitleLong: "Enter your research query below. SME-GPT will analyse relevant document repositories using NLP and explainable AI.",
     queryPlaceholder: "What is the total receivable amount?",
@@ -598,7 +598,7 @@ export const ui = {
     lineTotal: "පේළි එකතුව",
 
     // ── Query ─────────────────────────────────────────────────────────────────
-    askQuestion: "ඉන්වොයිස් සහ PO විමසන්න",
+    askQuestion: "ලේඛන විමසන්න",
     querySubtitle: "ඉංග්‍රීසි හෝ සිංහල භාෂාවෙන් ඔබගේ ඉන්වොයිස්, ලේඛන ගැන ප්‍රශ්න අසන්න.",
     querySubtitleLong: "ඔබගේ ප්‍රශ්නය පහතින් ඇතුළත් කරන්න. SME-GPT NLP සහ explainable AI භාවිතයෙන් ලේඛන විශ්ලේෂණය කරනු ඇත.",
     queryPlaceholder: "කරුණාකර මෙම බිල්පතේ මුළු මුදල කියන්න?",
