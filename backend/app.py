@@ -19,7 +19,7 @@ load_dotenv()  # must run before any local module is imported so env vars are se
 
 import jwt
 import psycopg
-from fastapi import Depends, FastAPI, File, Header, HTTPException, Query, Request, UploadFile
+from fastapi import Body, Depends, FastAPI, File, Header, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -252,7 +252,19 @@ def startup_event():
         print(f"[DB] Query history table init skipped/failed: {e}", flush=True)
     threading.Thread(target=_evict_stale_sessions, daemon=True, name="session-gc").start()
     print("[SESSION GC] stale session eviction thread started", flush=True)
-    invalidate_column_cache()  # ensure fresh schema read on startup after any migration
+    invalidate_column_cache()
+
+    # IT-48: Monthly P&L email scheduler (runs on 1st of each month at 08:00)
+    if os.getenv("MONTHLY_EMAIL_ENABLED", "false").lower() == "true":
+        try:
+            from apscheduler.schedulers.background import BackgroundScheduler
+            from apscheduler.triggers.cron import CronTrigger
+            _sched = BackgroundScheduler(daemon=True)
+            _sched.add_job(_send_monthly_pnl_emails, CronTrigger(day=1, hour=8, minute=0))
+            _sched.start()
+            print("[SCHEDULER] Monthly P&L email scheduler started", flush=True)
+        except Exception as e:
+            print(f"[SCHEDULER] Failed to start scheduler: {e}", flush=True)
 
 
 def save_query_history_to_db(
@@ -510,6 +522,54 @@ def _log_audit_event(user_id: str, event_type: str, content: str) -> None:
             conn.commit()
     except Exception as e:
         print(f"[AUDIT] failed to log {event_type} for user {user_id}: {e}", flush=True)
+
+
+def _send_po_approval_email(
+    document_id: str,
+    po_status: str,
+    approved_by: str,
+    supplier_name: str,
+    total_amount: str,
+    currency: str,
+) -> None:
+    """IT-27b — Send an email notification when a PO is approved or rejected.
+    Uses SMTP settings from .env. Silent on any failure."""
+    import smtplib
+    from email.mime.text import MIMEText
+
+    smtp_host  = os.getenv("SMTP_HOST", "")
+    smtp_port  = int(os.getenv("SMTP_PORT", "587"))
+    smtp_user  = os.getenv("SMTP_USER", "")
+    smtp_pass  = os.getenv("SMTP_PASS", "")
+    mail_from  = os.getenv("MAIL_FROM", smtp_user)
+    notify_to  = os.getenv("PO_NOTIFY_EMAIL", smtp_user)
+
+    if not smtp_host or not smtp_user or not notify_to:
+        print("[EMAIL] SMTP not configured — skipping PO notification.", flush=True)
+        return
+
+    status_word = "APPROVED" if po_status == "approved" else "REJECTED"
+    emoji = "✅" if po_status == "approved" else "❌"
+    subject = f"{emoji} PO {document_id} {status_word} — SME-GPT"
+    body = (
+        f"Purchase Order {document_id} has been {status_word}.\n\n"
+        f"Approved/Rejected by: {approved_by}\n"
+        f"Supplier: {supplier_name or 'N/A'}\n"
+        f"Total: {currency} {total_amount or 'N/A'}\n\n"
+        f"Log in to SME-GPT to view the document."
+    )
+
+    msg = MIMEText(body)
+    msg["Subject"] = subject
+    msg["From"]    = mail_from
+    msg["To"]      = notify_to
+
+    with smtplib.SMTP(smtp_host, smtp_port) as server:
+        server.ehlo()
+        server.starttls()
+        server.login(smtp_user, smtp_pass)
+        server.sendmail(mail_from, [notify_to], msg.as_string())
+    print(f"[EMAIL] PO notification sent to {notify_to} for {document_id} ({po_status})", flush=True)
 
 
 # =========================
@@ -828,6 +888,22 @@ class ConfirmSaveRequest(BaseModel):
     session_id: str
     edited_preview: dict
     force_save: bool = False
+
+
+class ManualDocumentRequest(BaseModel):
+    """IT: Manual document entry — no OCR, data entered by the user."""
+    document_type: str = "receipt"       # receipt | invoice | po | dn
+    order_id: Optional[str] = None       # auto-generated if blank
+    date: Optional[str] = None           # defaults to today
+    supplier_name: str = ""              # the other party
+    currency: str = "LKR"
+    items: List[dict] = []               # [{description, quantity, unit_price, line_total}]
+    tax_rate: Optional[float] = None
+    tax_amount: Optional[float] = None
+    notes: Optional[str] = None
+    due_date: Optional[str] = None       # for PO/Invoice
+    force_save: bool = False
+    flow_type_override: Optional[str] = None  # from company-role dropdown
 
 
 class QueryRequest(BaseModel):
@@ -1392,6 +1468,20 @@ def update_document(document_id: str, payload: UpdateDocumentRequest, authorizat
 
     _log_audit_event(user_id, "DOCUMENT_UPDATED", f"document_id={document_id}")
 
+    # IT-27b: Send email notification when a PO is approved/rejected
+    if update_data.get("po_status") in ("approved", "rejected") and update_data.get("approved_by"):
+        try:
+            _send_po_approval_email(
+                document_id=document_id,
+                po_status=update_data["po_status"],
+                approved_by=update_data["approved_by"],
+                supplier_name=str(existing.get("supplier_name", "") or ""),
+                total_amount=str(existing.get("final_total_amount", "") or ""),
+                currency=str(existing.get("currency", "LKR") or "LKR"),
+            )
+        except Exception as _email_err:
+            print(f"[EMAIL] PO approval email failed (non-fatal): {_email_err}", flush=True)
+
     return {
         "success": True,
         "message": "Document updated successfully.",
@@ -1420,6 +1510,165 @@ def delete_document(document_id: str, authorization: str = Header(default=None))
         "document_id": document_id,
     }
 
+@app.post("/documents/manual")
+def create_manual_document(
+    payload: ManualDocumentRequest,
+    authorization: str = Header(default=None),
+):
+    """Create a document from manually entered data (no OCR pipeline).
+
+    Generates a professional PNG image using Pillow templates and stores it
+    alongside the structured data — exactly like an OCR-processed document,
+    but with source='manual' so it can be filtered/badged in the UI.
+    """
+    user_id = get_current_user_id(authorization)
+    require_write_role(authorization)
+
+    from datetime import date as _date
+    from dataset_manager import parse_record_for_output
+    from manual_doc_generator import generate_document_image, save_document_image_bytes
+
+    # ── Normalise inputs ──────────────────────────────────────────────────────
+    doc_type = str(payload.document_type or "receipt").lower().strip()
+    doc_date = str(payload.date or "").strip() or _date.today().strftime("%d/%m/%Y")
+
+    # Auto-generate reference number if not provided
+    prefix_map = {"receipt": "R", "invoice": "IN", "po": "PO", "dn": "DN"}
+    prefix = prefix_map.get(doc_type, "DOC")
+    from dataset_manager import generate_document_id
+    order_id = str(payload.order_id or "").strip() or generate_document_id(doc_type)
+
+    # ── Look up user's company name ───────────────────────────────────────────
+    user_company = ""
+    try:
+        with get_db_connection() as _uc:
+            with _uc.cursor() as _cur:
+                _cur.execute('SELECT "companyName" FROM "User" WHERE id = %s', (str(user_id),))
+                _row = _cur.fetchone()
+        if _row:
+            user_company = (_row.get("companyName") if isinstance(_row, dict) else _row[0]) or ""
+    except Exception as _e:
+        print(f"[MANUAL] could not fetch company name: {_e}", flush=True)
+
+    # ── Calculate totals from items ───────────────────────────────────────────
+    items = []
+    subtotal = 0.0
+    for item in (payload.items or []):
+        desc  = str(item.get("description", "") or "").strip()
+        if not desc:
+            continue
+        try:
+            qty   = float(str(item.get("quantity",   1)   or 1))
+            price = float(str(item.get("unit_price", 0)   or 0).replace(",", ""))
+            total = round(qty * price, 2) if price else float(
+                str(item.get("line_total", 0) or 0).replace(",", "")
+            )
+        except (ValueError, TypeError):
+            qty, price, total = 1, 0.0, 0.0
+        subtotal += total
+        items.append({"description": desc, "quantity": qty, "unit_price": price, "line_total": total})
+
+    tax_rate = payload.tax_rate or 0.0
+    tax_amount = round(subtotal * tax_rate / 100, 2) if tax_rate else (payload.tax_amount or 0.0)
+    grand_total = round(subtotal + tax_amount, 2)
+
+    # Auto-set flow_type — use the role-aware override from the frontend dropdown
+    # if provided, otherwise fall back to the default for the document type.
+    _VALID_FLOW_TYPES = {
+        "payable", "receivable", "cash_inflow", "cash_outflow",
+        "expense", "income", "unknown",
+    }
+    flow_map = {
+        "receipt": "cash_outflow",
+        "invoice": "receivable",
+        "po":      "payable",
+        "dn":      "expense",
+    }
+    _override = str(payload.flow_type_override or "").strip().lower()
+    if _override and _override in _VALID_FLOW_TYPES:
+        flow_type = _override
+    else:
+        flow_type = flow_map.get(doc_type, "cash_outflow")
+
+    # ── Build data dict (same shape as OCR extraction output) ─────────────────
+    doc_data: dict = {
+        "document_type":      doc_type,
+        "order_id":           order_id,
+        "flow_type":          flow_type,
+        "effective_flow_type": flow_type,
+        "company_name":       user_company,
+        "supplier_name":      str(payload.supplier_name or "").strip() or (
+                                  "Customer" if flow_type in ("receivable","cash_inflow")
+                                  else "Supplier"),
+        "date":               doc_date,
+        "currency":           str(payload.currency or "LKR"),
+        "raw_total_amount":   grand_total,
+        "final_total_amount": grand_total,
+        "payable_amount":     grand_total,
+        "cash_return":        "",
+        "tax_amount":         tax_amount or "",
+        "tax_rate":           tax_rate or "",
+        "received_status":    "NULL",
+        "paid_status":        "paid" if doc_type == "receipt" else "not_paid",
+        "status":             "ready",
+        "language":           "en",
+        "items_json":         __import__("json").dumps(items, ensure_ascii=False),
+        "corrected_text":     f"Manual entry: {doc_type} {order_id}",
+        "raw_text":           "",
+        "ocr_selected_version": "manual",
+        "structured_json":    "",
+        "correction_json":    "",
+        "arithmetic_status":  "matched",
+        "arithmetic_json":    "",
+        "source":             "manual",          # marks this as manual entry
+        "notes":              str(payload.notes or ""),
+        "due_date":           str(payload.due_date or ""),
+    }
+
+    # ── Duplicate check ───────────────────────────────────────────────────────
+    duplicate = find_duplicate_record(doc_data, user_id=user_id)
+    if duplicate and not payload.force_save:
+        return {
+            "success": False,
+            "duplicate_found": True,
+            "message": "A similar document already exists.",
+            "existing_document_id": duplicate.get("document_id", "NULL"),
+        }
+
+    # ── Save to DB ────────────────────────────────────────────────────────────
+    save_result = upsert_confirmed_record(doc_data, user_id=user_id)
+    document_id = save_result["record"]["document_id"]
+
+    # ── Generate document image ───────────────────────────────────────────────
+    image_data = {**doc_data, "order_id": order_id, "items": items}
+    image_url = None
+    try:
+        png_bytes = generate_document_image(image_data)
+        image_url = save_document_image_bytes(
+            png_bytes, document_id, save_dir=str(SAVED_DOCS_DIR)
+        )
+    except Exception as _img_err:
+        print(f"[MANUAL] image generation failed (non-fatal): {_img_err}", flush=True)
+
+    _log_audit_event(user_id, "DOCUMENT_SAVED",
+                     f"document_id={document_id} action=manual_entry")
+
+    # ── Wire C4 entity index ──────────────────────────────────────────────────
+    try:
+        from entity_index import index_document as _index_doc
+        _index_doc(doc_data, user_id)
+    except Exception:
+        pass
+
+    return {
+        "success": True,
+        "document_id": document_id,
+        "image_url":   image_url,
+        "action":      save_result.get("action", "inserted"),
+        "message":     f"Document {document_id} created successfully.",
+    }
+
+
 @app.get("/documents")
 def get_documents(
     authorization: str = Header(default=None),
@@ -1428,20 +1677,27 @@ def get_documents(
     date_from: str | None = Query(default=None, alias="from"),
     date_to: str | None = Query(default=None, alias="to"),
 ):
-    """NFR-02/03: DB-level LIMIT/OFFSET — never loads the full dataset into memory.
+    """Paginated document list with optional document-date range filter.
 
-    IT-21: optional ``from`` / ``to`` query params (ISO ``YYYY-MM-DD``) restrict
-    results to documents uploaded within that inclusive date range.
+    Date filtering happens in Python (not SQL) because OCR dates arrive in many
+    formats (DD/MM/YYYY, DD MMM YYYY, MM/DD/YYYY, …) that cannot be compared
+    with a SQL text predicate reliably.
     """
     user_id = get_current_user_id(authorization)
-    total = count_records(user_id=user_id, date_from=date_from, date_to=date_to)
-    offset = (page - 1) * limit
-    raw_records = load_records(
-        user_id=user_id, limit=limit, offset=offset,
-        date_from=date_from, date_to=date_to,
-    )
+    from dataset_manager import parse_record_for_output, filter_records_by_doc_date
 
-    from dataset_manager import parse_record_for_output
+    if date_from or date_to:
+        # Load all records for tenant, filter by doc date in Python, then paginate
+        all_raw = load_records(user_id=user_id)
+        all_raw = filter_records_by_doc_date(all_raw, date_from, date_to)
+        total   = len(all_raw)
+        offset  = (page - 1) * limit
+        raw_records = all_raw[offset: offset + limit]
+    else:
+        total       = count_records(user_id=user_id)
+        offset      = (page - 1) * limit
+        raw_records = load_records(user_id=user_id, limit=limit, offset=offset)
+
     page_records = []
     for record in raw_records:
         r = parse_record_for_output(record)
@@ -1473,20 +1729,138 @@ def get_document_by_id(document_id: str, authorization: str = Header(default=Non
 @app.get("/dashboard-summary")
 def dashboard_summary(authorization: str = Header(default=None)):
     user_id = get_current_user_id(authorization)
+    from datetime import datetime, timedelta
 
-    # NFR-03: load only the most recent 200 docs for summary (avoids full table scan)
-    records = load_records(user_id=user_id, limit=200, offset=0)
+    # NFR-03: load only the most recent 500 docs for summary
     from dataset_manager import parse_record_for_output
-    records = [parse_record_for_output(r) for r in records]
+    records = [parse_record_for_output(r) for r in load_records(user_id=user_id, limit=500, offset=0)]
     summary = build_dashboard_summary(records)
 
-    # UI-D2: "Invoice Insights Ready" — surface arithmetic mismatches in recent docs
+    # ── Mismatch alerts ────────────────────────────────────────────────────────
     mismatch_docs = [
         {"document_id": r.get("document_id"), "company_name": r.get("company_name"),
          "date": r.get("date"), "document_type": r.get("document_type")}
-        for r in records
-        if str(r.get("arithmetic_status", "")).lower() == "mismatch"
+        for r in records if str(r.get("arithmetic_status", "")).lower() == "mismatch"
     ][:3]
+
+    # ── Widget 1: Business Health Score ───────────────────────────────────────
+    today = datetime.today()
+    this_month = today.strftime("%Y-%m")
+    last_month = (today.replace(day=1) - timedelta(days=1)).strftime("%Y-%m")
+
+    def _month_net(month_key: str) -> float:
+        total_in = total_out = 0.0
+        for r in records:
+            ds = str(r.get("date", "") or "").strip()
+            for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y", "%d %b %Y"):
+                try:
+                    if datetime.strptime(ds[:10], fmt).strftime("%Y-%m") == month_key:
+                        amt = 0.0
+                        for f in ("payable_amount", "final_total_amount"):
+                            v = r.get(f)
+                            if v not in (None, "NULL", "", "NONE"):
+                                try: amt = float(str(v).replace(",", "")); break
+                                except: pass
+                        ft = str(r.get("effective_flow_type") or r.get("flow_type") or "").lower()
+                        if ft in ("receivable", "cash_inflow", "income"): total_in += amt
+                        elif ft in ("payable", "cash_outflow", "expense"): total_out += amt
+                    break
+                except ValueError:
+                    continue
+        return round(total_in - total_out, 2)
+
+    net_this = _month_net(this_month)
+    net_last = _month_net(last_month)
+    trend_pct = round(((net_this - net_last) / abs(net_last) * 100) if net_last else 0, 1)
+    health_score = {
+        "net": net_this,
+        "trend_pct": trend_pct,
+        "color": "green" if net_this >= 0 else "red",
+        "this_month": this_month,
+    }
+
+    # ── Widget 3: Expense Category Donut ──────────────────────────────────────
+    _CATEGORIES: dict[str, list[str]] = {
+        "Transport":  ["transport","fuel","tuk","bus","cab","taxi","vehicle","petrol","diesel"],
+        "Supplies":   ["supplies","stationery","office","paper","printer","ink","pen","book"],
+        "Food":       ["food","meal","lunch","dinner","restaurant","beverage","tea","coffee"],
+        "Services":   ["service","consultation","design","software","website","maintenance","repair"],
+        "Rent":       ["rent","lease","venue","hall","room","space","accommodation"],
+        "Utilities":  ["electricity","water","internet","phone","mobile","slt","dialog","mobitel"],
+        "Marketing":  ["marketing","advertising","promotion","banner","brochure","print"],
+    }
+    cat_totals: dict[str, float] = {}
+    for r in records:
+        ft = str(r.get("effective_flow_type") or r.get("flow_type") or "").lower()
+        if ft not in ("payable", "cash_outflow", "expense"): continue
+        amt = 0.0
+        for f in ("payable_amount", "final_total_amount"):
+            v = r.get(f)
+            if v not in (None, "NULL", ""):
+                try: amt = float(str(v).replace(",", "")); break
+                except: pass
+        if not amt: continue
+        desc = (str(r.get("corrected_text") or r.get("supplier_name") or "")).lower()
+        cat = "Other"
+        for name, keywords in _CATEGORIES.items():
+            if any(kw in desc for kw in keywords): cat = name; break
+        cat_totals[cat] = round(cat_totals.get(cat, 0) + amt, 2)
+    total_exp = sum(cat_totals.values()) or 1
+    expense_breakdown = sorted(
+        [{"category": k, "amount": v, "pct": round(v / total_exp * 100, 1)}
+         for k, v in cat_totals.items()],
+        key=lambda x: -x["amount"]
+    )
+
+    # ── Widget 4: Who Owes Me / Who I Owe ─────────────────────────────────────
+    top_receivables, top_payables = [], []
+    for r in records:
+        ft = str(r.get("effective_flow_type") or r.get("flow_type") or "").lower()
+        paid = str(r.get("paid_status") or "").lower()
+        received = str(r.get("received_status") or "").lower()
+        if paid in ("paid", "received") or received == "received": continue
+        amt = 0.0
+        for f in ("payable_amount", "final_total_amount"):
+            v = r.get(f)
+            if v not in (None, "NULL", ""):
+                try: amt = float(str(v).replace(",", "")); break
+                except: pass
+        if not amt: continue
+        entry = {
+            "document_id":   r.get("document_id"),
+            "document_type": r.get("document_type"),
+            "supplier_name": r.get("supplier_name") or r.get("company_name") or "—",
+            "amount":        amt,
+            "currency":      r.get("currency") or "LKR",
+            "date":          r.get("date") or "",
+        }
+        if ft in ("receivable", "cash_inflow"): top_receivables.append(entry)
+        elif ft in ("payable", "cash_outflow"): top_payables.append(entry)
+    top_receivables = sorted(top_receivables, key=lambda x: -x["amount"])[:5]
+    top_payables    = sorted(top_payables,    key=lambda x: -x["amount"])[:5]
+
+    # ── Widget 5: Activity Feed (from ActivityLog table) ──────────────────────
+    activity_feed = []
+    try:
+        with get_db_connection() as _conn:
+            with _conn.cursor() as _cur:
+                _cur.execute(
+                    'SELECT type, content, "createdAt" FROM "ActivityLog" '
+                    'WHERE "userId" = %s ORDER BY "createdAt" DESC LIMIT 10',
+                    (str(user_id),)
+                )
+                for row in (_cur.fetchall() or []):
+                    if isinstance(row, dict):
+                        evt, content, created = row.get("type",""), row.get("content",""), row.get("createdAt")
+                    else:
+                        evt, content, created = row[0], row[1], row[2]
+                    activity_feed.append({
+                        "event_type": evt,
+                        "content":    str(content or ""),
+                        "created_at": created.isoformat() if hasattr(created, "isoformat") else str(created or ""),
+                    })
+    except Exception as _af_err:
+        print(f"[DASHBOARD] activity feed failed (non-fatal): {_af_err}", flush=True)
 
     return {
         "success": True,
@@ -1501,6 +1875,12 @@ def dashboard_summary(authorization: str = Header(default=None)):
         "pending_processing_count": summary.get("pending_processing_count", 0),
         "ready_for_query_count": summary.get("ready_for_query_count", 0),
         "mismatch_alerts": mismatch_docs,
+        # Feature 2 — Analytics widgets
+        "health_score":      health_score,
+        "expense_breakdown": expense_breakdown,
+        "top_receivables":   top_receivables,
+        "top_payables":      top_payables,
+        "activity_feed":     activity_feed,
     }
 
 
@@ -1695,6 +2075,593 @@ def get_suppliers(
     return {"success": True, "count": len(result), "suppliers": result}
 
 
+@app.get("/suppliers/{name}/history")
+def get_supplier_history(
+    name: str,
+    authorization: str = Header(default=None),
+):
+    """IT-40 — Full transaction history for a single counterparty."""
+    user_id = get_current_user_id(authorization)
+    from dataset_manager import parse_record_for_output
+    from urllib.parse import unquote
+
+    clean_name = unquote(name).strip().lower()
+    records = [parse_record_for_output(r) for r in load_all_records(user_id=user_id)]
+
+    transactions = []
+    for r in records:
+        sname = str(r.get("supplier_name") or "").strip().lower()
+        if sname != clean_name:
+            continue
+        amt = 0.0
+        for field in ("payable_amount", "final_total_amount"):
+            v = r.get(field)
+            if v not in (None, "NULL", "", "NONE"):
+                try: amt = float(str(v).replace(",", "")); break
+                except: pass
+        ft = str(r.get("effective_flow_type") or r.get("flow_type") or "").lower()
+        transactions.append({
+            "document_id":   r.get("document_id"),
+            "document_type": r.get("document_type"),
+            "date":          r.get("date") or "",
+            "amount":        amt,
+            "currency":      r.get("currency") or "LKR",
+            "flow_type":     ft,
+            "paid_status":   r.get("paid_status") or "NULL",
+            "received_status": r.get("received_status") or "NULL",
+            "invoice_status":  r.get("invoice_status") or "",
+            "po_status":       r.get("po_status") or "",
+            "notes":           r.get("notes") or "",
+        })
+
+    transactions.sort(key=lambda x: x["date"] or "", reverse=True)
+    total_paid = sum(t["amount"] for t in transactions if t["flow_type"] in ("payable","cash_outflow","expense"))
+    total_recv = sum(t["amount"] for t in transactions if t["flow_type"] in ("receivable","cash_inflow","income"))
+    return {
+        "success":     True,
+        "name":        unquote(name).strip(),
+        "transactions": transactions,
+        "summary": {
+            "count":         len(transactions),
+            "total_paid":    round(total_paid, 2),
+            "total_received": round(total_recv, 2),
+            "net":           round(total_recv - total_paid, 2),
+        },
+    }
+
+
+@app.get("/suppliers/duplicates")
+def get_supplier_duplicates(authorization: str = Header(default=None)):
+    """IT-40 — Find supplier names that look like duplicates (Jaro-Winkler >= 0.88)."""
+    user_id = get_current_user_id(authorization)
+    from dataset_manager import parse_record_for_output
+    import jellyfish  # pip install jellyfish
+
+    records = [parse_record_for_output(r) for r in load_all_records(user_id=user_id)]
+    names: list[str] = []
+    seen: set[str] = set()
+    for r in records:
+        n = str(r.get("supplier_name") or "").strip()
+        if n and n.upper() not in ("NULL","SUPPLIER","CUSTOMER","") and n.lower() not in seen:
+            names.append(n); seen.add(n.lower())
+
+    groups: list[list[str]] = []
+    used: set[int] = set()
+    for i, a in enumerate(names):
+        if i in used: continue
+        group = [a]
+        for j, b in enumerate(names[i+1:], start=i+1):
+            if j in used: continue
+            try:
+                score = jellyfish.jaro_winkler_similarity(a.lower(), b.lower())
+            except Exception:
+                score = 0
+            if score >= 0.88:
+                group.append(b); used.add(j)
+        if len(group) >= 2:
+            groups.append(group); used.add(i)
+
+    return {"success": True, "groups": groups}
+
+
+@app.put("/suppliers/merge")
+def merge_suppliers(
+    payload: dict,
+    authorization: str = Header(default=None),
+):
+    """IT-40 — Rename all documents with names in `aliases` to `canonical_name`."""
+    user_id = get_current_user_id(authorization)
+    require_write_role(authorization)
+
+    canonical = str(payload.get("canonical_name", "")).strip()
+    aliases: list[str] = [str(a).strip().lower() for a in payload.get("aliases", [])]
+    if not canonical or not aliases:
+        raise HTTPException(status_code=400, detail="canonical_name and aliases required")
+
+    updated = 0
+    records = load_all_records(user_id=user_id)
+    for r in records:
+        sname = str(r.get("supplier_name") or "").strip()
+        if sname.lower() in aliases and sname != canonical:
+            doc_id = r.get("document_id")
+            with get_db_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        'UPDATE "FinancialDocument" SET "supplierName"=%s WHERE "documentId"=%s AND "tenantId"=%s',
+                        (canonical, str(doc_id), str(user_id))
+                    )
+                conn.commit()
+            updated += 1
+
+    _log_audit_event(user_id, "SUPPLIERS_MERGED", f"canonical={canonical} updated={updated}")
+    return {"success": True, "updated": updated}
+
+
+# ── IT-41: Payment Reminder ───────────────────────────────────────────────────
+
+@app.post("/documents/{document_id}/send-reminder")
+def send_payment_reminder(
+    document_id: str,
+    payload: dict = Body(default={}),
+    authorization: str = Header(default=None),
+):
+    """IT-41 — Send a payment reminder email for an overdue receivable."""
+    user_id = get_current_user_id(authorization)
+    from dataset_manager import parse_record_for_output
+
+    records = load_all_records(user_id=user_id)
+    doc = next((parse_record_for_output(r) for r in records
+                if r.get("document_id") == document_id), None)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    recipient_email = str(payload.get("email", "")).strip()
+    if not recipient_email:
+        raise HTTPException(status_code=400, detail="email required in request body")
+
+    import smtplib
+    from email.mime.text import MIMEText
+    from email.mime.multipart import MIMEMultipart
+
+    smtp_host = os.getenv("SMTP_HOST", "")
+    smtp_port = int(os.getenv("SMTP_PORT", "587"))
+    smtp_user = os.getenv("SMTP_USER", "")
+    smtp_pass = os.getenv("SMTP_PASS", "")
+
+    if not smtp_host or not smtp_user:
+        raise HTTPException(status_code=503, detail="SMTP not configured")
+
+    party   = doc.get("supplier_name") or "Valued Customer"
+    amount  = doc.get("final_total_amount") or doc.get("payable_amount") or "0"
+    cur     = doc.get("currency") or "LKR"
+    due     = doc.get("due_date") or doc.get("date") or ""
+    ref     = doc.get("order_id") or document_id
+
+    html_body = f"""
+    <div style="font-family:sans-serif;max-width:580px;margin:0 auto">
+      <h2 style="color:#2252b5">Payment Reminder</h2>
+      <p>Dear {party},</p>
+      <p>This is a friendly reminder that the following payment is outstanding:</p>
+      <table style="width:100%;border-collapse:collapse;margin:16px 0">
+        <tr><td style="padding:8px;background:#f3f4f6;font-weight:bold">Reference</td><td style="padding:8px">{ref}</td></tr>
+        <tr><td style="padding:8px;background:#f3f4f6;font-weight:bold">Amount Due</td><td style="padding:8px;color:#dc2626;font-weight:bold">{cur} {float(str(amount).replace(",","")):.2f}</td></tr>
+        <tr><td style="padding:8px;background:#f3f4f6;font-weight:bold">Due Date</td><td style="padding:8px">{due or "As agreed"}</td></tr>
+      </table>
+      <p>Please arrange payment at your earliest convenience.</p>
+      <p style="color:#666;font-size:12px">Generated by SME-GPT · {doc.get("company_name","")}</p>
+    </div>"""
+
+    try:
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = f"Payment Reminder: {ref} – {cur} {float(str(amount).replace(',','')):.2f}"
+        msg["From"]    = smtp_user
+        msg["To"]      = recipient_email
+        msg.attach(MIMEText(html_body, "html"))
+
+        with smtplib.SMTP(smtp_host, smtp_port) as s:
+            s.starttls()
+            s.login(smtp_user, smtp_pass)
+            s.sendmail(smtp_user, [recipient_email], msg.as_string())
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"Email failed: {e}")
+
+    _log_audit_event(user_id, "REMINDER_SENT", f"document_id={document_id} to={recipient_email}")
+    return {"success": True, "message": f"Reminder sent to {recipient_email}"}
+
+
+# ── IT-44: Exchange Rates ─────────────────────────────────────────────────────
+
+_FX_CACHE: dict = {"rates": {}, "fetched_at": 0.0}
+
+@app.get("/exchange-rates")
+def exchange_rates(authorization: str = Header(default=None)):
+    """IT-44 — Live LKR exchange rates (cached 6 h)."""
+    get_current_user_id(authorization)
+    import time, urllib.request, json as _json
+
+    now = time.time()
+    if now - _FX_CACHE["fetched_at"] < 21600 and _FX_CACHE["rates"]:
+        return {"success": True, "base": "LKR", "rates": _FX_CACHE["rates"]}
+
+    try:
+        with urllib.request.urlopen("https://open.er-api.com/v6/latest/LKR", timeout=5) as r:
+            data = _json.loads(r.read())
+        rates = {k: round(1 / v, 6) for k, v in data.get("rates", {}).items()
+                 if k in ("USD","EUR","GBP","SGD","AUD","INR","JPY") and v}
+        _FX_CACHE["rates"] = rates
+        _FX_CACHE["fetched_at"] = now
+        return {"success": True, "base": "LKR", "rates": rates}
+    except Exception:
+        return {"success": True, "base": "LKR", "rates": _FX_CACHE.get("rates", {})}
+
+
+# ── IT-45: Document Sharing ───────────────────────────────────────────────────
+
+_SHARE_TOKENS: dict[str, dict] = {}   # token -> {document_id, user_id, expires_at}
+
+@app.post("/documents/{document_id}/share")
+def share_document(
+    document_id: str,
+    authorization: str = Header(default=None),
+):
+    """IT-45 — Generate a 7-day read-only share link for a document."""
+    user_id = get_current_user_id(authorization)
+    import secrets, time
+
+    token = secrets.token_urlsafe(24)
+    _SHARE_TOKENS[token] = {
+        "document_id": document_id,
+        "user_id":     str(user_id),
+        "expires_at":  time.time() + 7 * 86400,
+    }
+    _log_audit_event(user_id, "DOCUMENT_SHARED", f"document_id={document_id} token={token[:8]}…")
+    return {"success": True, "token": token, "expires_in_days": 7}
+
+
+@app.get("/shared/{token}")
+def view_shared_document(token: str):
+    """IT-45 — Public read-only view for a shared document (no auth required)."""
+    import time
+    from dataset_manager import parse_record_for_output
+
+    entry = _SHARE_TOKENS.get(token)
+    if not entry:
+        raise HTTPException(status_code=404, detail="Share link not found or expired")
+    if time.time() > entry["expires_at"]:
+        _SHARE_TOKENS.pop(token, None)
+        raise HTTPException(status_code=410, detail="Share link expired")
+
+    records = load_all_records(user_id=entry["user_id"])
+    doc = next((parse_record_for_output(r) for r in records
+                if r.get("document_id") == entry["document_id"]), None)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    return {
+        "success": True,
+        "document": {
+            "document_id":        doc.get("document_id"),
+            "document_type":      doc.get("document_type"),
+            "date":               doc.get("date"),
+            "company_name":       doc.get("company_name"),
+            "supplier_name":      doc.get("supplier_name"),
+            "final_total_amount": doc.get("final_total_amount"),
+            "currency":           doc.get("currency"),
+            "order_id":           doc.get("order_id"),
+            "items_json":         doc.get("items_json"),
+        },
+        "expires_at": entry["expires_at"],
+    }
+
+
+# ── IT-46: Budget Settings ────────────────────────────────────────────────────
+
+@app.get("/user/budget-settings")
+def get_budget_settings(authorization: str = Header(default=None)):
+    """IT-46 — Return the user's monthly budget targets per expense category."""
+    user_id = get_current_user_id(authorization)
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    'SELECT content FROM "ActivityLog" WHERE "userId"=%s AND type=%s '
+                    'ORDER BY "createdAt" DESC LIMIT 1',
+                    (str(user_id), "BUDGET_SETTINGS")
+                )
+                row = cur.fetchone()
+        if row:
+            import json as _json
+            content = row.get("content") if isinstance(row, dict) else row[0]
+            return {"success": True, "budgets": _json.loads(content)}
+    except Exception:
+        pass
+    return {"success": True, "budgets": {}}
+
+
+@app.put("/user/budget-settings")
+def save_budget_settings(
+    payload: dict = Body(default={}),
+    authorization: str = Header(default=None),
+):
+    """IT-46 — Save monthly budget targets per expense category."""
+    user_id = get_current_user_id(authorization)
+    require_write_role(authorization)
+    import json as _json
+
+    budgets = payload.get("budgets", {})
+    _log_audit_event(user_id, "BUDGET_SETTINGS", _json.dumps(budgets))
+    return {"success": True, "message": "Budget settings saved"}
+
+
+# ── IT-47: Audit Pack Export ──────────────────────────────────────────────────
+
+class AuditPackRequest(BaseModel):
+    period: str = "this_month"   # this_week | this_month | last_month | this_year | custom
+    date_from: Optional[str] = None
+    date_to: Optional[str] = None
+
+
+@app.post("/reports/audit-pack")
+def export_audit_pack(
+    payload: AuditPackRequest,
+    authorization: str = Header(default=None),
+):
+    """IT-47 — Generate and download an audit pack ZIP for the selected period."""
+    user_id = get_current_user_id(authorization)
+    from datetime import datetime, timedelta
+    import io, zipfile, json as _json
+
+    today = datetime.today()
+    if payload.period == "this_week":
+        lo = today - timedelta(days=today.weekday())
+        hi = today
+    elif payload.period == "this_month":
+        lo = today.replace(day=1)
+        hi = today
+    elif payload.period == "last_month":
+        hi = today.replace(day=1) - timedelta(days=1)
+        lo = hi.replace(day=1)
+    elif payload.period == "this_year":
+        lo = today.replace(month=1, day=1)
+        hi = today
+    elif payload.period == "custom":
+        try:
+            lo = datetime.strptime(payload.date_from, "%Y-%m-%d")
+            hi = datetime.strptime(payload.date_to,   "%Y-%m-%d")
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="date_from and date_to required for custom period (YYYY-MM-DD)")
+    else:
+        lo = today.replace(day=1)
+        hi = today
+
+    lo_str = lo.strftime("%Y-%m-%d")
+    hi_str = hi.strftime("%Y-%m-%d")
+
+    from dataset_manager import parse_record_for_output
+    all_recs = [parse_record_for_output(r) for r in load_all_records(user_id=user_id)]
+
+    def _in_range(r: dict) -> bool:
+        ds = str(r.get("date") or "").strip()[:10]
+        return lo_str <= ds <= hi_str if len(ds) == 10 else True
+
+    records = [r for r in all_recs if _in_range(r)]
+
+    # ── Build Excel ──────────────────────────────────────────────────────────
+    try:
+        import openpyxl
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Transactions"
+        headers = ["Document ID","Type","Date","Company","Counterparty","Amount","Currency","Flow","Status"]
+        ws.append(headers)
+        for r in records:
+            status = r.get("paid_status") or r.get("received_status") or r.get("invoice_status") or ""
+            ws.append([
+                r.get("document_id",""), r.get("document_type",""), r.get("date",""),
+                r.get("company_name",""), r.get("supplier_name",""),
+                r.get("final_total_amount",""), r.get("currency","LKR"),
+                r.get("effective_flow_type") or r.get("flow_type",""),
+                status,
+            ])
+        excel_buf = io.BytesIO()
+        wb.save(excel_buf)
+        excel_bytes = excel_buf.getvalue()
+    except ImportError:
+        excel_bytes = b""
+
+    # ── Build ZIP ────────────────────────────────────────────────────────────
+    zip_buf = io.BytesIO()
+    with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        if excel_bytes:
+            zf.writestr(f"transactions_{lo_str}_to_{hi_str}.xlsx", excel_bytes)
+        # Include document images if they exist
+        for r in records:
+            doc_id = r.get("document_id","")
+            img_path = Path(SAVED_DOCS_DIR) / f"{doc_id}.png"
+            if img_path.exists():
+                zf.write(img_path, f"documents/{doc_id}.png")
+        # Summary JSON
+        summary = {
+            "period": payload.period, "from": lo_str, "to": hi_str,
+            "total_documents": len(records),
+            "total_income":    round(sum(float(str(r.get("final_total_amount") or 0).replace(",","") or 0) for r in records if (r.get("effective_flow_type") or r.get("flow_type","")).lower() in ("receivable","cash_inflow","income")), 2),
+            "total_expense":   round(sum(float(str(r.get("final_total_amount") or 0).replace(",","") or 0) for r in records if (r.get("effective_flow_type") or r.get("flow_type","")).lower() in ("payable","cash_outflow","expense")), 2),
+        }
+        zf.writestr("summary.json", _json.dumps(summary, indent=2))
+
+    zip_buf.seek(0)
+    _log_audit_event(user_id, "AUDIT_PACK_EXPORTED", f"period={payload.period} docs={len(records)}")
+
+    from fastapi.responses import StreamingResponse
+    return StreamingResponse(
+        zip_buf,
+        media_type="application/zip",
+        headers={"Content-Disposition": f"attachment; filename=audit_pack_{lo_str}_{hi_str}.zip"},
+    )
+
+
+# ── IT-48: Monthly P&L Email Scheduler ───────────────────────────────────────
+
+def _send_monthly_pnl_emails():
+    """Called by APScheduler on the 1st of each month at 08:00."""
+    import smtplib, json as _json
+    from email.mime.text import MIMEText
+    from email.mime.multipart import MIMEMultipart
+    from datetime import datetime, timedelta
+    from dataset_manager import parse_record_for_output
+
+    smtp_host = os.getenv("SMTP_HOST", "")
+    smtp_user = os.getenv("SMTP_USER", "")
+    smtp_pass = os.getenv("SMTP_PASS", "")
+    smtp_port = int(os.getenv("SMTP_PORT", "587"))
+    if not smtp_host or not smtp_user:
+        print("[PNL-EMAIL] SMTP not configured, skipping", flush=True)
+        return
+
+    today = datetime.today()
+    last_month_end   = today.replace(day=1) - timedelta(days=1)
+    last_month_start = last_month_end.replace(day=1)
+    lo = last_month_start.strftime("%Y-%m-%d")
+    hi = last_month_end.strftime("%Y-%m-%d")
+
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute('SELECT id, email, "companyName" FROM "User" WHERE "deletedAt" IS NULL')
+                users = cur.fetchall() or []
+    except Exception as e:
+        print(f"[PNL-EMAIL] DB error: {e}", flush=True)
+        return
+
+    for row in users:
+        uid   = (row.get("id")          if isinstance(row, dict) else row[0]) or ""
+        email = (row.get("email")       if isinstance(row, dict) else row[1]) or ""
+        co    = (row.get("companyName") if isinstance(row, dict) else row[2]) or "Your Company"
+        if not email: continue
+
+        recs = [parse_record_for_output(r) for r in load_all_records(user_id=uid)]
+        period_recs = [r for r in recs if lo <= str(r.get("date") or "")[:10] <= hi]
+        income  = round(sum(float(str(r.get("final_total_amount") or 0).replace(",","") or 0) for r in period_recs if (r.get("effective_flow_type") or r.get("flow_type","")).lower() in ("receivable","cash_inflow","income")), 2)
+        expense = round(sum(float(str(r.get("final_total_amount") or 0).replace(",","") or 0) for r in period_recs if (r.get("effective_flow_type") or r.get("flow_type","")).lower() in ("payable","cash_outflow","expense")), 2)
+        net     = round(income - expense, 2)
+        color   = "#16a34a" if net >= 0 else "#dc2626"
+
+        html = f"""<div style="font-family:sans-serif;max-width:580px;margin:0 auto">
+          <h2 style="color:#2252b5">Monthly P&L — {last_month_end.strftime('%B %Y')}</h2>
+          <p>Hi {co},</p>
+          <table style="width:100%;border-collapse:collapse;margin:16px 0">
+            <tr><td style="padding:10px;background:#f3f4f6;font-weight:bold">Total Income</td>
+                <td style="padding:10px;color:#16a34a;font-weight:bold;text-align:right">LKR {income:,.2f}</td></tr>
+            <tr><td style="padding:10px;background:#f3f4f6;font-weight:bold">Total Expenses</td>
+                <td style="padding:10px;color:#dc2626;font-weight:bold;text-align:right">LKR {expense:,.2f}</td></tr>
+            <tr style="background:{color}15"><td style="padding:10px;font-weight:bold">Net Profit / Loss</td>
+                <td style="padding:10px;color:{color};font-weight:bold;font-size:18px;text-align:right">LKR {net:,.2f}</td></tr>
+          </table>
+          <p style="color:#666;font-size:12px">Powered by SME-GPT · Log in for full details</p></div>"""
+
+        try:
+            msg = MIMEMultipart("alternative")
+            msg["Subject"] = f"SME-GPT P&L Summary — {last_month_end.strftime('%B %Y')}"
+            msg["From"]    = smtp_user
+            msg["To"]      = email
+            msg.attach(MIMEText(html, "html"))
+            with smtplib.SMTP(smtp_host, smtp_port) as s:
+                s.starttls(); s.login(smtp_user, smtp_pass)
+                s.sendmail(smtp_user, [email], msg.as_string())
+            print(f"[PNL-EMAIL] sent to {email}", flush=True)
+        except Exception as e:
+            print(f"[PNL-EMAIL] failed for {email}: {e}", flush=True)
+
+
+# ── IT-49: WhatsApp Webhook ───────────────────────────────────────────────────
+
+@app.post("/webhook/whatsapp")
+async def whatsapp_webhook(request: Request):
+    """IT-49 — Twilio WhatsApp webhook: receives forwarded bill images and queues them."""
+    import hmac, hashlib, base64, urllib.parse, urllib.request
+
+    # Validate Twilio signature
+    twilio_token   = os.getenv("TWILIO_AUTH_TOKEN", "")
+    x_sig          = request.headers.get("X-Twilio-Signature", "")
+    body_bytes     = await request.body()
+    body_str       = body_bytes.decode("utf-8")
+    params         = dict(urllib.parse.parse_qsl(body_str))
+
+    if twilio_token:
+        url      = str(request.url)
+        sorted_p = "".join(f"{k}{v}" for k, v in sorted(params.items()))
+        expected = base64.b64encode(
+            hmac.new(twilio_token.encode(), (url + sorted_p).encode(), hashlib.sha1).digest()
+        ).decode()
+        if not hmac.compare_digest(x_sig, expected):
+            raise HTTPException(status_code=403, detail="Invalid Twilio signature")
+
+    from_number = params.get("From", "").replace("whatsapp:", "")
+    media_url   = params.get("MediaUrl0", "")
+    if not media_url:
+        return {"status": "no_media"}
+
+    # Look up user by whatsapp_number stored in User settings
+    owner_id = None
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    'SELECT id FROM "User" WHERE "phoneNumber" = %s LIMIT 1',
+                    (from_number,)
+                )
+                row = cur.fetchone()
+        if row:
+            owner_id = (row.get("id") if isinstance(row, dict) else row[0])
+    except Exception:
+        pass
+
+    if not owner_id:
+        print(f"[WHATSAPP] unknown number {from_number}", flush=True)
+        return {"status": "unknown_sender"}
+
+    # Download image from Twilio
+    twilio_sid = os.getenv("TWILIO_ACCOUNT_SID", "")
+    try:
+        req = urllib.request.Request(media_url)
+        if twilio_sid and twilio_token:
+            creds = base64.b64encode(f"{twilio_sid}:{twilio_token}".encode()).decode()
+            req.add_header("Authorization", f"Basic {creds}")
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            image_bytes = resp.read()
+    except Exception as e:
+        print(f"[WHATSAPP] image download failed: {e}", flush=True)
+        return {"status": "download_failed"}
+
+    # Save image to temp and run through manual doc generator + save
+    from manual_doc_generator import save_document_image_bytes
+    from dataset_manager import generate_document_id
+
+    doc_id = generate_document_id("receipt")
+    save_document_image_bytes(image_bytes, doc_id, save_dir=str(SAVED_DOCS_DIR))
+
+    doc_data = {
+        "document_type": "receipt", "order_id": doc_id,
+        "flow_type": "cash_outflow", "effective_flow_type": "cash_outflow",
+        "supplier_name": f"WhatsApp:{from_number}", "company_name": "",
+        "date": "", "currency": "LKR",
+        "raw_total_amount": 0, "final_total_amount": 0,
+        "payable_amount": 0, "cash_return": "",
+        "received_status": "NULL", "paid_status": "not_paid",
+        "status": "pending", "language": "en",
+        "corrected_text": f"WhatsApp bill from {from_number}",
+        "raw_text": "", "items_json": "[]",
+        "source": "whatsapp",
+    }
+    try:
+        upsert_confirmed_record(doc_data, user_id=str(owner_id))
+        _log_audit_event(str(owner_id), "WHATSAPP_DOCUMENT", f"document_id={doc_id} from={from_number}")
+    except Exception as e:
+        print(f"[WHATSAPP] save failed: {e}", flush=True)
+
+    return {"status": "queued", "document_id": doc_id}
+
+
 @app.get("/reports/vat")
 def vat_report(
     authorization: str = Header(default=None),
@@ -1752,6 +2719,83 @@ def vat_report(
         "total_tax": round(total_tax, 2),
         "month_count": len(months_sorted),
         "months": months_sorted,
+    }
+
+
+@app.get("/reports/pnl")
+def pnl_report(
+    authorization: str = Header(default=None),
+    year: int = Query(default=0, ge=0),
+    months: int = Query(default=12, ge=1, le=24),
+):
+    """IT-30 — Monthly Profit & Loss: revenue (receivable+cash_inflow) minus
+    expenses (payable+cash_outflow) per month for the last N months."""
+    user_id = get_current_user_id(authorization)
+    from datetime import datetime, timedelta
+
+    records = load_all_records(user_id=user_id)
+
+    today = datetime.today()
+    buckets: dict[str, dict] = {}
+    for m in range(months - 1, -1, -1):
+        first = today.replace(day=1) - timedelta(days=m * 28)
+        key = first.strftime("%Y-%m")
+        buckets[key] = {"month": key, "revenue": 0.0, "expenses": 0.0, "net": 0.0, "doc_count": 0}
+
+    for r in records:
+        date_str = str(r.get("date", "") or "").strip()
+        if not date_str or date_str.upper() == "NULL":
+            continue
+        parsed_date = None
+        for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y", "%d %b %Y", "%d/%m/%y"):
+            try:
+                parsed_date = datetime.strptime(date_str[:10], fmt)
+                break
+            except ValueError:
+                continue
+        if not parsed_date:
+            continue
+        if year and parsed_date.year != year:
+            continue
+        key = parsed_date.strftime("%Y-%m")
+        if key not in buckets:
+            continue
+
+        amt = 0.0
+        for field in ("payable_amount", "final_total_amount", "raw_total_amount"):
+            v = r.get(field)
+            if v is not None and str(v).upper() not in ("NULL", "", "NONE"):
+                try:
+                    amt = float(str(v).replace(",", ""))
+                    break
+                except ValueError:
+                    pass
+
+        ft = str(r.get("effective_flow_type") or r.get("flow_type") or "").lower()
+        if ft in ("receivable", "cash_inflow", "income"):
+            buckets[key]["revenue"] += amt
+        elif ft in ("payable", "cash_outflow", "expense"):
+            buckets[key]["expenses"] += amt
+        buckets[key]["doc_count"] += 1
+
+    total_revenue = 0.0
+    total_expenses = 0.0
+    result = []
+    for b in sorted(buckets.values(), key=lambda x: x["month"]):
+        b["revenue"]  = round(b["revenue"], 2)
+        b["expenses"] = round(b["expenses"], 2)
+        b["net"]      = round(b["revenue"] - b["expenses"], 2)
+        total_revenue  += b["revenue"]
+        total_expenses += b["expenses"]
+        result.append(b)
+
+    return {
+        "success": True,
+        "months": months,
+        "total_revenue": round(total_revenue, 2),
+        "total_expenses": round(total_expenses, 2),
+        "net_profit": round(total_revenue - total_expenses, 2),
+        "data": result,
     }
 
 

@@ -2,10 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import MobileShell from "@/components/layout/MobileShell";
-import BottomNav from "@/components/layout/BottomNav";
-import LanguageSwitcher from "@/components/layout/LanguageSwitcher";
-import ThemeToggle from "@/components/layout/ThemeToggle";
+import PageShell from "@/components/layout/PageShell";
 import { AppLanguage, getStoredLanguage, ui } from "@/lib/i18n";
 import { formatMoney, otherPartyName } from "@/lib/format";
 
@@ -24,6 +21,7 @@ type RepoDocument = {
   status: string;
   flow_type?: string;
   file_size_kb?: number | null;
+  source?: string | null;
   // Iteration 10: workflow status fields
   po_status?: string | null;
   dn_status?: string | null;
@@ -192,32 +190,11 @@ export default function RepositoryPage() {
   const docTitle = (item: RepoDocument) => otherPartyName(item) || item.document_id;
 
   return (
-    <MobileShell>
-      <div className="min-h-screen pb-24" style={{ background: "var(--bg)" }}>
-        <main className="mx-auto w-full max-w-[920px] px-4 py-6 sm:px-6 lg:px-8">
-
-          {/* Header */}
-          <div className="mb-5 flex items-start justify-between gap-4">
-            <div>
-              <h1 className="text-[22px] font-extrabold tracking-tight text-[var(--text-1)] sm:text-[26px]">
-                {t.repositoryTitle}
-              </h1>
-              <p className="mt-0.5 text-[12px] text-[var(--text-3)]">
-                {t.repoSubtitle}
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              <ThemeToggle />
-              <LanguageSwitcher />
-              <button
-                onClick={() => router.push("/upload")}
-                className="flex h-9 w-9 items-center justify-center rounded-full text-white shadow-sm transition hover:opacity-90"
-                style={{ background: "var(--brand)" }}
-              >
-                <span className="material-symbols-outlined text-[20px]">add</span>
-              </button>
-            </div>
-          </div>
+    <PageShell
+      title={t.repositoryTitle}
+      subtitle={t.repoSubtitle}
+      width="standard"
+    >
 
           {/* Search bar */}
           <div className="mb-4 flex items-center gap-2 rounded-xl px-4 py-2.5"
@@ -237,12 +214,12 @@ export default function RepositoryPage() {
             )}
           </div>
 
-          {/* IT-21: Upload-date range filter */}
+          {/* Date range filter — filters by document date (the date on the bill) */}
           <div className="mb-4 flex flex-wrap items-center gap-2 rounded-xl px-4 py-2.5"
             style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
             <span className="material-symbols-outlined text-[18px]" style={{ color: "var(--text-3)" }}>date_range</span>
             <span className="text-[12px] font-semibold text-[var(--text-2)]">
-              {lang === "si" ? "උඩුගත කළ දිනය" : "Upload date"}
+              {lang === "si" ? "ලේඛනයේ දිනය" : "Document date"}
             </span>
             <input
               type="date"
@@ -396,7 +373,15 @@ export default function RepositoryPage() {
                       </div>
 
                       <div className="min-w-0 flex-1">
-                        <p className="truncate text-[15px] font-bold text-[var(--text-1)]">{docTitle(item)}</p>
+                        <div className="flex items-center gap-2">
+                          <p className="truncate text-[15px] font-bold text-[var(--text-1)]">{docTitle(item)}</p>
+                          {item.source === "manual" && (
+                            <span className="shrink-0 rounded-md px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider"
+                              style={{ background: "rgba(234,108,10,0.1)", color: "#ea6c0a" }}>
+                              {lang === "si" ? "අතින්" : "MANUAL"}
+                            </span>
+                          )}
+                        </div>
                         <p className="mt-0.5 text-[11px] font-semibold uppercase tracking-[0.06em] text-[var(--text-3)]">{docSubLabel(item)}</p>
 
                         <div className="mt-2 grid gap-2 sm:grid-cols-2">
@@ -499,10 +484,6 @@ export default function RepositoryPage() {
             </div>
             </>
           )}
-        </main>
-
-        <BottomNav />
-      </div>
-    </MobileShell>
+    </PageShell>
   );
 }

@@ -442,7 +442,7 @@ export default function UploadPage() {
   return (
     <MobileShell>
       <div className="min-h-screen pb-24" style={{ background: "var(--bg)" }}>
-        <main className="mx-auto w-full max-w-[980px] px-4 py-6 sm:px-6 lg:px-8">
+        <main className="mx-auto w-full max-w-[960px] px-4 py-6 sm:px-6">
 
           {/* Top bar */}
           <div className="mb-5 flex items-center justify-between">
@@ -455,12 +455,28 @@ export default function UploadPage() {
               {t.backToDashboard}
             </button>
             <div className="flex items-center gap-2">
+              <button
+                onClick={() => router.push("/manual-entry")}
+                className="flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-[12px] font-semibold transition hover:opacity-80"
+                style={{ background: "rgba(234,108,10,0.1)", color: "#ea6c0a" }}
+              >
+                <span className="material-symbols-outlined text-[15px]">edit_note</span>
+                {lang === "si" ? "අතින් ඇතුළත් කරන්න" : "Manual Entry"}
+              </button>
+              <button
+                onClick={() => router.push("/bulk-upload")}
+                className="flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-[12px] font-semibold transition hover:opacity-80"
+                style={{ background: "var(--brand-tint)", color: "var(--brand-mid)" }}
+              >
+                <span className="material-symbols-outlined text-[15px]">file_copy</span>
+                {lang === "si" ? "ශ්‍රේණිගත" : "Bulk Upload"}
+              </button>
               <ThemeToggle />
               <LanguageSwitcher />
             </div>
           </div>
 
-          <h1 className="text-[22px] font-extrabold tracking-tight text-[var(--text-1)] sm:text-[26px]">
+          <h1 className="text-[24px] font-extrabold tracking-tight text-[var(--text-1)] sm:text-[28px]">
             {t.uploadTitle}
           </h1>
           <p className="mt-1.5 text-[13px] leading-6 text-[var(--text-2)]">{t.uploadSubtitle}</p>

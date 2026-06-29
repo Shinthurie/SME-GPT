@@ -2,10 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import MobileShell from "@/components/layout/MobileShell";
-import BottomNav from "@/components/layout/BottomNav";
-import LanguageSwitcher from "@/components/layout/LanguageSwitcher";
-import ThemeToggle from "@/components/layout/ThemeToggle";
+import PageShell from "@/components/layout/PageShell";
 import { AppLanguage, getStoredLanguage, setStoredLanguage, ui } from "@/lib/i18n";
 import { getSession } from "@/lib/auth";
 
@@ -131,38 +128,21 @@ export default function QueryPage() {
   };
 
   return (
-    <MobileShell>
-      <div className="min-h-screen pb-24" style={{ background: "var(--bg)" }}>
-        <main className="mx-auto w-full max-w-[780px] px-4 py-6 sm:px-6 lg:px-8">
-
-          {/* Top bar */}
-          <div className="mb-5 flex items-center justify-between">
-            <button
-              onClick={() => router.push("/dashboard")}
-              className="flex items-center gap-1.5 text-[13px] font-semibold transition hover:opacity-75"
-              style={{ color: "var(--brand-mid)" }}
-            >
-              <span className="material-symbols-outlined text-[16px]">arrow_back</span>
-              Back
-            </button>
-            <div className="flex items-center gap-2">
-              <span
-                className="rounded-lg px-3 py-1 text-[10px] font-bold uppercase tracking-wider"
-                style={{ background: "var(--brand-tint)", color: "var(--brand-mid)" }}
-              >
-                Document AI
-              </span>
-              <ThemeToggle />
-              <LanguageSwitcher />
-            </div>
-          </div>
-
-          <h1 className="text-[22px] font-extrabold tracking-tight text-[var(--text-1)] sm:text-[26px]">
-            {t.askQuestion}
-          </h1>
-          <p className="mt-1.5 text-[13px] leading-6 text-[var(--text-2)]">
-            Ask questions about your invoices, delivery notes, or purchase orders in English or Sinhala.
-          </p>
+    <PageShell
+      backLabel={t.backToDashboard}
+      backHref="/dashboard"
+      title={t.askQuestion}
+      subtitle="Ask questions about your invoices, delivery notes, or purchase orders in English or Sinhala."
+      width="standard"
+      topBarRight={
+        <div className="flex items-center gap-2">
+          <span className="rounded-lg px-3 py-1 text-[10px] font-bold uppercase tracking-wider"
+            style={{ background: "var(--brand-tint)", color: "var(--brand-mid)" }}>
+            Document AI
+          </span>
+        </div>
+      }
+    >
 
           {/* Company context */}
           {/* Company context — auto-filled from user profile, read-only */}
@@ -281,10 +261,6 @@ export default function QueryPage() {
               </div>
             ))}
           </div>
-        </main>
-
-        <BottomNav />
-      </div>
-    </MobileShell>
+    </PageShell>
   );
 }
