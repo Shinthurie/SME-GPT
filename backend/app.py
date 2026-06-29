@@ -512,6 +512,54 @@ def _log_audit_event(user_id: str, event_type: str, content: str) -> None:
         print(f"[AUDIT] failed to log {event_type} for user {user_id}: {e}", flush=True)
 
 
+def _send_po_approval_email(
+    document_id: str,
+    po_status: str,
+    approved_by: str,
+    supplier_name: str,
+    total_amount: str,
+    currency: str,
+) -> None:
+    """IT-27b — Send an email notification when a PO is approved or rejected.
+    Uses SMTP settings from .env. Silent on any failure."""
+    import smtplib
+    from email.mime.text import MIMEText
+
+    smtp_host  = os.getenv("SMTP_HOST", "")
+    smtp_port  = int(os.getenv("SMTP_PORT", "587"))
+    smtp_user  = os.getenv("SMTP_USER", "")
+    smtp_pass  = os.getenv("SMTP_PASS", "")
+    mail_from  = os.getenv("MAIL_FROM", smtp_user)
+    notify_to  = os.getenv("PO_NOTIFY_EMAIL", smtp_user)
+
+    if not smtp_host or not smtp_user or not notify_to:
+        print("[EMAIL] SMTP not configured — skipping PO notification.", flush=True)
+        return
+
+    status_word = "APPROVED" if po_status == "approved" else "REJECTED"
+    emoji = "✅" if po_status == "approved" else "❌"
+    subject = f"{emoji} PO {document_id} {status_word} — SME-GPT"
+    body = (
+        f"Purchase Order {document_id} has been {status_word}.\n\n"
+        f"Approved/Rejected by: {approved_by}\n"
+        f"Supplier: {supplier_name or 'N/A'}\n"
+        f"Total: {currency} {total_amount or 'N/A'}\n\n"
+        f"Log in to SME-GPT to view the document."
+    )
+
+    msg = MIMEText(body)
+    msg["Subject"] = subject
+    msg["From"]    = mail_from
+    msg["To"]      = notify_to
+
+    with smtplib.SMTP(smtp_host, smtp_port) as server:
+        server.ehlo()
+        server.starttls()
+        server.login(smtp_user, smtp_pass)
+        server.sendmail(mail_from, [notify_to], msg.as_string())
+    print(f"[EMAIL] PO notification sent to {notify_to} for {document_id} ({po_status})", flush=True)
+
+
 # =========================
 # NORMALIZATION HELPERS
 # =========================
@@ -1392,6 +1440,20 @@ def update_document(document_id: str, payload: UpdateDocumentRequest, authorizat
 
     _log_audit_event(user_id, "DOCUMENT_UPDATED", f"document_id={document_id}")
 
+    # IT-27b: Send email notification when a PO is approved/rejected
+    if update_data.get("po_status") in ("approved", "rejected") and update_data.get("approved_by"):
+        try:
+            _send_po_approval_email(
+                document_id=document_id,
+                po_status=update_data["po_status"],
+                approved_by=update_data["approved_by"],
+                supplier_name=str(existing.get("supplier_name", "") or ""),
+                total_amount=str(existing.get("final_total_amount", "") or ""),
+                currency=str(existing.get("currency", "LKR") or "LKR"),
+            )
+        except Exception as _email_err:
+            print(f"[EMAIL] PO approval email failed (non-fatal): {_email_err}", flush=True)
+
     return {
         "success": True,
         "message": "Document updated successfully.",
@@ -1752,6 +1814,83 @@ def vat_report(
         "total_tax": round(total_tax, 2),
         "month_count": len(months_sorted),
         "months": months_sorted,
+    }
+
+
+@app.get("/reports/pnl")
+def pnl_report(
+    authorization: str = Header(default=None),
+    year: int = Query(default=0, ge=0),
+    months: int = Query(default=12, ge=1, le=24),
+):
+    """IT-30 — Monthly Profit & Loss: revenue (receivable+cash_inflow) minus
+    expenses (payable+cash_outflow) per month for the last N months."""
+    user_id = get_current_user_id(authorization)
+    from datetime import datetime, timedelta
+
+    records = load_all_records(user_id=user_id)
+
+    today = datetime.today()
+    buckets: dict[str, dict] = {}
+    for m in range(months - 1, -1, -1):
+        first = today.replace(day=1) - timedelta(days=m * 28)
+        key = first.strftime("%Y-%m")
+        buckets[key] = {"month": key, "revenue": 0.0, "expenses": 0.0, "net": 0.0, "doc_count": 0}
+
+    for r in records:
+        date_str = str(r.get("date", "") or "").strip()
+        if not date_str or date_str.upper() == "NULL":
+            continue
+        parsed_date = None
+        for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y", "%d %b %Y", "%d/%m/%y"):
+            try:
+                parsed_date = datetime.strptime(date_str[:10], fmt)
+                break
+            except ValueError:
+                continue
+        if not parsed_date:
+            continue
+        if year and parsed_date.year != year:
+            continue
+        key = parsed_date.strftime("%Y-%m")
+        if key not in buckets:
+            continue
+
+        amt = 0.0
+        for field in ("payable_amount", "final_total_amount", "raw_total_amount"):
+            v = r.get(field)
+            if v is not None and str(v).upper() not in ("NULL", "", "NONE"):
+                try:
+                    amt = float(str(v).replace(",", ""))
+                    break
+                except ValueError:
+                    pass
+
+        ft = str(r.get("effective_flow_type") or r.get("flow_type") or "").lower()
+        if ft in ("receivable", "cash_inflow", "income"):
+            buckets[key]["revenue"] += amt
+        elif ft in ("payable", "cash_outflow", "expense"):
+            buckets[key]["expenses"] += amt
+        buckets[key]["doc_count"] += 1
+
+    total_revenue = 0.0
+    total_expenses = 0.0
+    result = []
+    for b in sorted(buckets.values(), key=lambda x: x["month"]):
+        b["revenue"]  = round(b["revenue"], 2)
+        b["expenses"] = round(b["expenses"], 2)
+        b["net"]      = round(b["revenue"] - b["expenses"], 2)
+        total_revenue  += b["revenue"]
+        total_expenses += b["expenses"]
+        result.append(b)
+
+    return {
+        "success": True,
+        "months": months,
+        "total_revenue": round(total_revenue, 2),
+        "total_expenses": round(total_expenses, 2),
+        "net_profit": round(total_revenue - total_expenses, 2),
+        "data": result,
     }
 
 

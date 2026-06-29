@@ -53,6 +53,31 @@ For "group_by_sum" tasks, set "group_by" to a non-empty list of canonical fields
 For "lookup_value" tasks, "filters" must narrow to the row(s) you want and "measure.field" is the
 field to return (no "agg" needed).
 
+DATE FILTER EXAMPLES (use "between" with ISO dates "YYYY-MM-DD"):
+Q: "Show invoices from February 2026"
+→ {{"task":"aggregate_count","filters":[{{"field":"doc_date","op":"between","value":["2026-02-01","2026-02-28"]}},{{"field":"flow_type","op":"in","value":["receivable","cash_inflow"]}}],"measure":{{"field":"item","agg":"count"}},"group_by":[],"output":{{"format":"number"}}}}
+
+Q: "Total spending in January 2026"
+→ {{"task":"aggregate_sum","filters":[{{"field":"doc_date","op":"between","value":["2026-01-01","2026-01-31"]}},{{"field":"flow_type","op":"in","value":["payable","cash_outflow"]}}],"measure":{{"field":"total","agg":"sum"}},"group_by":[],"output":{{"format":"currency"}}}}
+
+Q: "Monthly breakdown of income this year"
+→ {{"task":"group_by_sum","filters":[{{"field":"doc_date","op":"between","value":["2026-01-01","2026-12-31"]}},{{"field":"flow_type","op":"in","value":["receivable","cash_inflow"]}}],"measure":{{"field":"total","agg":"sum"}},"group_by":["doc_date"],"output":{{"format":"currency"}}}}
+
+Q: "Unpaid invoices above LKR 50000 from Virtusa"
+→ {{"task":"aggregate_sum","filters":[{{"field":"flow_type","op":"eq","value":"receivable"}},{{"field":"vendor","op":"contains","value":"Virtusa"}},{{"field":"total","op":"gte","value":50000}}],"measure":{{"field":"total","agg":"sum"}},"group_by":[],"output":{{"format":"currency"}}}}
+
+Q: "Compare spending this month vs last month"
+→ {{"task":"compare","compare_filters":[[{{"field":"doc_date","op":"between","value":["2026-06-01","2026-06-30"]}},{{"field":"flow_type","op":"in","value":["payable","cash_outflow"]}}],[{{"field":"doc_date","op":"between","value":["2026-05-01","2026-05-31"]}},{{"field":"flow_type","op":"in","value":["payable","cash_outflow"]}}]],"measure":{{"field":"total","agg":"sum"}},"group_by":[],"output":{{"format":"currency"}}}}
+
+Q: "How many POs were issued in Q1 2026"
+→ {{"task":"aggregate_count","filters":[{{"field":"doc_date","op":"between","value":["2026-01-01","2026-03-31"]}}],"measure":{{"field":"item","agg":"count"}},"group_by":[],"output":{{"format":"number"}}}}
+
+Q: "Average invoice value from Classic Printers"
+→ {{"task":"aggregate_avg","filters":[{{"field":"vendor","op":"contains","value":"Classic Printers"}}],"measure":{{"field":"total","agg":"avg"}},"group_by":[],"output":{{"format":"currency"}}}}
+
+Q: "Top 3 suppliers by total spend"
+→ {{"task":"group_by_sum","filters":[{{"field":"flow_type","op":"in","value":["payable","cash_outflow"]}}],"measure":{{"field":"total","agg":"sum"}},"group_by":["vendor"],"output":{{"format":"currency"}}}}
+
 User question:
 {question}
 {retry_note}

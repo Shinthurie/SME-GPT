@@ -446,6 +446,14 @@ export default function UploadPage() {
               {t.backToDashboard}
             </button>
             <div className="flex items-center gap-2">
+              <button
+                onClick={() => router.push("/bulk-upload")}
+                className="flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-[12px] font-semibold transition hover:opacity-80"
+                style={{ background: "var(--brand-tint)", color: "var(--brand-mid)" }}
+              >
+                <span className="material-symbols-outlined text-[15px]">file_copy</span>
+                {lang === "si" ? "ශ්‍රේණිගත" : "Bulk Upload"}
+              </button>
               <ThemeToggle />
               <LanguageSwitcher />
             </div>

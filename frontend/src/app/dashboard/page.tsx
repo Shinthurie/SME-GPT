@@ -282,8 +282,25 @@ export default function DashboardPage() {
             </button>
           </section>
 
+          {/* Quick links to reports */}
+          <section className="mt-5 flex flex-wrap gap-2">
+            {[
+              { label: lang === "si" ? "ලාභ/පාඩු" : "P&L Report", icon: "trending_up", path: "/reports/pnl", color: "#2252b5" },
+              { label: lang === "si" ? "VAT වාර්තාව" : "VAT Report", icon: "receipt_long", path: "/reports/vat", color: "#7c3aed" },
+              { label: lang === "si" ? "සැපයුම්කරුවන්" : "Suppliers", icon: "contacts", path: "/suppliers", color: "#16a34a" },
+              { label: lang === "si" ? "ශ්‍රේණිගත" : "Bulk Upload", icon: "file_copy", path: "/bulk-upload", color: "#ea6c0a" },
+            ].map(({ label, icon, path, color }) => (
+              <button key={path} onClick={() => router.push(path)}
+                className="flex items-center gap-2 rounded-xl px-4 py-2 text-[12px] font-bold transition hover:opacity-80"
+                style={{ background: `${color}12`, color, border: `1px solid ${color}25` }}>
+                <span className="material-symbols-outlined text-[15px]">{icon}</span>
+                {label}
+              </button>
+            ))}
+          </section>
+
           {/* Stats */}
-          <section className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+          <section className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
             <StatCard label={t.totalDocs} value={String(summary?.total ?? 0)} />
             <StatCard label={t.pending} value={String(summary?.pending_processing_count ?? 0)} color="#ea6c0a" />
             <StatCard label={t.ready} value={String(summary?.ready_for_query_count ?? 0)} color="#16a34a" />
