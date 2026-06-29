@@ -199,6 +199,26 @@ export default function SettingsPage() {
     finally { setSaving(false); }
   };
 
+  const handleToggleAutoClassify = async () => {
+    const next = !form.autoClassify;
+    update("autoClassify", next);  // optimistic UI update
+    const token = getStoredToken();
+    try {
+      // Send the full form with the new value — don't rely on state having updated
+      const res = await fetch("/api/profile", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+        body: JSON.stringify({ ...form, autoClassify: next }),
+      });
+      if (!res.ok) {
+        update("autoClassify", !next);  // revert on failure
+        setMessage("Failed to save preference");
+      }
+    } catch {
+      update("autoClassify", !next);  // revert on network error
+    }
+  };
+
   const handleToggle2FA = async () => {
     // Optimistic update — flip immediately so the toggle moves right away
     const next = !form.twoFactorEnabled;
@@ -493,7 +513,7 @@ export default function SettingsPage() {
                       <p className="text-[14px] font-semibold text-[var(--text-1)]">{t.autoClassify}</p>
                       <p className="text-[12px] text-[var(--text-3)] mt-0.5">Invoice / PO / DN</p>
                     </div>
-                    <Toggle enabled={form.autoClassify} onClick={() => { update("autoClassify",!form.autoClassify); setTimeout(handleSave,100); }} />
+                    <Toggle enabled={form.autoClassify} onClick={handleToggleAutoClassify} />
                   </div>
                 </Card>
 
