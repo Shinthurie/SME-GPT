@@ -24,7 +24,8 @@ export default function BottomNav() {
     { label: t.overview, icon: "dashboard", href: "/dashboard" },
     { label: t.files, icon: "folder", href: "/repository" },
     { label: t.query, icon: "query_stats", href: "/query" },
-    { label: t.settings, icon: "settings", href: "/profile" },
+    { label: lang === "si" ? "සැකසීම්" : "Settings", icon: "tune",     href: "/settings" },
+    { label: t.settings,                              icon: "person",   href: "/profile" },
     ...(isAdmin ? [{ label: "Admin", icon: "admin_panel_settings", href: "/admin" }] : []),
   ];
 

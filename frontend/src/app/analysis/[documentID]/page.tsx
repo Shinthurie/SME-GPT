@@ -409,6 +409,27 @@ export default function AnalysisDetailPage() {
         {saving ? "Saving…" : "Verify Data"}
       </button>
 
+      {/* IT-45: Share button */}
+      <button
+        onClick={async () => {
+          const token = localStorage.getItem("token") || sessionStorage.getItem("token") || "";
+          const res  = await fetch(`http://127.0.0.1:8000/documents/${documentId}/share`, {
+            method: "POST", headers: { Authorization: `Bearer ${token}` },
+          });
+          const data = await res.json();
+          if (data.token) {
+            const link = `${window.location.origin}/shared/${data.token}`;
+            await navigator.clipboard.writeText(link).catch(() => {});
+            alert(`Share link copied!\n${link}\n\nExpires in 7 days.`);
+          }
+        }}
+        className="flex items-center gap-1.5 rounded-xl border px-4 py-2 text-[13px] font-semibold transition hover:opacity-80"
+        style={{ borderColor: "var(--border)", color: "var(--text-2)" }}
+      >
+        <span className="material-symbols-outlined text-[15px]">share</span>
+        {lang === "si" ? "බෙදාගන්න" : "Share"}
+      </button>
+
       <button
         onClick={handleDelete}
         disabled={deleting}

@@ -425,6 +425,49 @@ export default function DashboardPage() {
             </section>
           )}
 
+          {/* IT-41 — Payment Reminder: overdue receivables banner */}
+          {summary?.top_receivables && summary.top_receivables.filter(r => {
+            if (!r.date) return false;
+            const d = new Date(r.date.includes("/") ? r.date.split("/").reverse().join("-") : r.date);
+            return !isNaN(d.getTime()) && (Date.now() - d.getTime()) > 30 * 86400000;
+          }).length > 0 && (() => {
+            const overdue = summary.top_receivables!.filter(r => {
+              if (!r.date) return false;
+              const d = new Date(r.date.includes("/") ? r.date.split("/").reverse().join("-") : r.date);
+              return !isNaN(d.getTime()) && (Date.now() - d.getTime()) > 30 * 86400000;
+            });
+            return (
+              <section className="mt-5">
+                <div className="rounded-2xl p-4" style={{ background: "rgba(220,38,38,0.05)", border: "1px solid rgba(220,38,38,0.2)" }}>
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="material-symbols-outlined text-[18px]" style={{ color: "#dc2626" }}>schedule</span>
+                    <p className="text-[13px] font-bold" style={{ color: "#dc2626" }}>
+                      {lang === "si" ? "ගෙවීම් ප‍ රමාද" : `${overdue.length} overdue receivable${overdue.length > 1 ? "s" : ""} — over 30 days`}
+                    </p>
+                  </div>
+                  {overdue.slice(0, 3).map(r => (
+                    <div key={r.document_id} className="flex items-center justify-between py-1.5">
+                      <div>
+                        <p className="text-[12px] font-semibold text-[var(--text-1)]">{r.supplier_name}</p>
+                        <p className="text-[11px] text-[var(--text-3)]">{r.document_id} · {r.date}</p>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className="text-[12px] font-bold" style={{ color: "#dc2626" }}>
+                          {r.currency} {r.amount.toLocaleString()}
+                        </span>
+                        <button onClick={() => router.push(`/analysis/${r.document_id}`)}
+                          className="rounded-lg px-3 py-1 text-[11px] font-bold text-white transition hover:opacity-90"
+                          style={{ background: "#dc2626" }}>
+                          {lang === "si" ? "බලන්න" : "Open"}
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            );
+          })()}
+
           {/* IT-20 — 6-month Cash Flow Chart */}
           {cashFlow.length > 0 && (
             <section className="mt-8">

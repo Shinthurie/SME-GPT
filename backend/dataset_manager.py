@@ -498,46 +498,146 @@ def parse_date_bounds(date_from: str | None, date_to: str | None):
 
 
 def _created_at_clause(date_from, date_to, where: list, params: list) -> None:
-    """Append docDate range predicates (the date ON the document, not upload time).
+    """No-op placeholder kept for API compatibility.
 
-    docDate is stored as ISO text (YYYY-MM-DD) for documents uploaded via the
-    date picker or processed with normalization.  For legacy docs in other formats
-    (DD/MM/YYYY etc.) we gracefully include them rather than silently hide them.
+    Date filtering by document date is done in Python after DB fetch via
+    ``filter_records_by_doc_date()`` because OCR dates arrive in many formats
+    (DD/MM/YYYY, MM/DD/YYYY, DD MMM YYYY, YYYY-MM-DD, etc.) and cannot be
+    reliably compared with a SQL text predicate.
     """
+    # Intentionally empty — see filter_records_by_doc_date()
+
+
+# Multi-format date parsers tried in order (most common first)
+_DATE_FORMATS = [
+    "%Y-%m-%d",   # 2026-04-15  (ISO — from date picker)
+    "%d/%m/%Y",   # 15/04/2026  (Sri Lankan / UK)
+    "%m/%d/%Y",   # 04/15/2026  (US)
+    "%d-%m-%Y",   # 15-04-2026
+    "%Y/%m/%d",   # 2026/04/15
+]
+
+# Locale-independent English month name lookup (strptime %b/%B is locale-sensitive)
+_EN_MONTHS = {
+    "jan":1,"feb":2,"mar":3,"apr":4,"may":5,"jun":6,
+    "jul":7,"aug":8,"sep":9,"oct":10,"nov":11,"dec":12,
+    "january":1,"february":2,"march":3,"april":4,"june":6,
+    "july":7,"august":8,"september":9,"october":10,"november":11,"december":12,
+}
+
+
+def _parse_named_month(val: str) -> "date | None":
+    """Parse dates with English written month names, locale-independently.
+
+    Handles: '15 Apr 2026', '15 April 2026', 'Apr 15, 2026', 'April 15, 2026'
+    """
+    from datetime import date as _date
+    import re
+    val = val.replace(",", "").strip()
+    parts = re.split(r"[\s]+", val)
+    if len(parts) != 3:
+        return None
+    a, b, c = parts[0].lower(), parts[1].lower(), parts[2].lower()
+    try:
+        # "15 Apr 2026" → a=day(digit), b=month(word), c=year
+        if a.isdigit() and (a not in _EN_MONTHS) and b in _EN_MONTHS and c.isdigit():
+            return _date(int(c), _EN_MONTHS[b], int(a))
+        # "Apr 15 2026" → a=month(word), b=day(digit), c=year
+        if a in _EN_MONTHS and b.isdigit() and c.isdigit():
+            return _date(int(c), _EN_MONTHS[a], int(b))
+    except (ValueError, KeyError):
+        pass
+    return None
+
+
+def _parse_doc_date(raw: str) -> "date | None":
+    """Try every known date format; return a date object or None."""
+    from datetime import date as _date
+    val = str(raw or "").strip()
+    if not val or val.upper() in ("NULL", "NONE", ""):
+        return None
+    # Strip trailing time component (e.g. "2026-04-15 00:00:00" or "2026-04-15T00:00:00")
+    val = val.split("T")[0].strip()
+
+    # Try named-month parser first (locale-independent)
+    named = _parse_named_month(val)
+    if named:
+        return named
+
+    # Strip time portion after a space (for "15/04/2026 14:30:00" style)
+    val_date_only = val.split(" ")[0].strip()
+
+    for fmt in _DATE_FORMATS:
+        for candidate in (val_date_only, val):
+            try:
+                return datetime.strptime(candidate, fmt).date()
+            except ValueError:
+                continue
+    return None
+
+
+def filter_records_by_doc_date(
+    records: list,
+    date_from: "str | None" = None,
+    date_to: "str | None" = None,
+) -> list:
+    """Filter an in-memory record list by docDate using multi-format parsing.
+
+    Records whose date cannot be parsed are included (better to over-include
+    than silently exclude legitimate documents).
+    """
+    if not date_from and not date_to:
+        return records
+
     lower, upper = parse_date_bounds(date_from, date_to)
-    # Convert datetime → date string for text comparison
-    lo_str = lower.strftime("%Y-%m-%d") if lower is not None else None
-    hi_str = upper.strftime("%Y-%m-%d") if upper is not None else None
-    if lo_str:
-        # Include row if docDate is ISO format and >= lower, OR if it's non-ISO (can't compare)
-        where.append(
-            "(\"docDate\" >= %s OR \"docDate\" IS NULL "
-            "OR \"docDate\" = '' OR \"docDate\" NOT LIKE '____-__-__')"
-        )
-        params.append(lo_str)
-    if hi_str:
-        where.append(
-            "(\"docDate\" < %s OR \"docDate\" IS NULL "
-            "OR \"docDate\" = '' OR \"docDate\" NOT LIKE '____-__-__')"
-        )
-        params.append(hi_str)
+    lo = lower.date() if lower is not None else None
+    hi = upper.date() if upper is not None else None   # exclusive upper (day after date_to)
+
+    result = []
+    for r in records:
+        raw = str(r.get("docDate") or r.get("date") or "").strip()
+        doc_date = _parse_doc_date(raw)
+        if doc_date is None:
+            result.append(r)   # unparseable → include
+            continue
+        if lo is not None and doc_date < lo:
+            continue
+        if hi is not None and doc_date >= hi:
+            continue
+        result.append(r)
+    return result
 
 
 def count_records(user_id: str, date_from: str | None = None, date_to: str | None = None) -> int:
-    """NFR-03: returns total row count without loading data into memory.
+    """Return the number of (non-deleted) documents for the tenant.
 
-    Optional ``date_from`` / ``date_to`` (ISO ``YYYY-MM-DD``) restrict the count
-    to documents created within that inclusive upload-date range, so pagination
-    totals stay consistent with the same filter applied in load_records().
+    When date_from/date_to are supplied we load the docDate column only and
+    filter in Python — because OCR dates arrive in many formats that cannot be
+    compared with a SQL text predicate reliably.
     """
-    where = ['"tenantId"=%s', '"deletedAt" IS NULL']
-    params: list = [str(user_id)]
-    _created_at_clause(date_from, date_to, where, params)
+    if date_from or date_to:
+        # Lightweight query: fetch only documentId + docDate for filtering
+        with get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                'SELECT "documentId","docDate" FROM "FinancialDocument" '
+                'WHERE "tenantId"=%s AND "deletedAt" IS NULL',
+                (str(user_id),),
+            )
+            rows = cur.fetchall() or []
+        filtered = filter_records_by_doc_date(
+            [{"documentId": (r.get("documentId") if isinstance(r, dict) else r[0]),
+              "docDate":    (r.get("docDate")    if isinstance(r, dict) else r[1])}
+             for r in rows],
+            date_from, date_to,
+        )
+        return len(filtered)
+
     with get_conn() as conn:
         cur = conn.cursor()
         cur.execute(
-            f'SELECT COUNT(*) AS n FROM "FinancialDocument" WHERE {" AND ".join(where)}',
-            params,
+            'SELECT COUNT(*) AS n FROM "FinancialDocument" WHERE "tenantId"=%s AND "deletedAt" IS NULL',
+            (str(user_id),),
         )
         row = cur.fetchone()
     return int((row or {}).get("n", 0))

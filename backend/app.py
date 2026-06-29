@@ -19,7 +19,7 @@ load_dotenv()  # must run before any local module is imported so env vars are se
 
 import jwt
 import psycopg
-from fastapi import Depends, FastAPI, File, Header, HTTPException, Query, Request, UploadFile
+from fastapi import Body, Depends, FastAPI, File, Header, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -252,7 +252,19 @@ def startup_event():
         print(f"[DB] Query history table init skipped/failed: {e}", flush=True)
     threading.Thread(target=_evict_stale_sessions, daemon=True, name="session-gc").start()
     print("[SESSION GC] stale session eviction thread started", flush=True)
-    invalidate_column_cache()  # ensure fresh schema read on startup after any migration
+    invalidate_column_cache()
+
+    # IT-48: Monthly P&L email scheduler (runs on 1st of each month at 08:00)
+    if os.getenv("MONTHLY_EMAIL_ENABLED", "false").lower() == "true":
+        try:
+            from apscheduler.schedulers.background import BackgroundScheduler
+            from apscheduler.triggers.cron import CronTrigger
+            _sched = BackgroundScheduler(daemon=True)
+            _sched.add_job(_send_monthly_pnl_emails, CronTrigger(day=1, hour=8, minute=0))
+            _sched.start()
+            print("[SCHEDULER] Monthly P&L email scheduler started", flush=True)
+        except Exception as e:
+            print(f"[SCHEDULER] Failed to start scheduler: {e}", flush=True)
 
 
 def save_query_history_to_db(
@@ -1665,20 +1677,27 @@ def get_documents(
     date_from: str | None = Query(default=None, alias="from"),
     date_to: str | None = Query(default=None, alias="to"),
 ):
-    """NFR-02/03: DB-level LIMIT/OFFSET — never loads the full dataset into memory.
+    """Paginated document list with optional document-date range filter.
 
-    IT-21: optional ``from`` / ``to`` query params (ISO ``YYYY-MM-DD``) restrict
-    results to documents uploaded within that inclusive date range.
+    Date filtering happens in Python (not SQL) because OCR dates arrive in many
+    formats (DD/MM/YYYY, DD MMM YYYY, MM/DD/YYYY, …) that cannot be compared
+    with a SQL text predicate reliably.
     """
     user_id = get_current_user_id(authorization)
-    total = count_records(user_id=user_id, date_from=date_from, date_to=date_to)
-    offset = (page - 1) * limit
-    raw_records = load_records(
-        user_id=user_id, limit=limit, offset=offset,
-        date_from=date_from, date_to=date_to,
-    )
+    from dataset_manager import parse_record_for_output, filter_records_by_doc_date
 
-    from dataset_manager import parse_record_for_output
+    if date_from or date_to:
+        # Load all records for tenant, filter by doc date in Python, then paginate
+        all_raw = load_records(user_id=user_id)
+        all_raw = filter_records_by_doc_date(all_raw, date_from, date_to)
+        total   = len(all_raw)
+        offset  = (page - 1) * limit
+        raw_records = all_raw[offset: offset + limit]
+    else:
+        total       = count_records(user_id=user_id)
+        offset      = (page - 1) * limit
+        raw_records = load_records(user_id=user_id, limit=limit, offset=offset)
+
     page_records = []
     for record in raw_records:
         r = parse_record_for_output(record)
@@ -2054,6 +2073,593 @@ def get_suppliers(
         })
 
     return {"success": True, "count": len(result), "suppliers": result}
+
+
+@app.get("/suppliers/{name}/history")
+def get_supplier_history(
+    name: str,
+    authorization: str = Header(default=None),
+):
+    """IT-40 — Full transaction history for a single counterparty."""
+    user_id = get_current_user_id(authorization)
+    from dataset_manager import parse_record_for_output
+    from urllib.parse import unquote
+
+    clean_name = unquote(name).strip().lower()
+    records = [parse_record_for_output(r) for r in load_all_records(user_id=user_id)]
+
+    transactions = []
+    for r in records:
+        sname = str(r.get("supplier_name") or "").strip().lower()
+        if sname != clean_name:
+            continue
+        amt = 0.0
+        for field in ("payable_amount", "final_total_amount"):
+            v = r.get(field)
+            if v not in (None, "NULL", "", "NONE"):
+                try: amt = float(str(v).replace(",", "")); break
+                except: pass
+        ft = str(r.get("effective_flow_type") or r.get("flow_type") or "").lower()
+        transactions.append({
+            "document_id":   r.get("document_id"),
+            "document_type": r.get("document_type"),
+            "date":          r.get("date") or "",
+            "amount":        amt,
+            "currency":      r.get("currency") or "LKR",
+            "flow_type":     ft,
+            "paid_status":   r.get("paid_status") or "NULL",
+            "received_status": r.get("received_status") or "NULL",
+            "invoice_status":  r.get("invoice_status") or "",
+            "po_status":       r.get("po_status") or "",
+            "notes":           r.get("notes") or "",
+        })
+
+    transactions.sort(key=lambda x: x["date"] or "", reverse=True)
+    total_paid = sum(t["amount"] for t in transactions if t["flow_type"] in ("payable","cash_outflow","expense"))
+    total_recv = sum(t["amount"] for t in transactions if t["flow_type"] in ("receivable","cash_inflow","income"))
+    return {
+        "success":     True,
+        "name":        unquote(name).strip(),
+        "transactions": transactions,
+        "summary": {
+            "count":         len(transactions),
+            "total_paid":    round(total_paid, 2),
+            "total_received": round(total_recv, 2),
+            "net":           round(total_recv - total_paid, 2),
+        },
+    }
+
+
+@app.get("/suppliers/duplicates")
+def get_supplier_duplicates(authorization: str = Header(default=None)):
+    """IT-40 — Find supplier names that look like duplicates (Jaro-Winkler >= 0.88)."""
+    user_id = get_current_user_id(authorization)
+    from dataset_manager import parse_record_for_output
+    import jellyfish  # pip install jellyfish
+
+    records = [parse_record_for_output(r) for r in load_all_records(user_id=user_id)]
+    names: list[str] = []
+    seen: set[str] = set()
+    for r in records:
+        n = str(r.get("supplier_name") or "").strip()
+        if n and n.upper() not in ("NULL","SUPPLIER","CUSTOMER","") and n.lower() not in seen:
+            names.append(n); seen.add(n.lower())
+
+    groups: list[list[str]] = []
+    used: set[int] = set()
+    for i, a in enumerate(names):
+        if i in used: continue
+        group = [a]
+        for j, b in enumerate(names[i+1:], start=i+1):
+            if j in used: continue
+            try:
+                score = jellyfish.jaro_winkler_similarity(a.lower(), b.lower())
+            except Exception:
+                score = 0
+            if score >= 0.88:
+                group.append(b); used.add(j)
+        if len(group) >= 2:
+            groups.append(group); used.add(i)
+
+    return {"success": True, "groups": groups}
+
+
+@app.put("/suppliers/merge")
+def merge_suppliers(
+    payload: dict,
+    authorization: str = Header(default=None),
+):
+    """IT-40 — Rename all documents with names in `aliases` to `canonical_name`."""
+    user_id = get_current_user_id(authorization)
+    require_write_role(authorization)
+
+    canonical = str(payload.get("canonical_name", "")).strip()
+    aliases: list[str] = [str(a).strip().lower() for a in payload.get("aliases", [])]
+    if not canonical or not aliases:
+        raise HTTPException(status_code=400, detail="canonical_name and aliases required")
+
+    updated = 0
+    records = load_all_records(user_id=user_id)
+    for r in records:
+        sname = str(r.get("supplier_name") or "").strip()
+        if sname.lower() in aliases and sname != canonical:
+            doc_id = r.get("document_id")
+            with get_db_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        'UPDATE "FinancialDocument" SET "supplierName"=%s WHERE "documentId"=%s AND "tenantId"=%s',
+                        (canonical, str(doc_id), str(user_id))
+                    )
+                conn.commit()
+            updated += 1
+
+    _log_audit_event(user_id, "SUPPLIERS_MERGED", f"canonical={canonical} updated={updated}")
+    return {"success": True, "updated": updated}
+
+
+# ── IT-41: Payment Reminder ───────────────────────────────────────────────────
+
+@app.post("/documents/{document_id}/send-reminder")
+def send_payment_reminder(
+    document_id: str,
+    payload: dict = Body(default={}),
+    authorization: str = Header(default=None),
+):
+    """IT-41 — Send a payment reminder email for an overdue receivable."""
+    user_id = get_current_user_id(authorization)
+    from dataset_manager import parse_record_for_output
+
+    records = load_all_records(user_id=user_id)
+    doc = next((parse_record_for_output(r) for r in records
+                if r.get("document_id") == document_id), None)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    recipient_email = str(payload.get("email", "")).strip()
+    if not recipient_email:
+        raise HTTPException(status_code=400, detail="email required in request body")
+
+    import smtplib
+    from email.mime.text import MIMEText
+    from email.mime.multipart import MIMEMultipart
+
+    smtp_host = os.getenv("SMTP_HOST", "")
+    smtp_port = int(os.getenv("SMTP_PORT", "587"))
+    smtp_user = os.getenv("SMTP_USER", "")
+    smtp_pass = os.getenv("SMTP_PASS", "")
+
+    if not smtp_host or not smtp_user:
+        raise HTTPException(status_code=503, detail="SMTP not configured")
+
+    party   = doc.get("supplier_name") or "Valued Customer"
+    amount  = doc.get("final_total_amount") or doc.get("payable_amount") or "0"
+    cur     = doc.get("currency") or "LKR"
+    due     = doc.get("due_date") or doc.get("date") or ""
+    ref     = doc.get("order_id") or document_id
+
+    html_body = f"""
+    <div style="font-family:sans-serif;max-width:580px;margin:0 auto">
+      <h2 style="color:#2252b5">Payment Reminder</h2>
+      <p>Dear {party},</p>
+      <p>This is a friendly reminder that the following payment is outstanding:</p>
+      <table style="width:100%;border-collapse:collapse;margin:16px 0">
+        <tr><td style="padding:8px;background:#f3f4f6;font-weight:bold">Reference</td><td style="padding:8px">{ref}</td></tr>
+        <tr><td style="padding:8px;background:#f3f4f6;font-weight:bold">Amount Due</td><td style="padding:8px;color:#dc2626;font-weight:bold">{cur} {float(str(amount).replace(",","")):.2f}</td></tr>
+        <tr><td style="padding:8px;background:#f3f4f6;font-weight:bold">Due Date</td><td style="padding:8px">{due or "As agreed"}</td></tr>
+      </table>
+      <p>Please arrange payment at your earliest convenience.</p>
+      <p style="color:#666;font-size:12px">Generated by SME-GPT · {doc.get("company_name","")}</p>
+    </div>"""
+
+    try:
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = f"Payment Reminder: {ref} – {cur} {float(str(amount).replace(',','')):.2f}"
+        msg["From"]    = smtp_user
+        msg["To"]      = recipient_email
+        msg.attach(MIMEText(html_body, "html"))
+
+        with smtplib.SMTP(smtp_host, smtp_port) as s:
+            s.starttls()
+            s.login(smtp_user, smtp_pass)
+            s.sendmail(smtp_user, [recipient_email], msg.as_string())
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"Email failed: {e}")
+
+    _log_audit_event(user_id, "REMINDER_SENT", f"document_id={document_id} to={recipient_email}")
+    return {"success": True, "message": f"Reminder sent to {recipient_email}"}
+
+
+# ── IT-44: Exchange Rates ─────────────────────────────────────────────────────
+
+_FX_CACHE: dict = {"rates": {}, "fetched_at": 0.0}
+
+@app.get("/exchange-rates")
+def exchange_rates(authorization: str = Header(default=None)):
+    """IT-44 — Live LKR exchange rates (cached 6 h)."""
+    get_current_user_id(authorization)
+    import time, urllib.request, json as _json
+
+    now = time.time()
+    if now - _FX_CACHE["fetched_at"] < 21600 and _FX_CACHE["rates"]:
+        return {"success": True, "base": "LKR", "rates": _FX_CACHE["rates"]}
+
+    try:
+        with urllib.request.urlopen("https://open.er-api.com/v6/latest/LKR", timeout=5) as r:
+            data = _json.loads(r.read())
+        rates = {k: round(1 / v, 6) for k, v in data.get("rates", {}).items()
+                 if k in ("USD","EUR","GBP","SGD","AUD","INR","JPY") and v}
+        _FX_CACHE["rates"] = rates
+        _FX_CACHE["fetched_at"] = now
+        return {"success": True, "base": "LKR", "rates": rates}
+    except Exception:
+        return {"success": True, "base": "LKR", "rates": _FX_CACHE.get("rates", {})}
+
+
+# ── IT-45: Document Sharing ───────────────────────────────────────────────────
+
+_SHARE_TOKENS: dict[str, dict] = {}   # token -> {document_id, user_id, expires_at}
+
+@app.post("/documents/{document_id}/share")
+def share_document(
+    document_id: str,
+    authorization: str = Header(default=None),
+):
+    """IT-45 — Generate a 7-day read-only share link for a document."""
+    user_id = get_current_user_id(authorization)
+    import secrets, time
+
+    token = secrets.token_urlsafe(24)
+    _SHARE_TOKENS[token] = {
+        "document_id": document_id,
+        "user_id":     str(user_id),
+        "expires_at":  time.time() + 7 * 86400,
+    }
+    _log_audit_event(user_id, "DOCUMENT_SHARED", f"document_id={document_id} token={token[:8]}…")
+    return {"success": True, "token": token, "expires_in_days": 7}
+
+
+@app.get("/shared/{token}")
+def view_shared_document(token: str):
+    """IT-45 — Public read-only view for a shared document (no auth required)."""
+    import time
+    from dataset_manager import parse_record_for_output
+
+    entry = _SHARE_TOKENS.get(token)
+    if not entry:
+        raise HTTPException(status_code=404, detail="Share link not found or expired")
+    if time.time() > entry["expires_at"]:
+        _SHARE_TOKENS.pop(token, None)
+        raise HTTPException(status_code=410, detail="Share link expired")
+
+    records = load_all_records(user_id=entry["user_id"])
+    doc = next((parse_record_for_output(r) for r in records
+                if r.get("document_id") == entry["document_id"]), None)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    return {
+        "success": True,
+        "document": {
+            "document_id":        doc.get("document_id"),
+            "document_type":      doc.get("document_type"),
+            "date":               doc.get("date"),
+            "company_name":       doc.get("company_name"),
+            "supplier_name":      doc.get("supplier_name"),
+            "final_total_amount": doc.get("final_total_amount"),
+            "currency":           doc.get("currency"),
+            "order_id":           doc.get("order_id"),
+            "items_json":         doc.get("items_json"),
+        },
+        "expires_at": entry["expires_at"],
+    }
+
+
+# ── IT-46: Budget Settings ────────────────────────────────────────────────────
+
+@app.get("/user/budget-settings")
+def get_budget_settings(authorization: str = Header(default=None)):
+    """IT-46 — Return the user's monthly budget targets per expense category."""
+    user_id = get_current_user_id(authorization)
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    'SELECT content FROM "ActivityLog" WHERE "userId"=%s AND type=%s '
+                    'ORDER BY "createdAt" DESC LIMIT 1',
+                    (str(user_id), "BUDGET_SETTINGS")
+                )
+                row = cur.fetchone()
+        if row:
+            import json as _json
+            content = row.get("content") if isinstance(row, dict) else row[0]
+            return {"success": True, "budgets": _json.loads(content)}
+    except Exception:
+        pass
+    return {"success": True, "budgets": {}}
+
+
+@app.put("/user/budget-settings")
+def save_budget_settings(
+    payload: dict = Body(default={}),
+    authorization: str = Header(default=None),
+):
+    """IT-46 — Save monthly budget targets per expense category."""
+    user_id = get_current_user_id(authorization)
+    require_write_role(authorization)
+    import json as _json
+
+    budgets = payload.get("budgets", {})
+    _log_audit_event(user_id, "BUDGET_SETTINGS", _json.dumps(budgets))
+    return {"success": True, "message": "Budget settings saved"}
+
+
+# ── IT-47: Audit Pack Export ──────────────────────────────────────────────────
+
+class AuditPackRequest(BaseModel):
+    period: str = "this_month"   # this_week | this_month | last_month | this_year | custom
+    date_from: Optional[str] = None
+    date_to: Optional[str] = None
+
+
+@app.post("/reports/audit-pack")
+def export_audit_pack(
+    payload: AuditPackRequest,
+    authorization: str = Header(default=None),
+):
+    """IT-47 — Generate and download an audit pack ZIP for the selected period."""
+    user_id = get_current_user_id(authorization)
+    from datetime import datetime, timedelta
+    import io, zipfile, json as _json
+
+    today = datetime.today()
+    if payload.period == "this_week":
+        lo = today - timedelta(days=today.weekday())
+        hi = today
+    elif payload.period == "this_month":
+        lo = today.replace(day=1)
+        hi = today
+    elif payload.period == "last_month":
+        hi = today.replace(day=1) - timedelta(days=1)
+        lo = hi.replace(day=1)
+    elif payload.period == "this_year":
+        lo = today.replace(month=1, day=1)
+        hi = today
+    elif payload.period == "custom":
+        try:
+            lo = datetime.strptime(payload.date_from, "%Y-%m-%d")
+            hi = datetime.strptime(payload.date_to,   "%Y-%m-%d")
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="date_from and date_to required for custom period (YYYY-MM-DD)")
+    else:
+        lo = today.replace(day=1)
+        hi = today
+
+    lo_str = lo.strftime("%Y-%m-%d")
+    hi_str = hi.strftime("%Y-%m-%d")
+
+    from dataset_manager import parse_record_for_output
+    all_recs = [parse_record_for_output(r) for r in load_all_records(user_id=user_id)]
+
+    def _in_range(r: dict) -> bool:
+        ds = str(r.get("date") or "").strip()[:10]
+        return lo_str <= ds <= hi_str if len(ds) == 10 else True
+
+    records = [r for r in all_recs if _in_range(r)]
+
+    # ── Build Excel ──────────────────────────────────────────────────────────
+    try:
+        import openpyxl
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Transactions"
+        headers = ["Document ID","Type","Date","Company","Counterparty","Amount","Currency","Flow","Status"]
+        ws.append(headers)
+        for r in records:
+            status = r.get("paid_status") or r.get("received_status") or r.get("invoice_status") or ""
+            ws.append([
+                r.get("document_id",""), r.get("document_type",""), r.get("date",""),
+                r.get("company_name",""), r.get("supplier_name",""),
+                r.get("final_total_amount",""), r.get("currency","LKR"),
+                r.get("effective_flow_type") or r.get("flow_type",""),
+                status,
+            ])
+        excel_buf = io.BytesIO()
+        wb.save(excel_buf)
+        excel_bytes = excel_buf.getvalue()
+    except ImportError:
+        excel_bytes = b""
+
+    # ── Build ZIP ────────────────────────────────────────────────────────────
+    zip_buf = io.BytesIO()
+    with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        if excel_bytes:
+            zf.writestr(f"transactions_{lo_str}_to_{hi_str}.xlsx", excel_bytes)
+        # Include document images if they exist
+        for r in records:
+            doc_id = r.get("document_id","")
+            img_path = Path(SAVED_DOCS_DIR) / f"{doc_id}.png"
+            if img_path.exists():
+                zf.write(img_path, f"documents/{doc_id}.png")
+        # Summary JSON
+        summary = {
+            "period": payload.period, "from": lo_str, "to": hi_str,
+            "total_documents": len(records),
+            "total_income":    round(sum(float(str(r.get("final_total_amount") or 0).replace(",","") or 0) for r in records if (r.get("effective_flow_type") or r.get("flow_type","")).lower() in ("receivable","cash_inflow","income")), 2),
+            "total_expense":   round(sum(float(str(r.get("final_total_amount") or 0).replace(",","") or 0) for r in records if (r.get("effective_flow_type") or r.get("flow_type","")).lower() in ("payable","cash_outflow","expense")), 2),
+        }
+        zf.writestr("summary.json", _json.dumps(summary, indent=2))
+
+    zip_buf.seek(0)
+    _log_audit_event(user_id, "AUDIT_PACK_EXPORTED", f"period={payload.period} docs={len(records)}")
+
+    from fastapi.responses import StreamingResponse
+    return StreamingResponse(
+        zip_buf,
+        media_type="application/zip",
+        headers={"Content-Disposition": f"attachment; filename=audit_pack_{lo_str}_{hi_str}.zip"},
+    )
+
+
+# ── IT-48: Monthly P&L Email Scheduler ───────────────────────────────────────
+
+def _send_monthly_pnl_emails():
+    """Called by APScheduler on the 1st of each month at 08:00."""
+    import smtplib, json as _json
+    from email.mime.text import MIMEText
+    from email.mime.multipart import MIMEMultipart
+    from datetime import datetime, timedelta
+    from dataset_manager import parse_record_for_output
+
+    smtp_host = os.getenv("SMTP_HOST", "")
+    smtp_user = os.getenv("SMTP_USER", "")
+    smtp_pass = os.getenv("SMTP_PASS", "")
+    smtp_port = int(os.getenv("SMTP_PORT", "587"))
+    if not smtp_host or not smtp_user:
+        print("[PNL-EMAIL] SMTP not configured, skipping", flush=True)
+        return
+
+    today = datetime.today()
+    last_month_end   = today.replace(day=1) - timedelta(days=1)
+    last_month_start = last_month_end.replace(day=1)
+    lo = last_month_start.strftime("%Y-%m-%d")
+    hi = last_month_end.strftime("%Y-%m-%d")
+
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute('SELECT id, email, "companyName" FROM "User" WHERE "deletedAt" IS NULL')
+                users = cur.fetchall() or []
+    except Exception as e:
+        print(f"[PNL-EMAIL] DB error: {e}", flush=True)
+        return
+
+    for row in users:
+        uid   = (row.get("id")          if isinstance(row, dict) else row[0]) or ""
+        email = (row.get("email")       if isinstance(row, dict) else row[1]) or ""
+        co    = (row.get("companyName") if isinstance(row, dict) else row[2]) or "Your Company"
+        if not email: continue
+
+        recs = [parse_record_for_output(r) for r in load_all_records(user_id=uid)]
+        period_recs = [r for r in recs if lo <= str(r.get("date") or "")[:10] <= hi]
+        income  = round(sum(float(str(r.get("final_total_amount") or 0).replace(",","") or 0) for r in period_recs if (r.get("effective_flow_type") or r.get("flow_type","")).lower() in ("receivable","cash_inflow","income")), 2)
+        expense = round(sum(float(str(r.get("final_total_amount") or 0).replace(",","") or 0) for r in period_recs if (r.get("effective_flow_type") or r.get("flow_type","")).lower() in ("payable","cash_outflow","expense")), 2)
+        net     = round(income - expense, 2)
+        color   = "#16a34a" if net >= 0 else "#dc2626"
+
+        html = f"""<div style="font-family:sans-serif;max-width:580px;margin:0 auto">
+          <h2 style="color:#2252b5">Monthly P&L — {last_month_end.strftime('%B %Y')}</h2>
+          <p>Hi {co},</p>
+          <table style="width:100%;border-collapse:collapse;margin:16px 0">
+            <tr><td style="padding:10px;background:#f3f4f6;font-weight:bold">Total Income</td>
+                <td style="padding:10px;color:#16a34a;font-weight:bold;text-align:right">LKR {income:,.2f}</td></tr>
+            <tr><td style="padding:10px;background:#f3f4f6;font-weight:bold">Total Expenses</td>
+                <td style="padding:10px;color:#dc2626;font-weight:bold;text-align:right">LKR {expense:,.2f}</td></tr>
+            <tr style="background:{color}15"><td style="padding:10px;font-weight:bold">Net Profit / Loss</td>
+                <td style="padding:10px;color:{color};font-weight:bold;font-size:18px;text-align:right">LKR {net:,.2f}</td></tr>
+          </table>
+          <p style="color:#666;font-size:12px">Powered by SME-GPT · Log in for full details</p></div>"""
+
+        try:
+            msg = MIMEMultipart("alternative")
+            msg["Subject"] = f"SME-GPT P&L Summary — {last_month_end.strftime('%B %Y')}"
+            msg["From"]    = smtp_user
+            msg["To"]      = email
+            msg.attach(MIMEText(html, "html"))
+            with smtplib.SMTP(smtp_host, smtp_port) as s:
+                s.starttls(); s.login(smtp_user, smtp_pass)
+                s.sendmail(smtp_user, [email], msg.as_string())
+            print(f"[PNL-EMAIL] sent to {email}", flush=True)
+        except Exception as e:
+            print(f"[PNL-EMAIL] failed for {email}: {e}", flush=True)
+
+
+# ── IT-49: WhatsApp Webhook ───────────────────────────────────────────────────
+
+@app.post("/webhook/whatsapp")
+async def whatsapp_webhook(request: Request):
+    """IT-49 — Twilio WhatsApp webhook: receives forwarded bill images and queues them."""
+    import hmac, hashlib, base64, urllib.parse, urllib.request
+
+    # Validate Twilio signature
+    twilio_token   = os.getenv("TWILIO_AUTH_TOKEN", "")
+    x_sig          = request.headers.get("X-Twilio-Signature", "")
+    body_bytes     = await request.body()
+    body_str       = body_bytes.decode("utf-8")
+    params         = dict(urllib.parse.parse_qsl(body_str))
+
+    if twilio_token:
+        url      = str(request.url)
+        sorted_p = "".join(f"{k}{v}" for k, v in sorted(params.items()))
+        expected = base64.b64encode(
+            hmac.new(twilio_token.encode(), (url + sorted_p).encode(), hashlib.sha1).digest()
+        ).decode()
+        if not hmac.compare_digest(x_sig, expected):
+            raise HTTPException(status_code=403, detail="Invalid Twilio signature")
+
+    from_number = params.get("From", "").replace("whatsapp:", "")
+    media_url   = params.get("MediaUrl0", "")
+    if not media_url:
+        return {"status": "no_media"}
+
+    # Look up user by whatsapp_number stored in User settings
+    owner_id = None
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    'SELECT id FROM "User" WHERE "phoneNumber" = %s LIMIT 1',
+                    (from_number,)
+                )
+                row = cur.fetchone()
+        if row:
+            owner_id = (row.get("id") if isinstance(row, dict) else row[0])
+    except Exception:
+        pass
+
+    if not owner_id:
+        print(f"[WHATSAPP] unknown number {from_number}", flush=True)
+        return {"status": "unknown_sender"}
+
+    # Download image from Twilio
+    twilio_sid = os.getenv("TWILIO_ACCOUNT_SID", "")
+    try:
+        req = urllib.request.Request(media_url)
+        if twilio_sid and twilio_token:
+            creds = base64.b64encode(f"{twilio_sid}:{twilio_token}".encode()).decode()
+            req.add_header("Authorization", f"Basic {creds}")
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            image_bytes = resp.read()
+    except Exception as e:
+        print(f"[WHATSAPP] image download failed: {e}", flush=True)
+        return {"status": "download_failed"}
+
+    # Save image to temp and run through manual doc generator + save
+    from manual_doc_generator import save_document_image_bytes
+    from dataset_manager import generate_document_id
+
+    doc_id = generate_document_id("receipt")
+    save_document_image_bytes(image_bytes, doc_id, save_dir=str(SAVED_DOCS_DIR))
+
+    doc_data = {
+        "document_type": "receipt", "order_id": doc_id,
+        "flow_type": "cash_outflow", "effective_flow_type": "cash_outflow",
+        "supplier_name": f"WhatsApp:{from_number}", "company_name": "",
+        "date": "", "currency": "LKR",
+        "raw_total_amount": 0, "final_total_amount": 0,
+        "payable_amount": 0, "cash_return": "",
+        "received_status": "NULL", "paid_status": "not_paid",
+        "status": "pending", "language": "en",
+        "corrected_text": f"WhatsApp bill from {from_number}",
+        "raw_text": "", "items_json": "[]",
+        "source": "whatsapp",
+    }
+    try:
+        upsert_confirmed_record(doc_data, user_id=str(owner_id))
+        _log_audit_event(str(owner_id), "WHATSAPP_DOCUMENT", f"document_id={doc_id} from={from_number}")
+    except Exception as e:
+        print(f"[WHATSAPP] save failed: {e}", flush=True)
+
+    return {"status": "queued", "document_id": doc_id}
 
 
 @app.get("/reports/vat")
