@@ -1,8 +1,7 @@
 "use client";
 /**
  * Unified Settings page.
- * Absorbs all profile sections + IT-46/47/48/49 features.
- * Tabs: Account | Security | Preferences | Budget | Export & Reports | Integrations
+ * Tabs: Account | Security | Preferences | Budget | Export
  */
 
 import { useEffect, useState } from "react";
@@ -29,7 +28,7 @@ const PERIOD_OPTIONS = [
   { key:"custom",     en:"Custom Range", si:"අභිමත"         },
 ];
 
-type Tab = "account" | "security" | "preferences" | "budget" | "export" | "integrations";
+type Tab = "account" | "security" | "preferences" | "budget" | "export";
 
 function getToken() {
   if (typeof window === "undefined") return "";
@@ -39,25 +38,25 @@ function getToken() {
 // ── Shared UI primitives (copied from profile) ────────────────────────────────
 function Card({ children }: { children: React.ReactNode }) {
   return (
-    <div className="overflow-hidden rounded-2xl" style={{ background:"var(--surface)", border:"1px solid var(--border)" }}>
+    <div className="overflow-hidden rounded-2xl" style={{ background:"var(--surface)", border:"1px solid var(--border)", boxShadow:"0 1px 4px rgba(0,0,0,0.04)" }}>
       {children}
     </div>
   );
 }
 function SectionLabel({ icon, title, danger }: { icon:string; title:string; danger?:boolean }) {
   return (
-    <div className="mb-2 mt-5 flex items-center gap-2">
-      <span className="material-symbols-outlined text-[16px]" style={{ color: danger ? "#dc2626" : "var(--text-3)" }}>{icon}</span>
-      <p className="text-[11px] font-bold uppercase tracking-[0.08em]" style={{ color: danger ? "#dc2626" : "var(--text-3)" }}>{title}</p>
+    <div className="mb-2 mt-6 flex items-center gap-2 px-1">
+      <span className="material-symbols-outlined text-[15px]" style={{ color: danger ? "#dc2626" : "var(--text-3)" }}>{icon}</span>
+      <p className="text-[11px] font-bold uppercase tracking-[0.1em]" style={{ color: danger ? "#dc2626" : "var(--text-3)" }}>{title}</p>
     </div>
   );
 }
 function Divider() { return <div className="mx-5" style={{ height:1, background:"var(--border)" }} />; }
 function FieldRow({ label, value }: { label:string; value:string }) {
   return (
-    <div className="flex items-center justify-between px-5 py-3.5">
+    <div className="flex items-center justify-between px-5 py-4">
       <p className="text-[13px] text-[var(--text-3)]">{label}</p>
-      <p className="text-[13px] font-medium text-[var(--text-1)]">{value || "—"}</p>
+      <p className="text-[13px] font-semibold text-[var(--text-1)]">{value || "—"}</p>
     </div>
   );
 }
@@ -73,14 +72,14 @@ function ChevronRow({ icon, title, subtitle, onClick, iconBg="#f3f4f6", iconColo
 }) {
   return (
     <button onClick={onClick} className="flex w-full items-center gap-4 px-5 py-4 text-left transition hover:bg-[var(--surface-2)]">
-      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl" style={{ background:iconBg, color:iconColor }}>
-        <span className="material-symbols-outlined text-[18px]">{icon}</span>
+      <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl" style={{ background:iconBg, color:iconColor }}>
+        <span className="material-symbols-outlined text-[20px]">{icon}</span>
       </span>
       <div className="flex-1 min-w-0">
-        <p className="text-[13px] font-medium text-[var(--text-1)]">{title}</p>
-        <p className="text-[11px] text-[var(--text-3)]">{subtitle}</p>
+        <p className="text-[14px] font-semibold text-[var(--text-1)]">{title}</p>
+        <p className="text-[12px] text-[var(--text-3)] mt-0.5">{subtitle}</p>
       </div>
-      <span className="material-symbols-outlined text-[20px] text-[var(--text-3)]">chevron_right</span>
+      <span className="material-symbols-outlined text-[20px]" style={{ color:"var(--text-3)" }}>chevron_right</span>
     </button>
   );
 }
@@ -118,8 +117,6 @@ export default function SettingsPage() {
   const [customTo, setCustomTo]   = useState("");
   const [downloading, setDownloading] = useState(false);
 
-  // WhatsApp
-  const [waPhone, setWaPhone]     = useState("");
   const [monthlyEmail, setMonthlyEmail] = useState(false);
 
   useEffect(() => {
@@ -252,7 +249,6 @@ export default function SettingsPage() {
     { key:"preferences",  icon:"tune",         en:"Preferences",  si:"කැමැත්ත"       },
     { key:"budget",       icon:"savings",      en:"Budget",       si:"අයවැය"          },
     { key:"export",       icon:"download",     en:"Export",       si:"නිර්යාතය"      },
-    { key:"integrations", icon:"hub",          en:"Integrations", si:"ඒකාබද්ධකරණ"   },
   ];
 
   if (!session) return null;
@@ -265,20 +261,21 @@ export default function SettingsPage() {
     >
 
           {/* Tab strip */}
-          <div className="mt-4 flex gap-1.5 overflow-x-auto pb-1 no-scrollbar">
+          <div className="mt-5 grid grid-cols-5 gap-2 rounded-2xl p-2"
+            style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
             {TABS.map(tb => (
               <button key={tb.key} onClick={() => setTab(tb.key)}
-                className="flex shrink-0 items-center gap-1.5 rounded-xl px-3.5 py-2 text-[12px] font-semibold transition"
+                className="flex flex-col items-center gap-1.5 rounded-xl px-2 py-3 text-[11px] font-semibold transition"
                 style={tab === tb.key
-                  ? { background:"var(--brand-mid)", color:"#fff" }
-                  : { background:"var(--surface)", border:"1px solid var(--border)", color:"var(--text-2)" }}>
-                <span className="material-symbols-outlined text-[15px]">{tb.icon}</span>
+                  ? { background: "var(--brand-mid)", color: "#fff", boxShadow: "0 2px 8px rgba(34,82,181,0.25)" }
+                  : { color: "var(--text-3)" }}>
+                <span className="material-symbols-outlined text-[20px]">{tb.icon}</span>
                 {lang === "si" ? tb.si : tb.en}
               </button>
             ))}
           </div>
 
-          <div className="mt-5 space-y-1">
+          <div className="mt-6 space-y-4">
 
             {/* ─── ACCOUNT TAB ──────────────────────────────────────────── */}
             {tab === "account" && (
@@ -348,11 +345,11 @@ export default function SettingsPage() {
                 )}
 
                 <button onClick={async () => { await logoutUser(); router.push("/login"); }}
-                  className="mt-5 w-full rounded-2xl py-4 text-[15px] font-bold transition hover:opacity-90"
-                  style={{ border:"1px solid rgba(220,38,38,0.3)", background:"rgba(220,38,38,0.06)", color:"#dc2626" }}>
+                  className="mt-6 w-full rounded-2xl py-4 text-[15px] font-bold transition hover:opacity-90"
+                  style={{ border:"1px solid rgba(220,38,38,0.25)", background:"rgba(220,38,38,0.05)", color:"#dc2626" }}>
                   {t.signOut}
                 </button>
-                <p className="mt-4 text-center text-[11px] text-[var(--text-3)]">SME-GPT · {t.auditFooter}</p>
+                <p className="mt-5 mb-2 text-center text-[11px] text-[var(--text-3)]">SME-GPT · {t.auditFooter}</p>
               </>
             )}
 
@@ -461,121 +458,130 @@ export default function SettingsPage() {
               </>
             )}
 
-            {/* ─── BUDGET TAB (IT-46) ────────────────────────────────────── */}
+            {/* ─── BUDGET TAB ──────────────────────────────────────────────── */}
             {tab === "budget" && (
-              <>
-                <div className="rounded-2xl p-5" style={{ background:"var(--surface)", border:"1px solid var(--border)" }}>
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-[15px] font-bold text-[var(--text-1)]">{lang === "si" ? "මාසික අයවැය" : "Monthly Budget Tracker"}</p>
-                      <p className="text-[12px] text-[var(--text-2)] mt-0.5">{lang === "si" ? "ඉලක්ක නියම කරන්න — ඩැශ්බෝඩයේ සංසන්දනය දිස් වේ" : "Set monthly targets — a comparison widget appears on your dashboard."}</p>
-                    </div>
-                    <Toggle enabled={budgetOn} onClick={() => setBudgetOn(b => !b)} />
+              <Card>
+                <div className="flex items-center justify-between px-6 py-5">
+                  <div>
+                    <p className="text-[15px] font-bold text-[var(--text-1)]">
+                      {lang === "si" ? "මාසික අයවැය" : "Monthly Budget Tracker"}
+                    </p>
+                    <p className="mt-0.5 text-[12px] text-[var(--text-2)]">
+                      {lang === "si"
+                        ? "ඉලක්ක නියම කරන්න — ඩැශ්බෝඩයේ සංසන්දනය දිස් වේ"
+                        : "Set monthly targets — comparison widget appears on your dashboard."}
+                    </p>
                   </div>
-                  {budgetOn && (
-                    <div className="mt-4 space-y-2">
-                      <div className="grid gap-2 sm:grid-cols-2">
+                  <Toggle enabled={budgetOn} onClick={() => setBudgetOn(b => !b)} />
+                </div>
+                {budgetOn && (
+                  <>
+                    <Divider />
+                    <div className="px-6 py-5 space-y-3">
+                      <div className="grid gap-3 sm:grid-cols-2">
                         {BUDGET_CATS.map(cat => (
-                          <div key={cat} className="flex items-center gap-2 rounded-xl border px-4 py-2.5" style={{ background:"var(--bg)", borderColor:"var(--border)" }}>
-                            <span className="flex-1 text-[13px] text-[var(--text-1)]">{cat}</span>
+                          <div key={cat} className="flex items-center gap-3 rounded-xl border px-4 py-3"
+                            style={{ background:"var(--bg)", borderColor:"var(--border)" }}>
+                            <span className="flex-1 text-[13px] font-medium text-[var(--text-1)]">{cat}</span>
                             <span className="text-[11px] text-[var(--text-3)]">LKR</span>
-                            <input type="number" min="0" value={budgets[cat] || ""} onChange={e => setBudgets(b => ({ ...b, [cat]:e.target.value }))}
-                              placeholder="0" className="w-24 bg-transparent text-right text-[13px] font-bold text-[var(--text-1)] outline-none" />
+                            <input type="number" min="0" value={budgets[cat] || ""}
+                              onChange={e => setBudgets(b => ({ ...b, [cat]:e.target.value }))}
+                              placeholder="0"
+                              className="w-28 bg-transparent text-right text-[14px] font-bold text-[var(--text-1)] outline-none" />
                           </div>
                         ))}
                       </div>
-                      <button onClick={saveBudgets} className="flex items-center gap-2 rounded-xl px-5 py-2.5 text-[13px] font-bold text-white hover:opacity-90" style={{ background:"var(--brand-mid)" }}>
+                      <button onClick={saveBudgets}
+                        className="flex items-center gap-2 rounded-xl px-5 py-2.5 text-[13px] font-bold text-white hover:opacity-90 transition"
+                        style={{ background:"var(--brand-mid)" }}>
                         <span className="material-symbols-outlined text-[16px]">save</span>
-                        {budgetSaved ? (lang === "si" ? "සුරකිනු ලැබිණි ✓" : "Saved ✓") : (lang === "si" ? "සුරකින්න" : "Save Budgets")}
+                        {budgetSaved
+                          ? (lang === "si" ? "සුරකිනු ලැබිණි ✓" : "Saved ✓")
+                          : (lang === "si" ? "සුරකින්න" : "Save Budgets")}
                       </button>
                     </div>
-                  )}
-                </div>
-              </>
+                  </>
+                )}
+              </Card>
             )}
 
-            {/* ─── EXPORT TAB (IT-47) ────────────────────────────────────── */}
+            {/* ─── EXPORT TAB ──────────────────────────────────────────────── */}
             {tab === "export" && (
               <>
-                <div className="rounded-2xl p-5" style={{ background:"var(--surface)", border:"1px solid var(--border)" }}>
-                  <p className="text-[15px] font-bold text-[var(--text-1)]">{lang === "si" ? "විගණන ඇසුරුම" : "Audit Pack Export"}</p>
-                  <p className="mt-0.5 text-[12px] text-[var(--text-2)]">{lang === "si" ? "ලේඛන + Excel + JSON ZIP ලෙස." : "All documents for a period as a ZIP: images + Excel ledger + JSON summary."}</p>
-                  <div className="mt-4 flex flex-wrap gap-2">
-                    {PERIOD_OPTIONS.map(p => (
-                      <button key={p.key} onClick={() => setPeriod(p.key)}
-                        className="rounded-xl px-4 py-2 text-[12px] font-semibold transition"
-                        style={period === p.key ? { background:"#2252b5", color:"#fff" } : { background:"var(--bg)", border:"1px solid var(--border)", color:"var(--text-2)" }}>
-                        {lang === "si" ? p.si : p.en}
-                      </button>
-                    ))}
-                  </div>
-                  {period === "custom" && (
-                    <div className="mt-3 flex flex-wrap items-center gap-3">
-                      <input type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)}
-                        className="rounded-xl border px-3 py-2 text-[13px]" style={{ background:"var(--bg)", borderColor:"var(--border)", color:"var(--text-1)" }} />
-                      <span className="text-[12px] text-[var(--text-3)]">{lang === "si" ? "සිට" : "to"}</span>
-                      <input type="date" value={customTo} onChange={e => setCustomTo(e.target.value)}
-                        className="rounded-xl border px-3 py-2 text-[13px]" style={{ background:"var(--bg)", borderColor:"var(--border)", color:"var(--text-1)" }} />
+                <Card>
+                  <div className="px-6 py-5">
+                    <p className="text-[15px] font-bold text-[var(--text-1)]">
+                      {lang === "si" ? "විගණන ඇසුරුම" : "Audit Pack Export"}
+                    </p>
+                    <p className="mt-0.5 text-[12px] text-[var(--text-2)]">
+                      {lang === "si"
+                        ? "ලේඛන + Excel + JSON ZIP ලෙස."
+                        : "Download all documents for a period as a ZIP with images, Excel ledger and JSON summary."}
+                    </p>
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      {PERIOD_OPTIONS.map(p => (
+                        <button key={p.key} onClick={() => setPeriod(p.key)}
+                          className="rounded-xl px-4 py-2 text-[12px] font-semibold transition"
+                          style={period === p.key
+                            ? { background:"var(--brand-mid)", color:"#fff" }
+                            : { background:"var(--bg)", border:"1px solid var(--border)", color:"var(--text-2)" }}>
+                          {lang === "si" ? p.si : p.en}
+                        </button>
+                      ))}
                     </div>
-                  )}
-                  <button onClick={downloadAuditPack} disabled={downloading}
-                    className="mt-4 flex items-center gap-2 rounded-xl px-5 py-2.5 text-[13px] font-bold text-white disabled:opacity-60 hover:opacity-90"
-                    style={{ background:"#16a34a" }}>
-                    {downloading ? <span className="material-symbols-outlined animate-spin text-[16px]">progress_activity</span> : <span className="material-symbols-outlined text-[16px]">download</span>}
-                    {downloading ? (lang === "si" ? "සකස් කරමින්..." : "Generating…") : (lang === "si" ? "ZIP බාගන්න" : "Download ZIP")}
-                  </button>
-                </div>
+                    {period === "custom" && (
+                      <div className="mt-3 flex flex-wrap items-center gap-3">
+                        <input type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)}
+                          className="rounded-xl border px-3 py-2 text-[13px]"
+                          style={{ background:"var(--bg)", borderColor:"var(--border)", color:"var(--text-1)" }} />
+                        <span className="text-[12px] text-[var(--text-3)]">{lang === "si" ? "සිට" : "to"}</span>
+                        <input type="date" value={customTo} onChange={e => setCustomTo(e.target.value)}
+                          className="rounded-xl border px-3 py-2 text-[13px]"
+                          style={{ background:"var(--bg)", borderColor:"var(--border)", color:"var(--text-1)" }} />
+                      </div>
+                    )}
+                    <button onClick={downloadAuditPack} disabled={downloading}
+                      className="mt-5 flex items-center gap-2 rounded-xl px-5 py-2.5 text-[13px] font-bold text-white disabled:opacity-60 hover:opacity-90 transition"
+                      style={{ background:"#16a34a" }}>
+                      {downloading
+                        ? <span className="material-symbols-outlined animate-spin text-[16px]">progress_activity</span>
+                        : <span className="material-symbols-outlined text-[16px]">download</span>}
+                      {downloading
+                        ? (lang === "si" ? "සකස් කරමින්..." : "Generating…")
+                        : (lang === "si" ? "ZIP බාගන්න" : "Download ZIP")}
+                    </button>
+                  </div>
+                </Card>
 
-                {/* Monthly P&L email (IT-48) */}
-                <div className="rounded-2xl p-5 mt-4" style={{ background:"var(--surface)", border:"1px solid var(--border)" }}>
-                  <div className="flex items-center justify-between">
+                <Card>
+                  <div className="flex items-center justify-between px-6 py-5">
                     <div>
-                      <p className="text-[15px] font-bold text-[var(--text-1)]">{lang === "si" ? "මාසික P&L ඊමේල්" : "Monthly P&L Email"}</p>
-                      <p className="text-[12px] text-[var(--text-2)] mt-0.5">{lang === "si" ? "සෑම මාසයේ 1 වැනිදා සාරාංශ ඊමේල් ලැබේ." : "Receive a P&L summary email on the 1st of every month."}</p>
+                      <p className="text-[15px] font-bold text-[var(--text-1)]">
+                        {lang === "si" ? "මාසික P&L ඊමේල්" : "Monthly P&L Email"}
+                      </p>
+                      <p className="mt-0.5 text-[12px] text-[var(--text-2)]">
+                        {lang === "si"
+                          ? "සෑම මාසයේ 1 වැනිදා සාරාංශ ඊමේල් ලැබේ."
+                          : "Receive a profit & loss summary email on the 1st of every month."}
+                      </p>
                     </div>
                     <Toggle enabled={monthlyEmail} onClick={() => setMonthlyEmail(m => !m)} />
                   </div>
                   {monthlyEmail && (
-                    <div className="mt-3 rounded-xl px-4 py-3 text-[12px]" style={{ background:"rgba(34,82,181,0.06)", border:"1px solid rgba(34,82,181,0.15)", color:"#2252b5" }}>
-                      Set <code>MONTHLY_EMAIL_ENABLED=true</code> in <code>backend/.env</code> and restart the backend. The scheduler fires at 08:00 on the 1st of each month.
-                    </div>
+                    <>
+                      <Divider />
+                      <div className="px-6 py-4 text-[12px] rounded-b-2xl"
+                        style={{ background:"rgba(34,82,181,0.04)", color:"#2252b5" }}>
+                        Set <code className="rounded px-1 py-0.5 text-[11px]" style={{ background:"rgba(34,82,181,0.08)" }}>MONTHLY_EMAIL_ENABLED=true</code> in{" "}
+                        <code className="rounded px-1 py-0.5 text-[11px]" style={{ background:"rgba(34,82,181,0.08)" }}>backend/.env</code>{" "}
+                        and restart the backend. Scheduler fires at 08:00 on the 1st of each month.
+                      </div>
+                    </>
                   )}
-                </div>
+                </Card>
               </>
             )}
 
-            {/* ─── INTEGRATIONS TAB (IT-49) ─────────────────────────────── */}
-            {tab === "integrations" && (
-              <>
-                <div className="rounded-2xl p-5" style={{ background:"var(--surface)", border:"1px solid var(--border)" }}>
-                  <div className="mb-3 flex items-center gap-2">
-                    <span className="material-symbols-outlined text-[20px]" style={{ color:"#25D366" }}>chat</span>
-                    <p className="text-[15px] font-bold text-[var(--text-1)]">{lang === "si" ? "WhatsApp ඒකාබද්ධතාව" : "WhatsApp Bill Forwarding"}</p>
-                  </div>
-                  <p className="text-[12px] text-[var(--text-2)]">{lang === "si" ? "WhatsApp හරහා ලැබෙන රිසිට් ඡායාරූප ස්වයංක‍ීයව ගබඩා කළ හැකිය." : "Forward bill photos from WhatsApp — they appear in your repository automatically."}</p>
-                  <div className="mt-4 space-y-3">
-                    <div>
-                      <label className="mb-1.5 block text-[12px] font-semibold text-[var(--text-2)]">
-                        {lang === "si" ? "ඔබගේ WhatsApp අංකය" : "Your WhatsApp Number (bills forwarded from this number)"}
-                      </label>
-                      <input value={waPhone} onChange={e => setWaPhone(e.target.value)} placeholder="+94771234567"
-                        className="w-full rounded-xl border px-4 py-2.5 text-[13px]"
-                        style={{ background:"var(--bg)", borderColor:"var(--border)", color:"var(--text-1)" }} />
-                    </div>
-                    <div className="rounded-xl px-4 py-3 text-[12px]" style={{ background:"rgba(22,163,74,0.06)", border:"1px solid rgba(22,163,74,0.2)", color:"#16a34a" }}>
-                      <p className="font-semibold mb-1">{lang === "si" ? "සැකසීම:" : "Setup:"}</p>
-                      <ol className="list-decimal list-inside space-y-1 opacity-90">
-                        <li>Create a Twilio account at twilio.com</li>
-                        <li>Get a WhatsApp-enabled number from the Twilio Sandbox</li>
-                        <li>Set webhook: <code>POST https://your-server/webhook/whatsapp</code></li>
-                        <li>Add <code>TWILIO_AUTH_TOKEN</code> + <code>TWILIO_ACCOUNT_SID</code> to <code>backend/.env</code></li>
-                        <li>Save your number above so SME-GPT can match incoming messages</li>
-                      </ol>
-                    </div>
-                  </div>
-                </div>
-              </>
-            )}
 
           </div>
     </PageShell>

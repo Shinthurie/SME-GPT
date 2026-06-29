@@ -68,41 +68,6 @@ def test_trend_zero_when_last_month_zero():
     assert trend == 0.0
 
 
-# ── Expense Category tests ────────────────────────────────────────────────────
-
-def test_expense_breakdown_categorises_correctly():
-    """Transport keywords should go into the Transport bucket."""
-    categories = {
-        "Transport": ["transport","fuel","tuk","bus","cab","taxi"],
-        "Supplies":  ["supplies","stationery","office","paper"],
-        "Other":     [],
-    }
-    items = [
-        {"text": "tuk tuk fare",        "amount": 500,   "expected": "Transport"},
-        {"text": "office paper A4",     "amount": 1200,  "expected": "Supplies"},
-        {"text": "unmatched xyz thing", "amount": 800,   "expected": "Other"},
-    ]
-    for item in items:
-        cat = "Other"
-        for name, keywords in categories.items():
-            if any(kw in item["text"].lower() for kw in keywords):
-                cat = name; break
-        assert cat == item["expected"], f"Expected {item['expected']} but got {cat} for '{item['text']}'"
-
-
-def test_expense_breakdown_percentage_sums_to_100():
-    slices = [
-        {"category": "Transport", "amount": 3000},
-        {"category": "Supplies",  "amount": 5000},
-        {"category": "Services",  "amount": 2000},
-    ]
-    total = sum(s["amount"] for s in slices)
-    for s in slices:
-        s["pct"] = round(s["amount"] / total * 100, 1)
-    total_pct = sum(s["pct"] for s in slices)
-    assert abs(total_pct - 100.0) < 1.0   # allow rounding difference
-
-
 # ── Who Owes Who tests ────────────────────────────────────────────────────────
 
 def test_top_receivables_sorted_descending():
@@ -163,7 +128,7 @@ def test_dashboard_summary_contains_analytics_keys(monkeypatch):
     body = resp.json()
     assert body["success"] is True
     # All Feature-2 keys must be present
-    for key in ("health_score", "expense_breakdown", "top_receivables", "top_payables", "activity_feed"):
+    for key in ("health_score", "top_receivables", "top_payables", "activity_feed"):
         assert key in body, f"Missing key: {key}"
     assert isinstance(body["health_score"], dict)
     assert "net" in body["health_score"]
