@@ -80,11 +80,11 @@ export default function PageShell({
               {backLabel && (
                 <button
                   onClick={handleBack}
-                  className="flex items-center gap-1.5 text-[13px] font-semibold transition hover:opacity-75"
+                  className="flex items-center gap-1 text-[13px] font-semibold transition hover:opacity-75"
                   style={{ color: "var(--brand-mid)" }}
                 >
                   <span className="material-symbols-outlined text-[16px]">arrow_back</span>
-                  {backLabel}
+                  Back
                 </button>
               )}
               {topBarLeft}

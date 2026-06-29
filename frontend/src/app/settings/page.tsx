@@ -261,7 +261,7 @@ export default function SettingsPage() {
     <PageShell
       backLabel={t.backToDashboard}
       title={lang === "si" ? "සැකසීම්" : "Settings"}
-      width="narrow"
+      width="standard"
     >
 
           {/* Tab strip */}

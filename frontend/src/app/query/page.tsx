@@ -133,7 +133,7 @@ export default function QueryPage() {
       backHref="/dashboard"
       title={t.askQuestion}
       subtitle="Ask questions about your invoices, delivery notes, or purchase orders in English or Sinhala."
-      width="narrow"
+      width="standard"
       topBarRight={
         <div className="flex items-center gap-2">
           <span className="rounded-lg px-3 py-1 text-[10px] font-bold uppercase tracking-wider"
