@@ -11,6 +11,9 @@ import { AppLanguage, getStoredLanguage, ui } from "@/lib/i18n";
 import { hasUnreadNotifications } from "@/lib/notifications";
 import { syncOverdueAlerts } from "@/lib/overdueAlerts";
 import { formatMoney, otherPartyName } from "@/lib/format";
+import {
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
+} from "recharts";
 
 const BACKEND_URL = "http://127.0.0.1:8000";
 
@@ -94,6 +97,7 @@ export default function DashboardPage() {
   const [summary, setSummary] = useState<SummaryData | null>(null);
   const [error, setError] = useState("");
   const [hasUnread, setHasUnread] = useState(false);
+  const [cashFlow, setCashFlow] = useState<Array<{month:string;inflow:number;outflow:number;net:number}>>([]);
 
   useEffect(() => {
     const load = async () => {
@@ -135,6 +139,11 @@ export default function DashboardPage() {
 
         // IT-23: surface overdue payables/receivables as notifications.
         void syncOverdueAlerts(token);
+
+        // IT-20: fetch 6-month cash flow for the bar chart
+        fetch(`${BACKEND_URL}/cash-flow?months=6`, {
+          headers: { Authorization: `Bearer ${token}` }, cache: "no-store",
+        }).then(r => r.json()).then(d => { if (d.success) setCashFlow(d.data || []); }).catch(() => {});
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to fetch dashboard summary.");
       }
@@ -380,6 +389,39 @@ export default function DashboardPage() {
                     </button>
                   </div>
                 ))}
+              </div>
+            </section>
+          )}
+
+          {/* IT-20 — 6-month Cash Flow Chart */}
+          {cashFlow.length > 0 && (
+            <section className="mt-8">
+              <h3 className="mb-4 text-[17px] font-extrabold tracking-tight text-[var(--text-1)]">
+                {lang === "si" ? "මාසික මුදල් ප්‍රවාහය" : "Monthly Cash Flow"}
+              </h3>
+              <div
+                className="rounded-2xl p-4"
+                style={{ background: "var(--surface)", border: "1px solid var(--border)" }}
+              >
+                <ResponsiveContainer width="100%" height={220}>
+                  <BarChart data={cashFlow} margin={{ top: 4, right: 8, left: 0, bottom: 4 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                    <XAxis dataKey="month" tick={{ fontSize: 11 }} stroke="var(--text-3)" />
+                    <YAxis tick={{ fontSize: 10 }} stroke="var(--text-3)" tickFormatter={(v) => `${(v/1000).toFixed(0)}k`} />
+                    <Tooltip
+                      formatter={(value, name) => [
+                        `LKR ${Number(value ?? 0).toLocaleString()}`,
+                        name === "inflow" ? (lang === "si" ? "ලැබීම" : "Inflow")
+                          : name === "outflow" ? (lang === "si" ? "ගෙවීම" : "Outflow")
+                          : (lang === "si" ? "ශේෂය" : "Net"),
+                      ]}
+                    />
+                    <Legend formatter={(v) => v === "inflow" ? (lang === "si" ? "ලැබීම" : "Inflow") : v === "outflow" ? (lang === "si" ? "ගෙවීම" : "Outflow") : (lang === "si" ? "ශේෂය" : "Net")} />
+                    <Bar dataKey="inflow"  fill="#16a34a" radius={[3,3,0,0]} />
+                    <Bar dataKey="outflow" fill="#dc2626" radius={[3,3,0,0]} />
+                    <Bar dataKey="net"     fill="#2252b5" radius={[3,3,0,0]} />
+                  </BarChart>
+                </ResponsiveContainer>
               </div>
             </section>
           )}
