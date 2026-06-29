@@ -1700,20 +1700,138 @@ def get_document_by_id(document_id: str, authorization: str = Header(default=Non
 @app.get("/dashboard-summary")
 def dashboard_summary(authorization: str = Header(default=None)):
     user_id = get_current_user_id(authorization)
+    from datetime import datetime, timedelta
 
-    # NFR-03: load only the most recent 200 docs for summary (avoids full table scan)
-    records = load_records(user_id=user_id, limit=200, offset=0)
+    # NFR-03: load only the most recent 500 docs for summary
     from dataset_manager import parse_record_for_output
-    records = [parse_record_for_output(r) for r in records]
+    records = [parse_record_for_output(r) for r in load_records(user_id=user_id, limit=500, offset=0)]
     summary = build_dashboard_summary(records)
 
-    # UI-D2: "Invoice Insights Ready" — surface arithmetic mismatches in recent docs
+    # ── Mismatch alerts ────────────────────────────────────────────────────────
     mismatch_docs = [
         {"document_id": r.get("document_id"), "company_name": r.get("company_name"),
          "date": r.get("date"), "document_type": r.get("document_type")}
-        for r in records
-        if str(r.get("arithmetic_status", "")).lower() == "mismatch"
+        for r in records if str(r.get("arithmetic_status", "")).lower() == "mismatch"
     ][:3]
+
+    # ── Widget 1: Business Health Score ───────────────────────────────────────
+    today = datetime.today()
+    this_month = today.strftime("%Y-%m")
+    last_month = (today.replace(day=1) - timedelta(days=1)).strftime("%Y-%m")
+
+    def _month_net(month_key: str) -> float:
+        total_in = total_out = 0.0
+        for r in records:
+            ds = str(r.get("date", "") or "").strip()
+            for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y", "%d %b %Y"):
+                try:
+                    if datetime.strptime(ds[:10], fmt).strftime("%Y-%m") == month_key:
+                        amt = 0.0
+                        for f in ("payable_amount", "final_total_amount"):
+                            v = r.get(f)
+                            if v not in (None, "NULL", "", "NONE"):
+                                try: amt = float(str(v).replace(",", "")); break
+                                except: pass
+                        ft = str(r.get("effective_flow_type") or r.get("flow_type") or "").lower()
+                        if ft in ("receivable", "cash_inflow", "income"): total_in += amt
+                        elif ft in ("payable", "cash_outflow", "expense"): total_out += amt
+                    break
+                except ValueError:
+                    continue
+        return round(total_in - total_out, 2)
+
+    net_this = _month_net(this_month)
+    net_last = _month_net(last_month)
+    trend_pct = round(((net_this - net_last) / abs(net_last) * 100) if net_last else 0, 1)
+    health_score = {
+        "net": net_this,
+        "trend_pct": trend_pct,
+        "color": "green" if net_this >= 0 else "red",
+        "this_month": this_month,
+    }
+
+    # ── Widget 3: Expense Category Donut ──────────────────────────────────────
+    _CATEGORIES: dict[str, list[str]] = {
+        "Transport":  ["transport","fuel","tuk","bus","cab","taxi","vehicle","petrol","diesel"],
+        "Supplies":   ["supplies","stationery","office","paper","printer","ink","pen","book"],
+        "Food":       ["food","meal","lunch","dinner","restaurant","beverage","tea","coffee"],
+        "Services":   ["service","consultation","design","software","website","maintenance","repair"],
+        "Rent":       ["rent","lease","venue","hall","room","space","accommodation"],
+        "Utilities":  ["electricity","water","internet","phone","mobile","slt","dialog","mobitel"],
+        "Marketing":  ["marketing","advertising","promotion","banner","brochure","print"],
+    }
+    cat_totals: dict[str, float] = {}
+    for r in records:
+        ft = str(r.get("effective_flow_type") or r.get("flow_type") or "").lower()
+        if ft not in ("payable", "cash_outflow", "expense"): continue
+        amt = 0.0
+        for f in ("payable_amount", "final_total_amount"):
+            v = r.get(f)
+            if v not in (None, "NULL", ""):
+                try: amt = float(str(v).replace(",", "")); break
+                except: pass
+        if not amt: continue
+        desc = (str(r.get("corrected_text") or r.get("supplier_name") or "")).lower()
+        cat = "Other"
+        for name, keywords in _CATEGORIES.items():
+            if any(kw in desc for kw in keywords): cat = name; break
+        cat_totals[cat] = round(cat_totals.get(cat, 0) + amt, 2)
+    total_exp = sum(cat_totals.values()) or 1
+    expense_breakdown = sorted(
+        [{"category": k, "amount": v, "pct": round(v / total_exp * 100, 1)}
+         for k, v in cat_totals.items()],
+        key=lambda x: -x["amount"]
+    )
+
+    # ── Widget 4: Who Owes Me / Who I Owe ─────────────────────────────────────
+    top_receivables, top_payables = [], []
+    for r in records:
+        ft = str(r.get("effective_flow_type") or r.get("flow_type") or "").lower()
+        paid = str(r.get("paid_status") or "").lower()
+        received = str(r.get("received_status") or "").lower()
+        if paid in ("paid", "received") or received == "received": continue
+        amt = 0.0
+        for f in ("payable_amount", "final_total_amount"):
+            v = r.get(f)
+            if v not in (None, "NULL", ""):
+                try: amt = float(str(v).replace(",", "")); break
+                except: pass
+        if not amt: continue
+        entry = {
+            "document_id":   r.get("document_id"),
+            "document_type": r.get("document_type"),
+            "supplier_name": r.get("supplier_name") or r.get("company_name") or "—",
+            "amount":        amt,
+            "currency":      r.get("currency") or "LKR",
+            "date":          r.get("date") or "",
+        }
+        if ft in ("receivable", "cash_inflow"): top_receivables.append(entry)
+        elif ft in ("payable", "cash_outflow"): top_payables.append(entry)
+    top_receivables = sorted(top_receivables, key=lambda x: -x["amount"])[:5]
+    top_payables    = sorted(top_payables,    key=lambda x: -x["amount"])[:5]
+
+    # ── Widget 5: Activity Feed (from ActivityLog table) ──────────────────────
+    activity_feed = []
+    try:
+        with get_db_connection() as _conn:
+            with _conn.cursor() as _cur:
+                _cur.execute(
+                    'SELECT type, content, "createdAt" FROM "ActivityLog" '
+                    'WHERE "userId" = %s ORDER BY "createdAt" DESC LIMIT 10',
+                    (str(user_id),)
+                )
+                for row in (_cur.fetchall() or []):
+                    if isinstance(row, dict):
+                        evt, content, created = row.get("type",""), row.get("content",""), row.get("createdAt")
+                    else:
+                        evt, content, created = row[0], row[1], row[2]
+                    activity_feed.append({
+                        "event_type": evt,
+                        "content":    str(content or ""),
+                        "created_at": created.isoformat() if hasattr(created, "isoformat") else str(created or ""),
+                    })
+    except Exception as _af_err:
+        print(f"[DASHBOARD] activity feed failed (non-fatal): {_af_err}", flush=True)
 
     return {
         "success": True,
@@ -1728,6 +1846,12 @@ def dashboard_summary(authorization: str = Header(default=None)):
         "pending_processing_count": summary.get("pending_processing_count", 0),
         "ready_for_query_count": summary.get("ready_for_query_count", 0),
         "mismatch_alerts": mismatch_docs,
+        # Feature 2 — Analytics widgets
+        "health_score":      health_score,
+        "expense_breakdown": expense_breakdown,
+        "top_receivables":   top_receivables,
+        "top_payables":      top_payables,
+        "activity_feed":     activity_feed,
     }
 
 

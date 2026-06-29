@@ -14,6 +14,10 @@ import { formatMoney, otherPartyName } from "@/lib/format";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from "recharts";
+import HealthScoreCard from "@/components/ui/HealthScoreCard";
+import ExpenseDonut    from "@/components/ui/ExpenseDonut";
+import WhoOwesWho     from "@/components/ui/WhoOwesWho";
+import ActivityFeed   from "@/components/ui/ActivityFeed";
 
 const BACKEND_URL = "http://127.0.0.1:8000";
 
@@ -23,6 +27,11 @@ type MismatchAlert = {
   date: string;
   document_type: string;
 };
+
+type HealthScore    = { net: number; trend_pct: number; color: "green"|"red"; this_month: string };
+type ExpenseSlice   = { category: string; amount: number; pct: number };
+type BalanceEntry   = { document_id: string; document_type: string; supplier_name: string; amount: number; currency: string; date: string };
+type ActivityItem   = { event_type: string; content: string; created_at: string };
 
 type SummaryData = {
   total: number;
@@ -34,6 +43,12 @@ type SummaryData = {
   pending_processing_count?: number;
   ready_for_query_count?: number;
   mismatch_alerts?: MismatchAlert[];
+  // Feature 2 analytics
+  health_score?:      HealthScore;
+  expense_breakdown?: ExpenseSlice[];
+  top_receivables?:   BalanceEntry[];
+  top_payables?:      BalanceEntry[];
+  activity_feed?:     ActivityItem[];
 };
 
 type RecentDocument = {
@@ -441,6 +456,42 @@ export default function DashboardPage() {
                   </BarChart>
                 </ResponsiveContainer>
               </div>
+            </section>
+          )}
+
+          {/* ── Feature 2: Widget 1 — Business Health Score ─────────────── */}
+          {summary?.health_score && (
+            <section className="mt-6">
+              <HealthScoreCard
+                health={summary.health_score}
+                lang={lang}
+                currency="LKR"
+              />
+            </section>
+          )}
+
+          {/* ── Feature 2: Widget 3 — Expense Donut ────────────────────── */}
+          {summary?.expense_breakdown && summary.expense_breakdown.length > 0 && (
+            <section className="mt-6">
+              <ExpenseDonut data={summary.expense_breakdown} lang={lang} currency="LKR" />
+            </section>
+          )}
+
+          {/* ── Feature 2: Widget 4 — Who Owes Who ─────────────────────── */}
+          {(summary?.top_receivables?.length || summary?.top_payables?.length) ? (
+            <section className="mt-6">
+              <WhoOwesWho
+                receivables={summary.top_receivables || []}
+                payables={summary.top_payables || []}
+                lang={lang}
+              />
+            </section>
+          ) : null}
+
+          {/* ── Feature 2: Widget 5 — Activity Feed ────────────────────── */}
+          {summary?.activity_feed && summary.activity_feed.length > 0 && (
+            <section className="mt-6">
+              <ActivityFeed items={summary.activity_feed} lang={lang} />
             </section>
           )}
         </main>
