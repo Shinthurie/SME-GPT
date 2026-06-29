@@ -21,12 +21,11 @@ export default function BottomNav() {
   const t = ui[lang];
 
   const items = [
-    { label: t.overview, icon: "dashboard", href: "/dashboard" },
-    { label: t.files, icon: "folder", href: "/repository" },
-    { label: t.query, icon: "query_stats", href: "/query" },
-    { label: lang === "si" ? "සැකසීම්" : "Settings", icon: "tune",     href: "/settings" },
-    { label: t.settings,                              icon: "person",   href: "/profile" },
-    ...(isAdmin ? [{ label: "Admin", icon: "admin_panel_settings", href: "/admin" }] : []),
+    { label: t.overview,                                icon: "dashboard",          href: "/dashboard" },
+    { label: t.files,                                   icon: "folder",             href: "/repository" },
+    { label: t.query,                                   icon: "query_stats",        href: "/query" },
+    { label: lang === "si" ? "සැකසීම්" : "Settings",  icon: "settings",           href: "/settings" },
+    ...(isAdmin ? [{ label: "Admin",                    icon: "admin_panel_settings", href: "/admin" }] : []),
   ];
 
   return (
@@ -38,12 +37,12 @@ export default function BottomNav() {
       }}
     >
       <div className="mx-auto w-full max-w-[1180px]">
-        <div className={`grid px-2 py-1.5 ${isAdmin ? "grid-cols-5" : "grid-cols-4"}`}>
+        <div className={`grid px-2 py-1.5 ${isAdmin ? "grid-cols-5" : "grid-cols-4"}`} key={`nav-${lang}`}>
           {items.map((item) => {
             const active = pathname === item.href || pathname.startsWith(item.href + "/");
             return (
               <Link
-                key={item.label}
+                key={item.href}
                 href={item.href}
                 className="flex flex-col items-center justify-center gap-0.5 rounded-xl px-2 py-2 text-center text-[10px] font-semibold transition sm:text-[11px]"
                 style={{

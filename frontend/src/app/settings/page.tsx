@@ -1,5 +1,9 @@
 "use client";
-// Settings page: IT-46 (Budget), IT-47 (Audit Pack), IT-48 (Monthly Email), IT-49 (WhatsApp)
+/**
+ * Unified Settings page.
+ * Absorbs all profile sections + IT-46/47/48/49 features.
+ * Tabs: Account | Security | Preferences | Budget | Export & Reports | Integrations
+ */
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -7,109 +11,263 @@ import MobileShell from "@/components/layout/MobileShell";
 import BottomNav from "@/components/layout/BottomNav";
 import ThemeToggle from "@/components/layout/ThemeToggle";
 import LanguageSwitcher from "@/components/layout/LanguageSwitcher";
-import { getStoredLanguage, AppLanguage, ui } from "@/lib/i18n";
+import { getSession, logoutUser, SessionUser, getStoredToken } from "@/lib/auth";
+import { AppLanguage, getStoredLanguage, ui, setStoredLanguage } from "@/lib/i18n";
+import { useTheme } from "@/lib/theme";
 
 const BACKEND_URL = "http://127.0.0.1:8000";
+
+type ProfileData = {
+  fullName: string; profileImage: string; companyName: string; businessUnit: string;
+  primaryLanguage: string; autoClassify: boolean; twoFactorEnabled: boolean;
+  phone: string; jobTitle: string; country: string;
+};
+
+const BUDGET_CATS = ["Transport","Food","Supplies","Utilities","Services","Rent","Marketing","Other"];
+const PERIOD_OPTIONS = [
+  { key:"this_week",  en:"This Week",    si:"මේ සතිය"      },
+  { key:"this_month", en:"This Month",   si:"මේ මාසය"      },
+  { key:"last_month", en:"Last Month",   si:"ගිය මාසය"     },
+  { key:"this_year",  en:"This Year",    si:"මේ අවුරුද්ද"  },
+  { key:"custom",     en:"Custom Range", si:"අභිමත"         },
+];
+
+type Tab = "account" | "security" | "preferences" | "budget" | "export" | "integrations";
 
 function getToken() {
   if (typeof window === "undefined") return "";
   return localStorage.getItem("token") || sessionStorage.getItem("token") || "";
 }
 
-const BUDGET_CATS = ["Transport","Food","Supplies","Utilities","Services","Rent","Marketing","Other"];
-const PERIOD_OPTIONS = [
-  { key: "this_week",   en: "This Week",   si: "මේ සතිය"     },
-  { key: "this_month",  en: "This Month",  si: "මේ මාසය"     },
-  { key: "last_month",  en: "Last Month",  si: "ගිය මාසය"    },
-  { key: "this_year",   en: "This Year",   si: "මේ අවුරුද්ද" },
-  { key: "custom",      en: "Custom Range", si: "අභිමත"       },
-];
+// ── Shared UI primitives (copied from profile) ────────────────────────────────
+function Card({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="overflow-hidden rounded-2xl" style={{ background:"var(--surface)", border:"1px solid var(--border)" }}>
+      {children}
+    </div>
+  );
+}
+function SectionLabel({ icon, title, danger }: { icon:string; title:string; danger?:boolean }) {
+  return (
+    <div className="mb-2 mt-5 flex items-center gap-2">
+      <span className="material-symbols-outlined text-[16px]" style={{ color: danger ? "#dc2626" : "var(--text-3)" }}>{icon}</span>
+      <p className="text-[11px] font-bold uppercase tracking-[0.08em]" style={{ color: danger ? "#dc2626" : "var(--text-3)" }}>{title}</p>
+    </div>
+  );
+}
+function Divider() { return <div className="mx-5" style={{ height:1, background:"var(--border)" }} />; }
+function FieldRow({ label, value }: { label:string; value:string }) {
+  return (
+    <div className="flex items-center justify-between px-5 py-3.5">
+      <p className="text-[13px] text-[var(--text-3)]">{label}</p>
+      <p className="text-[13px] font-medium text-[var(--text-1)]">{value || "—"}</p>
+    </div>
+  );
+}
+function Toggle({ enabled, onClick }: { enabled:boolean; onClick:()=>void }) {
+  return (
+    <button onClick={onClick} className="relative h-6 w-11 shrink-0 rounded-full transition" style={{ background: enabled ? "var(--brand-mid)" : "#d1d5db" }}>
+      <span className="absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white transition-transform" style={{ transform: enabled ? "translateX(20px)" : "none" }} />
+    </button>
+  );
+}
+function ChevronRow({ icon, title, subtitle, onClick, iconBg="#f3f4f6", iconColor="var(--text-3)" }: {
+  icon:string; title:string; subtitle:string; onClick:()=>void; iconBg?:string; iconColor?:string;
+}) {
+  return (
+    <button onClick={onClick} className="flex w-full items-center gap-4 px-5 py-4 text-left transition hover:bg-[var(--surface-2)]">
+      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl" style={{ background:iconBg, color:iconColor }}>
+        <span className="material-symbols-outlined text-[18px]">{icon}</span>
+      </span>
+      <div className="flex-1 min-w-0">
+        <p className="text-[13px] font-medium text-[var(--text-1)]">{title}</p>
+        <p className="text-[11px] text-[var(--text-3)]">{subtitle}</p>
+      </div>
+      <span className="material-symbols-outlined text-[20px] text-[var(--text-3)]">chevron_right</span>
+    </button>
+  );
+}
 
+// ── Page ──────────────────────────────────────────────────────────────────────
 export default function SettingsPage() {
-  const router = useRouter();
-  const [lang, setLang] = useState<AppLanguage>("en");
+  const router     = useRouter();
+  const { theme, toggle: toggleTheme } = useTheme();
+  const [lang, setLang]     = useState<AppLanguage>("en");
+  const [session, setSession] = useState<SessionUser | null>(null);
+  const [tab, setTab]         = useState<Tab>("account");
+
+  // Profile state
+  const [form, setForm]           = useState<ProfileData>({ fullName:"", profileImage:"", companyName:"", businessUnit:"", primaryLanguage:"en", autoClassify:true, twoFactorEnabled:false, phone:"", jobTitle:"", country:"" });
+  const [isEditing, setIsEditing] = useState(false);
+  const [saving, setSaving]       = useState(false);
+  const [message, setMessage]     = useState("");
+
+  // Password modal
+  const [pwAction, setPwAction]   = useState<"export"|"delete"|null>(null);
+  const [pwInput, setPwInput]     = useState("");
+  const [pwError, setPwError]     = useState("");
+  const [pwLoading, setPwLoading] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [deleting, setDeleting]   = useState(false);
 
   // Budget state
-  const [budgetEnabled, setBudgetEnabled] = useState(false);
-  const [budgets, setBudgets]             = useState<Record<string,string>>({});
-  const [budgetSaved, setBudgetSaved]     = useState(false);
+  const [budgetOn, setBudgetOn]   = useState(false);
+  const [budgets, setBudgets]     = useState<Record<string,string>>({});
+  const [budgetSaved, setBudgetSaved] = useState(false);
 
-  // Audit Pack state
-  const [period, setPeriod]               = useState("this_month");
-  const [customFrom, setCustomFrom]       = useState("");
-  const [customTo, setCustomTo]           = useState("");
-  const [exporting, setExporting]         = useState(false);
+  // Export state
+  const [period, setPeriod]       = useState("this_month");
+  const [customFrom, setCustomFrom] = useState("");
+  const [customTo, setCustomTo]   = useState("");
+  const [downloading, setDownloading] = useState(false);
 
-  // WhatsApp state
-  const [phoneNumber, setPhoneNumber]     = useState("");
-  const [phoneSaved, setPhoneSaved]       = useState(false);
-
-  // Monthly email toggle
-  const [monthlyEmail, setMonthlyEmail]   = useState(false);
+  // WhatsApp
+  const [waPhone, setWaPhone]     = useState("");
+  const [monthlyEmail, setMonthlyEmail] = useState(false);
 
   useEffect(() => {
     setLang(getStoredLanguage());
-    const token = getToken();
-    if (!token) { router.push("/login"); return; }
-    // Load saved budgets
-    fetch(`${BACKEND_URL}/user/budget-settings`, { headers: { Authorization: `Bearer ${token}` } })
-      .then(r => r.json())
-      .then(d => {
-        if (d.budgets && Object.keys(d.budgets).length > 0) {
-          setBudgetEnabled(true);
-          setBudgets(d.budgets);
+    const load = async () => {
+      const s = await getSession();
+      if (!s) { router.push("/login"); return; }
+      setSession(s);
+      try {
+        const res  = await fetch("/api/profile", { cache:"no-store" });
+        const data = await res.json();
+        if (res.ok && data.user) {
+          setForm({
+            fullName: data.user.fullName || s.fullName || "",
+            profileImage: data.user.profileImage || "",
+            companyName: data.user.companyName || "",
+            businessUnit: data.user.businessUnit || "",
+            primaryLanguage: getStoredLanguage(),
+            autoClassify: data.user.autoClassify ?? true,
+            twoFactorEnabled: data.user.twoFactorEnabled ?? false,
+            phone: data.user.phone || "",
+            jobTitle: data.user.jobTitle || "",
+            country: data.user.country || "",
+          });
         }
-      }).catch(() => {});
-    // Load stored phone (from profile)
-    const session = localStorage.getItem("sme_gpt_session");
-    if (session) {
-      try { setPhoneNumber(JSON.parse(session)?.phoneNumber || ""); } catch {}
-    }
+      } catch {}
+
+      const token = getToken();
+      // Load budgets
+      fetch(`${BACKEND_URL}/user/budget-settings`, { headers:{ Authorization:`Bearer ${token}` } })
+        .then(r => r.json()).then(d => {
+          if (d.budgets && Object.keys(d.budgets).length > 0) { setBudgetOn(true); setBudgets(d.budgets); }
+        }).catch(() => {});
+    };
+    load();
   }, []);
 
-  const saveBudgets = async () => {
-    const token = getToken();
-    await fetch(`${BACKEND_URL}/user/budget-settings`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ budgets: budgetEnabled ? budgets : {} }),
-    });
-    setBudgetSaved(true);
-    setTimeout(() => setBudgetSaved(false), 2500);
+  const update = (key: keyof ProfileData, val: string | boolean) => setForm(p => ({ ...p, [key]: val }));
+
+  const handleSave = async () => {
+    setSaving(true); setMessage("");
+    const token = getStoredToken();
+    try {
+      const res  = await fetch("/api/profile", { method:"PUT", headers:{"Content-Type":"application/json","Authorization":`Bearer ${token}`}, body:JSON.stringify(form) });
+      const data = await res.json();
+      if (!res.ok) { setMessage(data.error || "Save failed"); return; }
+      setMessage("Profile updated");
+      setIsEditing(false);
+      setStoredLanguage(form.primaryLanguage as AppLanguage);
+      setLang(form.primaryLanguage as AppLanguage);
+    } catch { setMessage("Save failed"); }
+    finally { setSaving(false); }
   };
 
-  const downloadAuditPack = async () => {
-    setExporting(true);
+  const handleToggle2FA = async () => {
     const token = getToken();
+    const res  = await fetch("/api/auth/2fa", { method:"PUT", headers:{"Content-Type":"application/json","Authorization":`Bearer ${token}`}, body:JSON.stringify({ enable:!form.twoFactorEnabled }) });
+    const data = await res.json();
+    if (res.ok) update("twoFactorEnabled", !form.twoFactorEnabled);
+    setMessage(data.message || "");
+  };
+
+  const handleExportData = async () => {
+    setExporting(true);
     try {
-      const body: Record<string, string> = { period };
-      if (period === "custom") { body.date_from = customFrom; body.date_to = customTo; }
-      const res = await fetch(`${BACKEND_URL}/reports/audit-pack`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) { alert("Export failed"); return; }
-      const blob = await res.blob();
-      const url  = URL.createObjectURL(blob);
-      const a    = document.createElement("a");
-      a.href = url; a.download = `audit_pack_${period}.zip`; a.click();
-      URL.revokeObjectURL(url);
+      const token  = getToken();
+      const res    = await fetch(`${BACKEND_URL}/user/export`, { headers:{ Authorization:`Bearer ${token}` } });
+      const data   = await res.json();
+      const rows   = (data.documents || []).map((d: Record<string,unknown>) => ({
+        "Document ID": d.document_id ?? "", "Type": d.document_type ?? "",
+        "Date": d.date ?? "", "Company": d.company_name ?? "",
+        "Counterparty": d.supplier_name ?? "", "Amount": d.payable_amount ?? d.final_total_amount ?? "",
+        "Currency": d.currency ?? "LKR",
+      }));
+      const { utils, writeFileXLSX } = await import("xlsx");
+      const wb = utils.book_new();
+      utils.book_append_sheet(wb, utils.json_to_sheet(rows), "Documents");
+      writeFileXLSX(wb, "SME-GPT-Export.xlsx");
     } finally { setExporting(false); }
   };
 
-  const t = ui[lang];
+  const handleDeleteAccount = async () => {
+    setDeleting(true);
+    const token = getToken();
+    try {
+      await fetch(`${BACKEND_URL}/user/account`, { method:"DELETE", headers:{ Authorization:`Bearer ${token}` } });
+      await fetch("/api/user/delete", { method:"DELETE" });
+      localStorage.removeItem("token"); sessionStorage.clear(); router.push("/login");
+    } finally { setDeleting(false); }
+  };
+
+  const handlePasswordConfirm = async () => {
+    if (!pwInput.trim()) return;
+    setPwLoading(true); setPwError("");
+    try {
+      const res  = await fetch("/api/auth/verify-password", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ password:pwInput }) });
+      const data = await res.json();
+      if (!data.valid) { setPwError("Incorrect password"); return; }
+      setPwAction(null); setPwInput("");
+      if (pwAction === "export") await handleExportData();
+      if (pwAction === "delete") await handleDeleteAccount();
+    } finally { setPwLoading(false); }
+  };
+
+  const saveBudgets = async () => {
+    const token = getToken();
+    await fetch(`${BACKEND_URL}/user/budget-settings`, { method:"PUT", headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`}, body:JSON.stringify({ budgets: budgetOn ? budgets : {} }) });
+    setBudgetSaved(true); setTimeout(() => setBudgetSaved(false), 2500);
+  };
+
+  const downloadAuditPack = async () => {
+    setDownloading(true);
+    const token = getToken();
+    const body: Record<string,string> = { period };
+    if (period === "custom") { body.date_from = customFrom; body.date_to = customTo; }
+    try {
+      const res  = await fetch(`${BACKEND_URL}/reports/audit-pack`, { method:"POST", headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`}, body:JSON.stringify(body) });
+      if (!res.ok) { alert("Export failed"); return; }
+      const blob = await res.blob();
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement("a"); a.href = url; a.download = `audit_pack_${period}.zip`; a.click();
+      URL.revokeObjectURL(url);
+    } finally { setDownloading(false); }
+  };
+
+  const t  = ui[lang];
+  const TABS: { key: Tab; icon: string; en: string; si: string }[] = [
+    { key:"account",      icon:"person",       en:"Account",      si:"ගිණුම"          },
+    { key:"security",     icon:"security",     en:"Security",     si:"ආරක්ෂාව"        },
+    { key:"preferences",  icon:"tune",         en:"Preferences",  si:"කැමැත්ත"       },
+    { key:"budget",       icon:"savings",      en:"Budget",       si:"අයවැය"          },
+    { key:"export",       icon:"download",     en:"Export",       si:"නිර්යාතය"      },
+    { key:"integrations", icon:"hub",          en:"Integrations", si:"ඒකාබද්ධකරණ"   },
+  ];
+
+  if (!session) return null;
 
   return (
     <MobileShell>
-      <div className="min-h-screen pb-24" style={{ background: "var(--bg)" }}>
+      <div className="min-h-screen pb-28" style={{ background:"var(--bg)" }}>
         <main className="mx-auto w-full max-w-[720px] px-4 py-6 sm:px-6">
 
           {/* Header */}
           <div className="mb-5 flex items-center justify-between">
-            <button onClick={() => router.back()}
-              className="flex items-center gap-1.5 text-[13px] font-semibold hover:opacity-75 transition"
-              style={{ color: "var(--brand-mid)" }}>
+            <button onClick={() => router.back()} className="flex items-center gap-1.5 text-[13px] font-semibold hover:opacity-75" style={{ color:"var(--brand-mid)" }}>
               <span className="material-symbols-outlined text-[16px]">arrow_back</span>
               {t.backToDashboard}
             </button>
@@ -119,172 +277,325 @@ export default function SettingsPage() {
           <h1 className="text-[22px] font-extrabold tracking-tight text-[var(--text-1)]">
             {lang === "si" ? "සැකසීම්" : "Settings"}
           </h1>
-          <p className="mt-1 text-[13px] text-[var(--text-2)]">
-            {lang === "si" ? "ඔබගේ SME-GPT අකවුන්ටය සකස් කරන්න" : "Configure your SME-GPT account preferences."}
-          </p>
 
-          <div className="mt-6 space-y-5">
+          {/* Tab strip */}
+          <div className="mt-4 flex gap-1.5 overflow-x-auto pb-1 no-scrollbar">
+            {TABS.map(tb => (
+              <button key={tb.key} onClick={() => setTab(tb.key)}
+                className="flex shrink-0 items-center gap-1.5 rounded-xl px-3.5 py-2 text-[12px] font-semibold transition"
+                style={tab === tb.key
+                  ? { background:"var(--brand-mid)", color:"#fff" }
+                  : { background:"var(--surface)", border:"1px solid var(--border)", color:"var(--text-2)" }}>
+                <span className="material-symbols-outlined text-[15px]">{tb.icon}</span>
+                {lang === "si" ? tb.si : tb.en}
+              </button>
+            ))}
+          </div>
 
-            {/* ── IT-46: Budget vs Actual ──────────────────────────────── */}
-            <section className="rounded-2xl p-5" style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-[15px] font-bold text-[var(--text-1)]">
-                    {lang === "si" ? "මාසික අයවැය" : "Monthly Budget Tracker"}
-                  </p>
-                  <p className="text-[12px] text-[var(--text-2)]">
-                    {lang === "si" ? "කාණ්ඩ අනුව ඉලක්ක නියම කරන්න"
-                      : "Set monthly spending targets per category. A comparison widget appears on your dashboard."}
-                  </p>
-                </div>
-                <button onClick={() => setBudgetEnabled(b => !b)}
-                  className="relative h-6 w-11 rounded-full transition"
-                  style={{ background: budgetEnabled ? "var(--brand-mid)" : "#d1d5db" }}>
-                  <span className="absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white transition-transform"
-                    style={{ transform: budgetEnabled ? "translateX(20px)" : "none" }} />
-                </button>
-              </div>
+          <div className="mt-5 space-y-1">
 
-              {budgetEnabled && (
-                <div className="mt-4 space-y-3">
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    {BUDGET_CATS.map(cat => (
-                      <div key={cat} className="flex items-center gap-3 rounded-xl border px-4 py-2.5"
-                        style={{ background: "var(--bg)", borderColor: "var(--border)" }}>
-                        <span className="flex-1 text-[13px] text-[var(--text-1)]">{cat}</span>
-                        <span className="text-[12px] text-[var(--text-3)]">LKR</span>
-                        <input type="number" min="0" value={budgets[cat] || ""}
-                          onChange={e => setBudgets(b => ({ ...b, [cat]: e.target.value }))}
-                          placeholder="0"
-                          className="w-24 bg-transparent text-right text-[13px] font-bold text-[var(--text-1)] outline-none" />
+            {/* ─── ACCOUNT TAB ──────────────────────────────────────────── */}
+            {tab === "account" && (
+              <>
+                {/* Profile card */}
+                <Card>
+                  <div className="flex flex-wrap items-center justify-between gap-4 p-5">
+                    <div className="flex items-center gap-4">
+                      <div className="flex h-14 w-14 items-center justify-center rounded-full text-white" style={{ background:"#c97b5a" }}>
+                        {form.profileImage
+                          ? <img src={form.profileImage} alt="Profile" className="h-full w-full rounded-full object-cover" />
+                          : <span className="material-symbols-outlined text-[26px]">person</span>}
                       </div>
+                      <div>
+                        {isEditing
+                          ? <input value={form.fullName} onChange={e => update("fullName",e.target.value)} placeholder="Full name" className="field-input h-9 rounded-xl border px-3 text-[15px] font-bold" />
+                          : <p className="text-[16px] font-bold text-[var(--text-1)]">{form.fullName || session.fullName}</p>}
+                        <p className="text-[13px] text-[var(--text-2)]">{session.email}</p>
+                      </div>
+                    </div>
+                    {!isEditing
+                      ? <button onClick={() => setIsEditing(true)} className="rounded-xl px-4 py-2 text-[13px] font-bold text-white" style={{ background:"var(--brand)" }}>{t.editProfileBtn}</button>
+                      : <div className="flex gap-2">
+                          <button onClick={() => setIsEditing(false)} className="rounded-xl px-4 py-2 text-[13px] font-semibold" style={{ border:"1px solid var(--border)", color:"var(--text-2)" }}>Cancel</button>
+                          <button onClick={handleSave} disabled={saving} className="rounded-xl px-4 py-2 text-[13px] font-bold text-white disabled:opacity-60" style={{ background:"var(--brand)" }}>{saving ? "Saving…" : "Save"}</button>
+                        </div>}
+                  </div>
+                </Card>
+
+                <SectionLabel icon="business" title={t.businessStructure} />
+                <Card>
+                  {isEditing ? (
+                    <>
+                      {[["companyName",t.organization],["businessUnit",t.businessUnit],["jobTitle",t.jobTitle],["country",t.country],["phone",t.phone]].map(([k,lbl],i) => (
+                        <div key={k}>
+                          {i > 0 && <Divider />}
+                          <div className="flex items-center justify-between gap-3 px-5 py-3">
+                            <p className="text-[13px] text-[var(--text-3)]">{lbl}</p>
+                            <input value={(form as Record<string,unknown>)[k] as string} onChange={e => update(k as keyof ProfileData, e.target.value)}
+                              className="field-input w-44 rounded-xl border px-3 py-1.5 text-[13px] text-right" />
+                          </div>
+                        </div>
+                      ))}
+                    </>
+                  ) : (
+                    <>
+                      <FieldRow label={t.organization}  value={form.companyName}  />
+                      <Divider />
+                      <FieldRow label={t.businessUnit}  value={form.businessUnit} />
+                      <Divider />
+                      <FieldRow label={t.jobTitle}       value={form.jobTitle}    />
+                      <Divider />
+                      <FieldRow label={t.country}        value={form.country}     />
+                      <Divider />
+                      <FieldRow label={t.phone}          value={form.phone}       />
+                    </>
+                  )}
+                </Card>
+
+                {message && (
+                  <p className="mt-2 rounded-xl px-4 py-2.5 text-center text-[13px] font-medium"
+                    style={message.includes("fail") || message.includes("Failed")
+                      ? { background:"rgba(220,38,38,0.08)", color:"#dc2626" }
+                      : { background:"rgba(22,163,74,0.08)", color:"#16a34a" }}>
+                    {message}
+                  </p>
+                )}
+
+                <SectionLabel icon="query_stats" title={t.activitySection} />
+                <Card>
+                  <ChevronRow icon="history" title={t.queryHistoryTitle} subtitle={t.savedQueriesCount}
+                    onClick={() => router.push("/profile/query-history")} />
+                </Card>
+
+                <button onClick={async () => { await logoutUser(); router.push("/login"); }}
+                  className="mt-5 w-full rounded-2xl py-4 text-[15px] font-bold transition hover:opacity-90"
+                  style={{ border:"1px solid rgba(220,38,38,0.3)", background:"rgba(220,38,38,0.06)", color:"#dc2626" }}>
+                  {t.signOut}
+                </button>
+                <p className="mt-4 text-center text-[11px] text-[var(--text-3)]">SME-GPT · {t.auditFooter}</p>
+              </>
+            )}
+
+            {/* ─── SECURITY TAB ─────────────────────────────────────────── */}
+            {tab === "security" && (
+              <>
+                <SectionLabel icon="security" title={t.corporateSecurity} danger />
+                <Card>
+                  <ChevronRow icon="key" title={t.changePassword} subtitle={t.resetPasswordSubtitle}
+                    iconBg="rgba(220,38,38,0.1)" iconColor="#dc2626"
+                    onClick={() => router.push("/forgot-password")} />
+                  <Divider />
+                  <div className="flex items-center justify-between px-5 py-4">
+                    <div className="flex items-center gap-4">
+                      <span className="flex h-10 w-10 items-center justify-center rounded-xl" style={{ background:"var(--brand-tint)", color:"var(--brand-mid)" }}>
+                        <span className="material-symbols-outlined text-[18px]">shield</span>
+                      </span>
+                      <div>
+                        <p className="text-[13px] font-medium text-[var(--text-1)]">{t.twoFactor}</p>
+                        <p className="text-[11px] text-[var(--text-3)]">{t.twoFactorSubtitle}</p>
+                      </div>
+                    </div>
+                    <Toggle enabled={form.twoFactorEnabled} onClick={handleToggle2FA} />
+                  </div>
+                  <Divider />
+                  <ChevronRow icon="admin_panel_settings" title={t.sessionManagement} subtitle={t.sessionSubtitle}
+                    iconBg="rgba(217,119,6,0.1)" iconColor="#d97706"
+                    onClick={() => router.push("/session-management")} />
+                </Card>
+
+                <SectionLabel icon="delete_forever" title={t.dangerZoneTitle} danger />
+                <Card>
+                  <ChevronRow icon="table_view" title={t.exportMyData} subtitle={t.exportSubtitle}
+                    iconBg="rgba(34,82,181,0.1)" iconColor="#2252b5"
+                    onClick={() => { setPwAction("export"); setPwInput(""); setPwError(""); }} />
+                  <Divider />
+                  <ChevronRow icon="delete_forever" title={t.deleteAccount} subtitle={t.deleteSubtitle}
+                    iconBg="rgba(220,38,38,0.1)" iconColor="#dc2626"
+                    onClick={() => { setPwAction("delete"); setPwInput(""); setPwError(""); }} />
+                </Card>
+
+                {/* Password modal */}
+                {pwAction && (
+                  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+                    <div className="w-full max-w-[380px] rounded-2xl p-6 shadow-xl" style={{ background:"var(--surface)" }}>
+                      <p className="text-[16px] font-extrabold text-[var(--text-1)]">{t.passwordConfirmTitle}</p>
+                      <p className="mt-1 text-[13px] text-[var(--text-2)]">{t.passwordConfirmHint}</p>
+                      <input type="password" value={pwInput} onChange={e => { setPwInput(e.target.value); setPwError(""); }}
+                        onKeyDown={e => { if (e.key === "Enter") handlePasswordConfirm(); }}
+                        placeholder="••••••••" autoFocus
+                        className="field-input mt-4 w-full rounded-xl border px-4 py-3 text-[15px] transition" />
+                      {pwError && <p className="mt-2 text-[12px] text-red-600">{pwError}</p>}
+                      <div className="mt-4 flex gap-3">
+                        <button onClick={() => setPwAction(null)} className="flex-1 rounded-xl py-2.5 text-[13px] font-semibold" style={{ border:"1px solid var(--border)", color:"var(--text-2)" }}>{t.cancel}</button>
+                        <button onClick={handlePasswordConfirm} disabled={pwLoading || !pwInput.trim()}
+                          className="flex-1 rounded-xl py-2.5 text-[13px] font-bold text-white disabled:opacity-50"
+                          style={{ background: pwAction === "delete" ? "#dc2626" : "var(--brand)" }}>
+                          {pwLoading ? "Verifying…" : pwAction === "export" ? t.downloadExcel : t.deleteAccount}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+
+            {/* ─── PREFERENCES TAB ──────────────────────────────────────── */}
+            {tab === "preferences" && (
+              <>
+                <SectionLabel icon="language" title={t.documentProcessing} />
+                <Card>
+                  <div className="flex items-center justify-between px-5 py-4">
+                    <p className="text-[13px] text-[var(--text-1)]">{t.primaryLanguage}</p>
+                    <select value={form.primaryLanguage}
+                      onChange={e => { update("primaryLanguage",e.target.value); setLang(e.target.value as AppLanguage); setStoredLanguage(e.target.value as AppLanguage); handleSave(); }}
+                      className="rounded-xl border px-3 py-1.5 text-[13px]" style={{ background:"var(--bg)", borderColor:"var(--border)", color:"var(--text-1)" }}>
+                      <option value="en">English</option>
+                      <option value="si">සිංහල</option>
+                    </select>
+                  </div>
+                  <Divider />
+                  <div className="flex items-center justify-between px-5 py-4">
+                    <div>
+                      <p className="text-[13px] font-medium text-[var(--text-1)]">{t.autoClassify}</p>
+                      <p className="text-[11px] text-[var(--text-3)]">Invoice / PO / DN</p>
+                    </div>
+                    <Toggle enabled={form.autoClassify} onClick={() => { update("autoClassify",!form.autoClassify); setTimeout(handleSave,100); }} />
+                  </div>
+                </Card>
+
+                <SectionLabel icon="palette" title={t.appearanceSection} />
+                <Card>
+                  <div className="flex items-center justify-between px-5 py-4">
+                    <div className="flex items-center gap-4">
+                      <span className="flex h-10 w-10 items-center justify-center rounded-xl" style={{ background:"var(--brand-tint)", color:"var(--brand-mid)" }}>
+                        <span className="material-symbols-outlined text-[18px]">{theme === "dark" ? "dark_mode" : "light_mode"}</span>
+                      </span>
+                      <div>
+                        <p className="text-[13px] font-medium text-[var(--text-1)]">{t.nightMode}</p>
+                        <p className="text-[11px] text-[var(--text-3)]">{theme === "dark" ? t.darkThemeActive : t.lightThemeActive}</p>
+                      </div>
+                    </div>
+                    <Toggle enabled={theme === "dark"} onClick={toggleTheme} />
+                  </div>
+                </Card>
+              </>
+            )}
+
+            {/* ─── BUDGET TAB (IT-46) ────────────────────────────────────── */}
+            {tab === "budget" && (
+              <>
+                <div className="rounded-2xl p-5" style={{ background:"var(--surface)", border:"1px solid var(--border)" }}>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-[15px] font-bold text-[var(--text-1)]">{lang === "si" ? "මාසික අයවැය" : "Monthly Budget Tracker"}</p>
+                      <p className="text-[12px] text-[var(--text-2)] mt-0.5">{lang === "si" ? "ඉලක්ක නියම කරන්න — ඩැශ්බෝඩයේ සංසන්දනය දිස් වේ" : "Set monthly targets — a comparison widget appears on your dashboard."}</p>
+                    </div>
+                    <Toggle enabled={budgetOn} onClick={() => setBudgetOn(b => !b)} />
+                  </div>
+                  {budgetOn && (
+                    <div className="mt-4 space-y-2">
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        {BUDGET_CATS.map(cat => (
+                          <div key={cat} className="flex items-center gap-2 rounded-xl border px-4 py-2.5" style={{ background:"var(--bg)", borderColor:"var(--border)" }}>
+                            <span className="flex-1 text-[13px] text-[var(--text-1)]">{cat}</span>
+                            <span className="text-[11px] text-[var(--text-3)]">LKR</span>
+                            <input type="number" min="0" value={budgets[cat] || ""} onChange={e => setBudgets(b => ({ ...b, [cat]:e.target.value }))}
+                              placeholder="0" className="w-24 bg-transparent text-right text-[13px] font-bold text-[var(--text-1)] outline-none" />
+                          </div>
+                        ))}
+                      </div>
+                      <button onClick={saveBudgets} className="flex items-center gap-2 rounded-xl px-5 py-2.5 text-[13px] font-bold text-white hover:opacity-90" style={{ background:"var(--brand-mid)" }}>
+                        <span className="material-symbols-outlined text-[16px]">save</span>
+                        {budgetSaved ? (lang === "si" ? "සුරකිනු ලැබිණි ✓" : "Saved ✓") : (lang === "si" ? "සුරකින්න" : "Save Budgets")}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+
+            {/* ─── EXPORT TAB (IT-47) ────────────────────────────────────── */}
+            {tab === "export" && (
+              <>
+                <div className="rounded-2xl p-5" style={{ background:"var(--surface)", border:"1px solid var(--border)" }}>
+                  <p className="text-[15px] font-bold text-[var(--text-1)]">{lang === "si" ? "විගණන ඇසුරුම" : "Audit Pack Export"}</p>
+                  <p className="mt-0.5 text-[12px] text-[var(--text-2)]">{lang === "si" ? "ලේඛන + Excel + JSON ZIP ලෙස." : "All documents for a period as a ZIP: images + Excel ledger + JSON summary."}</p>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {PERIOD_OPTIONS.map(p => (
+                      <button key={p.key} onClick={() => setPeriod(p.key)}
+                        className="rounded-xl px-4 py-2 text-[12px] font-semibold transition"
+                        style={period === p.key ? { background:"#2252b5", color:"#fff" } : { background:"var(--bg)", border:"1px solid var(--border)", color:"var(--text-2)" }}>
+                        {lang === "si" ? p.si : p.en}
+                      </button>
                     ))}
                   </div>
-                  <button onClick={saveBudgets}
-                    className="flex items-center gap-2 rounded-xl px-5 py-2.5 text-[13px] font-bold text-white transition hover:opacity-90"
-                    style={{ background: "var(--brand-mid)" }}>
-                    <span className="material-symbols-outlined text-[16px]">save</span>
-                    {budgetSaved
-                      ? (lang === "si" ? "සුරකිනු ලැබිණි ✓" : "Saved ✓")
-                      : (lang === "si" ? "සුරකින්න" : "Save Budgets")}
+                  {period === "custom" && (
+                    <div className="mt-3 flex flex-wrap items-center gap-3">
+                      <input type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)}
+                        className="rounded-xl border px-3 py-2 text-[13px]" style={{ background:"var(--bg)", borderColor:"var(--border)", color:"var(--text-1)" }} />
+                      <span className="text-[12px] text-[var(--text-3)]">{lang === "si" ? "සිට" : "to"}</span>
+                      <input type="date" value={customTo} onChange={e => setCustomTo(e.target.value)}
+                        className="rounded-xl border px-3 py-2 text-[13px]" style={{ background:"var(--bg)", borderColor:"var(--border)", color:"var(--text-1)" }} />
+                    </div>
+                  )}
+                  <button onClick={downloadAuditPack} disabled={downloading}
+                    className="mt-4 flex items-center gap-2 rounded-xl px-5 py-2.5 text-[13px] font-bold text-white disabled:opacity-60 hover:opacity-90"
+                    style={{ background:"#16a34a" }}>
+                    {downloading ? <span className="material-symbols-outlined animate-spin text-[16px]">progress_activity</span> : <span className="material-symbols-outlined text-[16px]">download</span>}
+                    {downloading ? (lang === "si" ? "සකස් කරමින්..." : "Generating…") : (lang === "si" ? "ZIP බාගන්න" : "Download ZIP")}
                   </button>
                 </div>
-              )}
-            </section>
 
-            {/* ── IT-47: Audit Pack Export ─────────────────────────────── */}
-            <section className="rounded-2xl p-5" style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
-              <p className="text-[15px] font-bold text-[var(--text-1)]">
-                {lang === "si" ? "විගණන ඇසුරුම" : "Audit Pack Export"}
-              </p>
-              <p className="mt-0.5 text-[12px] text-[var(--text-2)]">
-                {lang === "si"
-                  ? "ඔබ ඇති කාලසීමාව සඳහා සියලු ලේඛන + Excel + JSON ZIP ලෙස."
-                  : "Download all documents for a period as a ZIP containing images, Excel ledger, and JSON summary."}
-              </p>
-              <div className="mt-4 space-y-3">
-                <div className="flex flex-wrap gap-2">
-                  {PERIOD_OPTIONS.map(p => (
-                    <button key={p.key} onClick={() => setPeriod(p.key)}
-                      className="rounded-xl px-4 py-2 text-[12px] font-semibold transition"
-                      style={period === p.key
-                        ? { background: "#2252b5", color: "#fff" }
-                        : { background: "var(--bg)", border: "1px solid var(--border)", color: "var(--text-2)" }}>
-                      {lang === "si" ? p.si : p.en}
-                    </button>
-                  ))}
-                </div>
-                {period === "custom" && (
-                  <div className="flex items-center gap-3">
-                    <input type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)}
-                      className="rounded-xl border px-3 py-2 text-[13px]"
-                      style={{ background: "var(--bg)", borderColor: "var(--border)", color: "var(--text-1)" }} />
-                    <span className="text-[12px] text-[var(--text-3)]">{lang === "si" ? "සිට" : "to"}</span>
-                    <input type="date" value={customTo} onChange={e => setCustomTo(e.target.value)}
-                      className="rounded-xl border px-3 py-2 text-[13px]"
-                      style={{ background: "var(--bg)", borderColor: "var(--border)", color: "var(--text-1)" }} />
+                {/* Monthly P&L email (IT-48) */}
+                <div className="rounded-2xl p-5 mt-4" style={{ background:"var(--surface)", border:"1px solid var(--border)" }}>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-[15px] font-bold text-[var(--text-1)]">{lang === "si" ? "මාසික P&L ඊමේල්" : "Monthly P&L Email"}</p>
+                      <p className="text-[12px] text-[var(--text-2)] mt-0.5">{lang === "si" ? "සෑම මාසයේ 1 වැනිදා සාරාංශ ඊමේල් ලැබේ." : "Receive a P&L summary email on the 1st of every month."}</p>
+                    </div>
+                    <Toggle enabled={monthlyEmail} onClick={() => setMonthlyEmail(m => !m)} />
                   </div>
-                )}
-                <button onClick={downloadAuditPack} disabled={exporting}
-                  className="flex items-center gap-2 rounded-xl px-5 py-2.5 text-[13px] font-bold text-white transition disabled:opacity-60 hover:opacity-90"
-                  style={{ background: "#16a34a" }}>
-                  {exporting
-                    ? <span className="material-symbols-outlined animate-spin text-[16px]">progress_activity</span>
-                    : <span className="material-symbols-outlined text-[16px]">download</span>}
-                  {exporting
-                    ? (lang === "si" ? "සකස් කරමින්..." : "Generating…")
-                    : (lang === "si" ? "ZIP බාගන්න" : "Download ZIP")}
-                </button>
-              </div>
-            </section>
+                  {monthlyEmail && (
+                    <div className="mt-3 rounded-xl px-4 py-3 text-[12px]" style={{ background:"rgba(34,82,181,0.06)", border:"1px solid rgba(34,82,181,0.15)", color:"#2252b5" }}>
+                      Set <code>MONTHLY_EMAIL_ENABLED=true</code> in <code>backend/.env</code> and restart the backend. The scheduler fires at 08:00 on the 1st of each month.
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
 
-            {/* ── IT-48: Monthly P&L Email ─────────────────────────────── */}
-            <section className="rounded-2xl p-5" style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-[15px] font-bold text-[var(--text-1)]">
-                    {lang === "si" ? "මාසික P&L ඊමේල්" : "Monthly P&L Email"}
-                  </p>
-                  <p className="text-[12px] text-[var(--text-2)]">
-                    {lang === "si"
-                      ? "සෑම මාසයේ 1 වැනිදා ඔබේ ලාභ / පාඩු සාරාංශය ඊමේල් ලෙස ලැබේ."
-                      : "Receive a profit & loss summary email on the 1st of every month. Requires SMTP configuration in backend/.env."}
-                  </p>
+            {/* ─── INTEGRATIONS TAB (IT-49) ─────────────────────────────── */}
+            {tab === "integrations" && (
+              <>
+                <div className="rounded-2xl p-5" style={{ background:"var(--surface)", border:"1px solid var(--border)" }}>
+                  <div className="mb-3 flex items-center gap-2">
+                    <span className="material-symbols-outlined text-[20px]" style={{ color:"#25D366" }}>chat</span>
+                    <p className="text-[15px] font-bold text-[var(--text-1)]">{lang === "si" ? "WhatsApp ඒකාබද්ධතාව" : "WhatsApp Bill Forwarding"}</p>
+                  </div>
+                  <p className="text-[12px] text-[var(--text-2)]">{lang === "si" ? "WhatsApp හරහා ලැබෙන රිසිට් ඡායාරූප ස්වයංක‍ීයව ගබඩා කළ හැකිය." : "Forward bill photos from WhatsApp — they appear in your repository automatically."}</p>
+                  <div className="mt-4 space-y-3">
+                    <div>
+                      <label className="mb-1.5 block text-[12px] font-semibold text-[var(--text-2)]">
+                        {lang === "si" ? "ඔබගේ WhatsApp අංකය" : "Your WhatsApp Number (bills forwarded from this number)"}
+                      </label>
+                      <input value={waPhone} onChange={e => setWaPhone(e.target.value)} placeholder="+94771234567"
+                        className="w-full rounded-xl border px-4 py-2.5 text-[13px]"
+                        style={{ background:"var(--bg)", borderColor:"var(--border)", color:"var(--text-1)" }} />
+                    </div>
+                    <div className="rounded-xl px-4 py-3 text-[12px]" style={{ background:"rgba(22,163,74,0.06)", border:"1px solid rgba(22,163,74,0.2)", color:"#16a34a" }}>
+                      <p className="font-semibold mb-1">{lang === "si" ? "සැකසීම:" : "Setup:"}</p>
+                      <ol className="list-decimal list-inside space-y-1 opacity-90">
+                        <li>Create a Twilio account at twilio.com</li>
+                        <li>Get a WhatsApp-enabled number from the Twilio Sandbox</li>
+                        <li>Set webhook: <code>POST https://your-server/webhook/whatsapp</code></li>
+                        <li>Add <code>TWILIO_AUTH_TOKEN</code> + <code>TWILIO_ACCOUNT_SID</code> to <code>backend/.env</code></li>
+                        <li>Save your number above so SME-GPT can match incoming messages</li>
+                      </ol>
+                    </div>
+                  </div>
                 </div>
-                <button onClick={() => setMonthlyEmail(m => !m)}
-                  className="relative h-6 w-11 rounded-full transition"
-                  style={{ background: monthlyEmail ? "var(--brand-mid)" : "#d1d5db" }}>
-                  <span className="absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white transition-transform"
-                    style={{ transform: monthlyEmail ? "translateX(20px)" : "none" }} />
-                </button>
-              </div>
-              {monthlyEmail && (
-                <div className="mt-3 rounded-xl px-4 py-3 text-[12px]"
-                  style={{ background: "rgba(34,82,181,0.06)", border: "1px solid rgba(34,82,181,0.15)", color: "#2252b5" }}>
-                  <p className="font-semibold">{lang === "si" ? "ක‍ාර්යසාධනය:" : "To enable:"}</p>
-                  <p className="mt-1">Set <code>MONTHLY_EMAIL_ENABLED=true</code> in <code>backend/.env</code> and restart the backend. The scheduler runs at 08:00 on the 1st.</p>
-                </div>
-              )}
-            </section>
-
-            {/* ── IT-49: WhatsApp Integration ──────────────────────────── */}
-            <section className="rounded-2xl p-5" style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
-              <p className="text-[15px] font-bold text-[var(--text-1)]">
-                {lang === "si" ? "WhatsApp ඒකාබද්ධතාව" : "WhatsApp Bill Forwarding"}
-              </p>
-              <p className="mt-0.5 text-[12px] text-[var(--text-2)]">
-                {lang === "si"
-                  ? "WhatsApp හරහා ලැබෙන රිසිට් ඡායාරූප ස්වයංක‍ීයව ගබඩා කළ හැකිය."
-                  : "Forward bill photos from WhatsApp to your SME-GPT number — they appear in the repository automatically."}
-              </p>
-              <div className="mt-4 space-y-3">
-                <div>
-                  <label className="mb-1.5 block text-[12px] font-semibold text-[var(--text-2)]">
-                    {lang === "si" ? "ඔබගේ WhatsApp අංකය (ලේඛන ගනු ලැබේ)" : "Your WhatsApp Number (bills forwarded from this number)"}
-                  </label>
-                  <input value={phoneNumber} onChange={e => setPhoneNumber(e.target.value)}
-                    placeholder="+94771234567"
-                    className="w-full rounded-xl border px-4 py-2.5 text-[13px]"
-                    style={{ background: "var(--bg)", borderColor: "var(--border)", color: "var(--text-1)" }} />
-                </div>
-                <div className="rounded-xl px-4 py-3 text-[12px]"
-                  style={{ background: "rgba(22,163,74,0.06)", border: "1px solid rgba(22,163,74,0.2)", color: "#16a34a" }}>
-                  <p className="font-semibold">{lang === "si" ? "සැකසීම:" : "Setup steps:"}</p>
-                  <ol className="mt-1 list-decimal list-inside space-y-1 opacity-90">
-                    <li>Create a Twilio account at twilio.com</li>
-                    <li>Get a WhatsApp-enabled number from Twilio Sandbox</li>
-                    <li>Set webhook URL: <code>POST https://your-server/webhook/whatsapp</code></li>
-                    <li>Add <code>TWILIO_AUTH_TOKEN</code> + <code>TWILIO_ACCOUNT_SID</code> to backend/.env</li>
-                    <li>Save your phone number above so SME-GPT can match incoming messages to your account</li>
-                  </ol>
-                </div>
-                {phoneSaved && (
-                  <p className="text-[12px] font-bold text-green-600">
-                    {lang === "si" ? "සුරකිනු ලැබිණි ✓" : "Phone number saved ✓"}
-                  </p>
-                )}
-              </div>
-            </section>
+              </>
+            )}
 
           </div>
         </main>
