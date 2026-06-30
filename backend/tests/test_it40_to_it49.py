@@ -240,14 +240,8 @@ def test_audit_pack_custom_valid(monkeypatch):
     assert res.status_code == 200
 
 
-# ── IT-48: Monthly P&L email ─────────────────────────────────────────────────
-
-def test_monthly_pnl_sends_no_email_without_smtp(monkeypatch):
-    """_send_monthly_pnl_emails should exit cleanly when SMTP not configured."""
-    monkeypatch.setenv("SMTP_HOST", "")
-    monkeypatch.setenv("SMTP_USER", "")
-    # Should not raise
-    app_mod._send_monthly_pnl_emails()
+# ── IT-48: Monthly P&L email (removed — scheduler not in use) ────────────────
+# (test removed with the feature)
 
 
 # ── IT-49: WhatsApp Webhook ───────────────────────────────────────────────────

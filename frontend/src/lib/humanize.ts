@@ -53,12 +53,12 @@ export function metricLabel(key: string, lang: AppLanguage): string {
 }
 
 const FLOW: Record<string, Bi> = {
-  payable: { en: "Money you owe", si: "ඔබ ගෙවිය යුතු මුදල" },
-  receivable: { en: "Money owed to you", si: "ඔබට ලැබිය යුතු මුදල" },
-  cash_inflow: { en: "Money received", si: "ලැබුණු මුදල" },
-  cash_outflow: { en: "Money paid out", si: "ගෙවූ මුදල" },
-  expense: { en: "Expense", si: "වියදම" },
-  income: { en: "Income", si: "ආදායම" },
+  payable:      { en: "Payable",      si: "ගෙවිය යුතු"  },
+  receivable:   { en: "Receivable",   si: "ලැබිය යුතු"  },
+  cash_inflow:  { en: "Cash Inflow",  si: "මුදල් ලැබීම"  },
+  cash_outflow: { en: "Cash Outflow", si: "මුදල් ගෙවීම"  },
+  expense:      { en: "Expense",      si: "වියදම"        },
+  income:       { en: "Income",       si: "ආදායම"        },
 };
 
 export function humanizeFlow(value: string | undefined | null, lang: AppLanguage): string {
