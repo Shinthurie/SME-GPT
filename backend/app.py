@@ -1771,10 +1771,12 @@ def dashboard_summary(authorization: str = Header(default=None)):
 
     net_this = _month_net(this_month)
     net_last = _month_net(last_month)
-    trend_pct = round(((net_this - net_last) / abs(net_last) * 100) if net_last else 0, 1)
+    has_last_month_data = net_last != 0
+    trend_pct = round(((net_this - net_last) / abs(net_last) * 100) if has_last_month_data else 0, 1)
     health_score = {
         "net": net_this,
         "trend_pct": trend_pct,
+        "has_last_month_data": has_last_month_data,
         "color": "green" if net_this >= 0 else "red",
         "this_month": this_month,
     }
