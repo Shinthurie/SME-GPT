@@ -16,7 +16,6 @@ import {
 } from "recharts";
 import HealthScoreCard from "@/components/ui/HealthScoreCard";
 import WhoOwesWho     from "@/components/ui/WhoOwesWho";
-import ActivityFeed   from "@/components/ui/ActivityFeed";
 
 const BACKEND_URL = "http://127.0.0.1:8000";
 
@@ -29,7 +28,6 @@ type MismatchAlert = {
 
 type HealthScore    = { net: number; trend_pct: number; color: "green"|"red"; this_month: string };
 type BalanceEntry   = { document_id: string; document_type: string; supplier_name: string; amount: number; currency: string; date: string };
-type ActivityItem   = { event_type: string; content: string; created_at: string };
 
 type SummaryData = {
   total: number;
@@ -45,7 +43,6 @@ type SummaryData = {
   health_score?:      HealthScore;
   top_receivables?:   BalanceEntry[];
   top_payables?:      BalanceEntry[];
-  activity_feed?:     ActivityItem[];
 };
 
 type RecentDocument = {
@@ -477,12 +474,6 @@ export default function DashboardPage() {
             </section>
           ) : null}
 
-          {/* ── Feature 2: Widget 5 — Activity Feed ────────────────────── */}
-          {summary?.activity_feed && summary.activity_feed.length > 0 && (
-            <section className="mt-6">
-              <ActivityFeed items={summary.activity_feed} lang={lang} />
-            </section>
-          )}
         </main>
 
         <BottomNav />

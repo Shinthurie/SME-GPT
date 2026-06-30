@@ -128,7 +128,7 @@ def test_dashboard_summary_contains_analytics_keys(monkeypatch):
     body = resp.json()
     assert body["success"] is True
     # All Feature-2 keys must be present
-    for key in ("health_score", "top_receivables", "top_payables", "activity_feed"):
+    for key in ("health_score", "top_receivables", "top_payables"):
         assert key in body, f"Missing key: {key}"
     assert isinstance(body["health_score"], dict)
     assert "net" in body["health_score"]

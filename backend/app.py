@@ -1806,29 +1806,6 @@ def dashboard_summary(authorization: str = Header(default=None)):
     top_receivables = sorted(top_receivables, key=lambda x: -x["amount"])[:5]
     top_payables    = sorted(top_payables,    key=lambda x: -x["amount"])[:5]
 
-    # ── Widget 5: Activity Feed (from ActivityLog table) ──────────────────────
-    activity_feed = []
-    try:
-        with get_db_connection() as _conn:
-            with _conn.cursor() as _cur:
-                _cur.execute(
-                    'SELECT type, content, "createdAt" FROM "ActivityLog" '
-                    'WHERE "userId" = %s ORDER BY "createdAt" DESC LIMIT 10',
-                    (str(user_id),)
-                )
-                for row in (_cur.fetchall() or []):
-                    if isinstance(row, dict):
-                        evt, content, created = row.get("type",""), row.get("content",""), row.get("createdAt")
-                    else:
-                        evt, content, created = row[0], row[1], row[2]
-                    activity_feed.append({
-                        "event_type": evt,
-                        "content":    str(content or ""),
-                        "created_at": created.isoformat() if hasattr(created, "isoformat") else str(created or ""),
-                    })
-    except Exception as _af_err:
-        print(f"[DASHBOARD] activity feed failed (non-fatal): {_af_err}", flush=True)
-
     return {
         "success": True,
         "total": summary.get("total_documents", 0),
@@ -1846,7 +1823,6 @@ def dashboard_summary(authorization: str = Header(default=None)):
         "health_score":      health_score,
         "top_receivables":   top_receivables,
         "top_payables":      top_payables,
-        "activity_feed":     activity_feed,
     }
 
 
