@@ -2602,13 +2602,41 @@ def payables_report(authorization: str = Header(default=None)):
             except: pass
         return 0
 
+    # Receivable side — mirrors the payable structure (Outstanding / Settled / Overdue 30+)
+    recv_outstanding: list[dict] = []   # unpaid receivables, any age
+    recv_settled:      list[dict] = []   # received
+    recv_overdue:      list[dict] = []   # unpaid receivables, > 30 days old (subset of outstanding)
+
     for r in records:
         ft   = str(r.get("effective_flow_type") or r.get("flow_type") or "").lower()
         dt   = str(r.get("document_type") or "").lower()
         paid = str(r.get("paid_status") or "").lower()
+        recv = str(r.get("received_status") or "").lower()
         pos  = str(r.get("po_status")   or "").lower()
         amt  = _amt(r)
 
+        # ── Receivable bucket ────────────────────────────────────────────────
+        if ft in ("receivable", "cash_inflow") and amt > 0:
+            age = _days_old(str(r.get("date") or ""))
+            recv_row = {
+                "document_id":   r.get("document_id"),
+                "document_type": dt,
+                "supplier_name": r.get("supplier_name") or r.get("company_name") or "—",
+                "amount":        amt,
+                "currency":      r.get("currency") or "LKR",
+                "date":          r.get("date") or "",
+                "days_old":      age,
+                "received_status": recv,
+            }
+            if recv in ("received", "paid"):
+                recv_settled.append(recv_row)
+            else:
+                recv_outstanding.append(recv_row)
+                if age > 30:
+                    recv_overdue.append(recv_row)
+            continue   # a document is either payable or receivable, never both
+
+        # ── Payable bucket ───────────────────────────────────────────────────
         if ft not in ("payable", "cash_outflow", "expense") or amt == 0:
             continue
 
@@ -2637,10 +2665,13 @@ def payables_report(authorization: str = Header(default=None)):
         else:
             outstanding.append(row)   # invoice/receipt not yet paid
 
-    # Sort by amount descending
+    # Sort by amount descending (overdue by age)
     outstanding.sort(key=lambda x: -x["amount"])
     committed.sort(key=lambda x: -x["amount"])
     settled.sort(key=lambda x: -x["amount"])
+    recv_outstanding.sort(key=lambda x: -x["amount"])
+    recv_settled.sort(key=lambda x: -x["amount"])
+    recv_overdue.sort(key=lambda x: -x["days_old"])
 
     return {
         "success": True,
@@ -2651,10 +2682,19 @@ def payables_report(authorization: str = Header(default=None)):
             "outstanding_count": len(outstanding),
             "committed_count":   len(committed),
             "settled_count":     len(settled),
+            "recv_outstanding_total": round(sum(x["amount"] for x in recv_outstanding), 2),
+            "recv_settled_total":     round(sum(x["amount"] for x in recv_settled),     2),
+            "recv_overdue_total":     round(sum(x["amount"] for x in recv_overdue),     2),
+            "recv_outstanding_count": len(recv_outstanding),
+            "recv_settled_count":     len(recv_settled),
+            "recv_overdue_count":     len(recv_overdue),
         },
-        "outstanding": outstanding,
-        "committed":   committed,
-        "settled":     settled,
+        "outstanding":      outstanding,
+        "committed":        committed,
+        "settled":          settled,
+        "recv_outstanding": recv_outstanding,
+        "recv_settled":     recv_settled,
+        "recv_overdue":     recv_overdue,
     }
 
 
