@@ -930,6 +930,8 @@ class UpdateDocumentRequest(BaseModel):
     status: Optional[str] = None
     language: Optional[str] = None
     items: Optional[List[dict]] = None
+    tax_amount: Optional[Any] = None
+    tax_rate: Optional[Any] = None
     # IT-27 — PO approval workflow
     po_status: Optional[str] = None
     approved_by: Optional[str] = None
@@ -1420,7 +1422,7 @@ def update_document(document_id: str, payload: UpdateDocumentRequest, authorizat
     if "items" in update_data:
         update_data["items"] = normalize_items(update_data.get("items", []))
 
-    for numeric_key in ["raw_total_amount", "final_total_amount", "payable_amount", "cash_return", "cash_inflowed", "cash_outflowed"]:
+    for numeric_key in ["raw_total_amount", "final_total_amount", "payable_amount", "cash_return", "cash_inflowed", "cash_outflowed", "tax_amount", "tax_rate"]:
         if numeric_key in update_data:
             update_data[numeric_key] = safe_number(update_data[numeric_key])
 
@@ -1771,10 +1773,12 @@ def dashboard_summary(authorization: str = Header(default=None)):
 
     net_this = _month_net(this_month)
     net_last = _month_net(last_month)
-    trend_pct = round(((net_this - net_last) / abs(net_last) * 100) if net_last else 0, 1)
+    has_last_month_data = net_last != 0
+    trend_pct = round(((net_this - net_last) / abs(net_last) * 100) if has_last_month_data else 0, 1)
     health_score = {
         "net": net_this,
         "trend_pct": trend_pct,
+        "has_last_month_data": has_last_month_data,
         "color": "green" if net_this >= 0 else "red",
         "this_month": this_month,
     }
@@ -1806,29 +1810,6 @@ def dashboard_summary(authorization: str = Header(default=None)):
     top_receivables = sorted(top_receivables, key=lambda x: -x["amount"])[:5]
     top_payables    = sorted(top_payables,    key=lambda x: -x["amount"])[:5]
 
-    # ── Widget 5: Activity Feed (from ActivityLog table) ──────────────────────
-    activity_feed = []
-    try:
-        with get_db_connection() as _conn:
-            with _conn.cursor() as _cur:
-                _cur.execute(
-                    'SELECT type, content, "createdAt" FROM "ActivityLog" '
-                    'WHERE "userId" = %s ORDER BY "createdAt" DESC LIMIT 10',
-                    (str(user_id),)
-                )
-                for row in (_cur.fetchall() or []):
-                    if isinstance(row, dict):
-                        evt, content, created = row.get("type",""), row.get("content",""), row.get("createdAt")
-                    else:
-                        evt, content, created = row[0], row[1], row[2]
-                    activity_feed.append({
-                        "event_type": evt,
-                        "content":    str(content or ""),
-                        "created_at": created.isoformat() if hasattr(created, "isoformat") else str(created or ""),
-                    })
-    except Exception as _af_err:
-        print(f"[DASHBOARD] activity feed failed (non-fatal): {_af_err}", flush=True)
-
     return {
         "success": True,
         "total": summary.get("total_documents", 0),
@@ -1846,7 +1827,6 @@ def dashboard_summary(authorization: str = Header(default=None)):
         "health_score":      health_score,
         "top_receivables":   top_receivables,
         "top_payables":      top_payables,
-        "activity_feed":     activity_feed,
     }
 
 
@@ -2002,8 +1982,10 @@ def get_suppliers(
             directory[key] = {
                 "name": name,
                 "document_count": 0,
-                "total_payable": 0.0,
-                "total_receivable": 0.0,
+                "total_payable":    0.0,   # all documents flowing out
+                "total_receivable": 0.0,   # all documents flowing in
+                "total_paid":       0.0,   # outflows actually settled (paid_status=paid)
+                "total_received":   0.0,   # inflows actually collected (received_status=received)
                 "document_types": set(),
                 "last_transaction": "",
             }
@@ -2019,10 +2001,16 @@ def get_suppliers(
                     break
                 except ValueError:
                     pass
+        paid_st     = str(r.get("paid_status")     or "").lower()
+        received_st = str(r.get("received_status") or "").lower()
         if ft in ("payable", "cash_outflow", "expense"):
             entry["total_payable"] += amt
+            if paid_st in ("paid", "received"):
+                entry["total_paid"] += amt
         elif ft in ("receivable", "cash_inflow", "income"):
             entry["total_receivable"] += amt
+            if received_st in ("received", "paid"):
+                entry["total_received"] += amt
         entry["document_types"].add(str(r.get("document_type") or "").lower())
         date_val = str(r.get("date") or "")
         if date_val and date_val > entry["last_transaction"]:
@@ -2032,10 +2020,12 @@ def get_suppliers(
     for entry in sorted(directory.values(), key=lambda x: -x["document_count"]):
         result.append({
             **entry,
-            "document_types": sorted(entry["document_types"]),
-            "total_payable": round(entry["total_payable"], 2),
+            "document_types":   sorted(entry["document_types"]),
+            "total_payable":    round(entry["total_payable"],    2),
             "total_receivable": round(entry["total_receivable"], 2),
-            "net_position": round(entry["total_receivable"] - entry["total_payable"], 2),
+            "total_paid":       round(entry["total_paid"],       2),
+            "total_received":   round(entry["total_received"],   2),
+            "net_position":     round(entry["total_receivable"] - entry["total_payable"], 2),
         })
 
     return {"success": True, "count": len(result), "suppliers": result}
@@ -2359,10 +2349,10 @@ def save_budget_settings(
     return {"success": True, "message": "Budget settings saved"}
 
 
-# ── IT-47: Audit Pack Export ──────────────────────────────────────────────────
+# ── IT-47: Audit Pack Export ─────────────────────────────────────────────────
 
 class AuditPackRequest(BaseModel):
-    period: str = "this_month"   # this_week | this_month | last_month | this_year | custom
+    period: str = "this_month"
     date_from: Optional[str] = None
     date_to: Optional[str] = None
 
@@ -2372,171 +2362,95 @@ def export_audit_pack(
     payload: AuditPackRequest,
     authorization: str = Header(default=None),
 ):
-    """IT-47 — Generate and download an audit pack ZIP for the selected period."""
+    """Generate a ZIP containing an Excel ledger + JSON summary for the selected period."""
     user_id = get_current_user_id(authorization)
     from datetime import datetime, timedelta
     import io, zipfile, json as _json
+    from dataset_manager import parse_record_for_output, filter_records_by_doc_date
 
     today = datetime.today()
     if payload.period == "this_week":
-        lo = today - timedelta(days=today.weekday())
-        hi = today
+        lo = (today - timedelta(days=today.weekday())).strftime("%Y-%m-%d")
+        hi = today.strftime("%Y-%m-%d")
     elif payload.period == "this_month":
-        lo = today.replace(day=1)
-        hi = today
+        lo = today.replace(day=1).strftime("%Y-%m-%d")
+        hi = today.strftime("%Y-%m-%d")
     elif payload.period == "last_month":
-        hi = today.replace(day=1) - timedelta(days=1)
-        lo = hi.replace(day=1)
+        end = today.replace(day=1) - timedelta(days=1)
+        lo  = end.replace(day=1).strftime("%Y-%m-%d")
+        hi  = end.strftime("%Y-%m-%d")
     elif payload.period == "this_year":
-        lo = today.replace(month=1, day=1)
-        hi = today
+        lo = today.replace(month=1, day=1).strftime("%Y-%m-%d")
+        hi = today.strftime("%Y-%m-%d")
     elif payload.period == "custom":
-        try:
-            lo = datetime.strptime(payload.date_from, "%Y-%m-%d")
-            hi = datetime.strptime(payload.date_to,   "%Y-%m-%d")
-        except (TypeError, ValueError):
-            raise HTTPException(status_code=400, detail="date_from and date_to required for custom period (YYYY-MM-DD)")
+        lo = str(payload.date_from or "").strip()
+        hi = str(payload.date_to   or "").strip()
+        if not lo or not hi:
+            raise HTTPException(status_code=400, detail="date_from and date_to required for custom period")
     else:
-        lo = today.replace(day=1)
-        hi = today
+        lo = today.replace(day=1).strftime("%Y-%m-%d")
+        hi = today.strftime("%Y-%m-%d")
 
-    lo_str = lo.strftime("%Y-%m-%d")
-    hi_str = hi.strftime("%Y-%m-%d")
-
-    from dataset_manager import parse_record_for_output
+    # Load all records then filter using the multi-format date parser
     all_recs = [parse_record_for_output(r) for r in load_all_records(user_id=user_id)]
+    records  = filter_records_by_doc_date(all_recs, lo, hi)
 
-    def _in_range(r: dict) -> bool:
-        ds = str(r.get("date") or "").strip()[:10]
-        return lo_str <= ds <= hi_str if len(ds) == 10 else True
-
-    records = [r for r in all_recs if _in_range(r)]
-
-    # ── Build Excel ──────────────────────────────────────────────────────────
+    # ── Excel ─────────────────────────────────────────────────────────────────
+    excel_bytes = b""
     try:
         import openpyxl
         wb = openpyxl.Workbook()
         ws = wb.active
-        ws.title = "Transactions"
-        headers = ["Document ID","Type","Date","Company","Counterparty","Amount","Currency","Flow","Status"]
-        ws.append(headers)
+        ws.title = "Documents"
+        ws.append(["Document ID","Type","Date","Company","Counterparty","Amount","Currency","Flow","Status"])
         for r in records:
             status = r.get("paid_status") or r.get("received_status") or r.get("invoice_status") or ""
             ws.append([
                 r.get("document_id",""), r.get("document_type",""), r.get("date",""),
                 r.get("company_name",""), r.get("supplier_name",""),
                 r.get("final_total_amount",""), r.get("currency","LKR"),
-                r.get("effective_flow_type") or r.get("flow_type",""),
-                status,
+                r.get("effective_flow_type") or r.get("flow_type",""), status,
             ])
-        excel_buf = io.BytesIO()
-        wb.save(excel_buf)
-        excel_bytes = excel_buf.getvalue()
-    except ImportError:
-        excel_bytes = b""
+        buf = io.BytesIO(); wb.save(buf); excel_bytes = buf.getvalue()
+    except Exception as e:
+        print(f"[AUDIT-PACK] Excel failed: {e}", flush=True)
 
-    # ── Build ZIP ────────────────────────────────────────────────────────────
+    # ── Summary JSON ──────────────────────────────────────────────────────────
+    income  = round(sum(float(str(r.get("final_total_amount") or 0).replace(",","") or 0)
+                        for r in records
+                        if (r.get("effective_flow_type") or r.get("flow_type","")).lower()
+                        in ("receivable","cash_inflow","income")), 2)
+    expense = round(sum(float(str(r.get("final_total_amount") or 0).replace(",","") or 0)
+                        for r in records
+                        if (r.get("effective_flow_type") or r.get("flow_type","")).lower()
+                        in ("payable","cash_outflow","expense")), 2)
+    summary = {
+        "period": payload.period, "from": lo, "to": hi,
+        "total_documents": len(records),
+        "total_income": income, "total_expense": expense,
+        "net": round(income - expense, 2),
+    }
+
+    # ── ZIP ───────────────────────────────────────────────────────────────────
     zip_buf = io.BytesIO()
     with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
         if excel_bytes:
-            zf.writestr(f"transactions_{lo_str}_to_{hi_str}.xlsx", excel_bytes)
-        # Include document images if they exist
+            zf.writestr(f"documents_{lo}_to_{hi}.xlsx", excel_bytes)
+        zf.writestr("summary.json", _json.dumps(summary, indent=2, ensure_ascii=False))
         for r in records:
-            doc_id = r.get("document_id","")
+            doc_id   = r.get("document_id","")
             img_path = Path(SAVED_DOCS_DIR) / f"{doc_id}.png"
             if img_path.exists():
-                zf.write(img_path, f"documents/{doc_id}.png")
-        # Summary JSON
-        summary = {
-            "period": payload.period, "from": lo_str, "to": hi_str,
-            "total_documents": len(records),
-            "total_income":    round(sum(float(str(r.get("final_total_amount") or 0).replace(",","") or 0) for r in records if (r.get("effective_flow_type") or r.get("flow_type","")).lower() in ("receivable","cash_inflow","income")), 2),
-            "total_expense":   round(sum(float(str(r.get("final_total_amount") or 0).replace(",","") or 0) for r in records if (r.get("effective_flow_type") or r.get("flow_type","")).lower() in ("payable","cash_outflow","expense")), 2),
-        }
-        zf.writestr("summary.json", _json.dumps(summary, indent=2))
+                zf.write(img_path, f"images/{doc_id}.png")
 
     zip_buf.seek(0)
     _log_audit_event(user_id, "AUDIT_PACK_EXPORTED", f"period={payload.period} docs={len(records)}")
 
     from fastapi.responses import StreamingResponse
     return StreamingResponse(
-        zip_buf,
-        media_type="application/zip",
-        headers={"Content-Disposition": f"attachment; filename=audit_pack_{lo_str}_{hi_str}.zip"},
+        zip_buf, media_type="application/zip",
+        headers={"Content-Disposition": f"attachment; filename=sme_gpt_export_{lo}_{hi}.zip"},
     )
-
-
-# ── IT-48: Monthly P&L Email Scheduler ───────────────────────────────────────
-
-def _send_monthly_pnl_emails():
-    """Called by APScheduler on the 1st of each month at 08:00."""
-    import smtplib, json as _json
-    from email.mime.text import MIMEText
-    from email.mime.multipart import MIMEMultipart
-    from datetime import datetime, timedelta
-    from dataset_manager import parse_record_for_output
-
-    smtp_host = os.getenv("SMTP_HOST", "")
-    smtp_user = os.getenv("SMTP_USER", "")
-    smtp_pass = os.getenv("SMTP_PASS", "")
-    smtp_port = int(os.getenv("SMTP_PORT", "587"))
-    if not smtp_host or not smtp_user:
-        print("[PNL-EMAIL] SMTP not configured, skipping", flush=True)
-        return
-
-    today = datetime.today()
-    last_month_end   = today.replace(day=1) - timedelta(days=1)
-    last_month_start = last_month_end.replace(day=1)
-    lo = last_month_start.strftime("%Y-%m-%d")
-    hi = last_month_end.strftime("%Y-%m-%d")
-
-    try:
-        with get_db_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute('SELECT id, email, "companyName" FROM "User" WHERE "deletedAt" IS NULL')
-                users = cur.fetchall() or []
-    except Exception as e:
-        print(f"[PNL-EMAIL] DB error: {e}", flush=True)
-        return
-
-    for row in users:
-        uid   = (row.get("id")          if isinstance(row, dict) else row[0]) or ""
-        email = (row.get("email")       if isinstance(row, dict) else row[1]) or ""
-        co    = (row.get("companyName") if isinstance(row, dict) else row[2]) or "Your Company"
-        if not email: continue
-
-        recs = [parse_record_for_output(r) for r in load_all_records(user_id=uid)]
-        period_recs = [r for r in recs if lo <= str(r.get("date") or "")[:10] <= hi]
-        income  = round(sum(float(str(r.get("final_total_amount") or 0).replace(",","") or 0) for r in period_recs if (r.get("effective_flow_type") or r.get("flow_type","")).lower() in ("receivable","cash_inflow","income")), 2)
-        expense = round(sum(float(str(r.get("final_total_amount") or 0).replace(",","") or 0) for r in period_recs if (r.get("effective_flow_type") or r.get("flow_type","")).lower() in ("payable","cash_outflow","expense")), 2)
-        net     = round(income - expense, 2)
-        color   = "#16a34a" if net >= 0 else "#dc2626"
-
-        html = f"""<div style="font-family:sans-serif;max-width:580px;margin:0 auto">
-          <h2 style="color:#2252b5">Monthly P&L — {last_month_end.strftime('%B %Y')}</h2>
-          <p>Hi {co},</p>
-          <table style="width:100%;border-collapse:collapse;margin:16px 0">
-            <tr><td style="padding:10px;background:#f3f4f6;font-weight:bold">Total Income</td>
-                <td style="padding:10px;color:#16a34a;font-weight:bold;text-align:right">LKR {income:,.2f}</td></tr>
-            <tr><td style="padding:10px;background:#f3f4f6;font-weight:bold">Total Expenses</td>
-                <td style="padding:10px;color:#dc2626;font-weight:bold;text-align:right">LKR {expense:,.2f}</td></tr>
-            <tr style="background:{color}15"><td style="padding:10px;font-weight:bold">Net Profit / Loss</td>
-                <td style="padding:10px;color:{color};font-weight:bold;font-size:18px;text-align:right">LKR {net:,.2f}</td></tr>
-          </table>
-          <p style="color:#666;font-size:12px">Powered by SME-GPT · Log in for full details</p></div>"""
-
-        try:
-            msg = MIMEMultipart("alternative")
-            msg["Subject"] = f"SME-GPT P&L Summary — {last_month_end.strftime('%B %Y')}"
-            msg["From"]    = smtp_user
-            msg["To"]      = email
-            msg.attach(MIMEText(html, "html"))
-            with smtplib.SMTP(smtp_host, smtp_port) as s:
-                s.starttls(); s.login(smtp_user, smtp_pass)
-                s.sendmail(smtp_user, [email], msg.as_string())
-            print(f"[PNL-EMAIL] sent to {email}", flush=True)
-        except Exception as e:
-            print(f"[PNL-EMAIL] failed for {email}: {e}", flush=True)
 
 
 # ── IT-49: WhatsApp Webhook ───────────────────────────────────────────────────
@@ -2628,63 +2542,139 @@ async def whatsapp_webhook(request: Request):
     return {"status": "queued", "document_id": doc_id}
 
 
-@app.get("/reports/vat")
-def vat_report(
-    authorization: str = Header(default=None),
-    year: int = Query(default=0, ge=0),
-):
-    """IT-25 — VAT/Tax summary report: groups tax by month."""
+
+@app.get("/reports/payables")
+def payables_report(authorization: str = Header(default=None)):
+    """Payables Analysis — avoids double-counting PO + Invoice for same transaction.
+
+    Logic:
+      - Outstanding Invoices  → invoice/receipt docs with paid_status NOT 'paid'
+      - Committed POs         → PO docs where po_status is pending/approved (not yet invoiced)
+      - Settled               → any payable doc with paid_status = 'paid'
+
+    A PO in 'fulfilled' state is excluded from Committed because a real Invoice should
+    already exist for it. A PO in 'pending'/'approved' state is a future obligation only.
+    """
     user_id = get_current_user_id(authorization)
+    from dataset_manager import parse_record_for_output
     from datetime import datetime
 
-    records = load_all_records(user_id=user_id)
+    records = [parse_record_for_output(r) for r in load_all_records(user_id=user_id)]
 
-    monthly: dict[str, dict] = {}
-    total_tax = 0.0
-    for r in records:
-        tax = r.get("tax_amount")
-        if tax is None or str(tax).upper() in ("NULL", "", "NONE"):
-            continue
-        try:
-            tax_val = float(str(tax).replace(",", ""))
-        except ValueError:
-            continue
-        if tax_val <= 0:
-            continue
+    outstanding: list[dict] = []   # invoices/receipts not yet paid
+    committed:   list[dict] = []   # POs that are pending/approved (promise, no invoice yet)
+    settled:     list[dict] = []   # already paid
 
-        date_str = str(r.get("date") or "")
-        month_key = "Unknown"
-        for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y", "%d %b %Y"):
+    def _amt(r: dict) -> float:
+        for f in ("payable_amount", "final_total_amount"):
+            v = r.get(f)
+            if v not in (None, "NULL", "", "NONE"):
+                try: return float(str(v).replace(",", ""))
+                except: pass
+        return 0.0
+
+    def _days_old(date_str: str) -> int:
+        if not date_str or date_str == "NULL": return 0
+        for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y", "%d %b %Y", "%B %d, %Y"):
             try:
-                dt = datetime.strptime(date_str[:10], fmt)
-                if year and dt.year != year:
-                    break
-                month_key = dt.strftime("%Y-%m")
-                break
-            except ValueError:
-                continue
+                d = datetime.strptime(date_str[:10], fmt)
+                return (datetime.today() - d).days
+            except: pass
+        return 0
 
-        if month_key not in monthly:
-            monthly[month_key] = {"month": month_key, "tax_total": 0.0, "document_count": 0, "documents": []}
-        monthly[month_key]["tax_total"] = round(monthly[month_key]["tax_total"] + tax_val, 2)
-        monthly[month_key]["document_count"] += 1
-        monthly[month_key]["documents"].append({
-            "document_id": r.get("document_id"),
-            "document_type": r.get("document_type"),
-            "supplier_name": r.get("supplier_name"),
-            "tax_amount": tax_val,
-            "tax_rate": r.get("tax_rate"),
-            "date": r.get("date"),
-        })
-        total_tax += tax_val
+    # Receivable side — mirrors the payable structure (Outstanding / Settled / Overdue 30+)
+    recv_outstanding: list[dict] = []   # unpaid receivables, any age
+    recv_settled:      list[dict] = []   # received
+    recv_overdue:      list[dict] = []   # unpaid receivables, > 30 days old (subset of outstanding)
 
-    months_sorted = sorted(monthly.values(), key=lambda x: x["month"])
+    for r in records:
+        ft   = str(r.get("effective_flow_type") or r.get("flow_type") or "").lower()
+        dt   = str(r.get("document_type") or "").lower()
+        paid = str(r.get("paid_status") or "").lower()
+        recv = str(r.get("received_status") or "").lower()
+        pos  = str(r.get("po_status")   or "").lower()
+        amt  = _amt(r)
+
+        # ── Receivable bucket ────────────────────────────────────────────────
+        if ft in ("receivable", "cash_inflow") and amt > 0:
+            age = _days_old(str(r.get("date") or ""))
+            recv_row = {
+                "document_id":   r.get("document_id"),
+                "document_type": dt,
+                "supplier_name": r.get("supplier_name") or r.get("company_name") or "—",
+                "amount":        amt,
+                "currency":      r.get("currency") or "LKR",
+                "date":          r.get("date") or "",
+                "days_old":      age,
+                "received_status": recv,
+            }
+            if recv in ("received", "paid"):
+                recv_settled.append(recv_row)
+            else:
+                recv_outstanding.append(recv_row)
+                if age > 30:
+                    recv_overdue.append(recv_row)
+            continue   # a document is either payable or receivable, never both
+
+        # ── Payable bucket ───────────────────────────────────────────────────
+        if ft not in ("payable", "cash_outflow", "expense") or amt == 0:
+            continue
+
+        row = {
+            "document_id":   r.get("document_id"),
+            "document_type": dt,
+            "supplier_name": r.get("supplier_name") or r.get("company_name") or "—",
+            "amount":        amt,
+            "currency":      r.get("currency") or "LKR",
+            "date":          r.get("date") or "",
+            "days_old":      _days_old(str(r.get("date") or "")),
+            "paid_status":   paid,
+            "po_status":     pos,
+            "order_id":      r.get("order_id") or "",
+            "notes":         r.get("notes") or "",
+        }
+
+        if paid in ("paid", "received"):
+            settled.append(row)
+        elif dt == "po":
+            # PO fulfilled/cancelled → real invoice exists; exclude from committed to avoid double-count
+            if pos in ("fulfilled", "cancelled", "rejected"):
+                pass   # omit — these should have matching invoices
+            else:
+                committed.append(row)   # pending/approved/partially_delivered
+        else:
+            outstanding.append(row)   # invoice/receipt not yet paid
+
+    # Sort by amount descending (overdue by age)
+    outstanding.sort(key=lambda x: -x["amount"])
+    committed.sort(key=lambda x: -x["amount"])
+    settled.sort(key=lambda x: -x["amount"])
+    recv_outstanding.sort(key=lambda x: -x["amount"])
+    recv_settled.sort(key=lambda x: -x["amount"])
+    recv_overdue.sort(key=lambda x: -x["days_old"])
+
     return {
         "success": True,
-        "year": year or "all",
-        "total_tax": round(total_tax, 2),
-        "month_count": len(months_sorted),
-        "months": months_sorted,
+        "summary": {
+            "outstanding_total": round(sum(x["amount"] for x in outstanding), 2),
+            "committed_total":   round(sum(x["amount"] for x in committed),   2),
+            "settled_total":     round(sum(x["amount"] for x in settled),     2),
+            "outstanding_count": len(outstanding),
+            "committed_count":   len(committed),
+            "settled_count":     len(settled),
+            "recv_outstanding_total": round(sum(x["amount"] for x in recv_outstanding), 2),
+            "recv_settled_total":     round(sum(x["amount"] for x in recv_settled),     2),
+            "recv_overdue_total":     round(sum(x["amount"] for x in recv_overdue),     2),
+            "recv_outstanding_count": len(recv_outstanding),
+            "recv_settled_count":     len(recv_settled),
+            "recv_overdue_count":     len(recv_overdue),
+        },
+        "outstanding":      outstanding,
+        "committed":        committed,
+        "settled":          settled,
+        "recv_outstanding": recv_outstanding,
+        "recv_settled":     recv_settled,
+        "recv_overdue":     recv_overdue,
     }
 
 

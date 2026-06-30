@@ -3,6 +3,7 @@
 type HealthScore = {
   net: number;
   trend_pct: number;
+  has_last_month_data?: boolean;
   color: "green" | "red";
   this_month: string;
 };
@@ -53,7 +54,12 @@ export default function HealthScoreCard({
               </span>
             </span>
           )}
-          {trendZero && (
+          {trendZero && health.has_last_month_data === false && (
+            <span className="text-[11px] opacity-60">
+              {lang === "si" ? "ගිය මාසයේ දත්ත නැත" : "No data for last month"}
+            </span>
+          )}
+          {trendZero && health.has_last_month_data !== false && (
             <span className="text-[11px] opacity-60">
               {lang === "si" ? "මාරුවක් නැත" : "No change"}
             </span>

@@ -282,6 +282,8 @@ export default function AnalysisDetailPage() {
           paid_status: editedDocument.paid_status,
           language: editedDocument.language,
           items: editedDocument.items,
+          tax_amount: editedDocument.tax_amount,
+          tax_rate: editedDocument.tax_rate,
         }),
       });
 
@@ -602,37 +604,43 @@ export default function AnalysisDetailPage() {
                     <br />
                     <span className="font-semibold text-[#0f172a]">{t.partyLabel}:</span> {formatParty()}
                     <br />
-                    <span className="font-semibold text-[#0f172a]">{t.flowTypeLabel}:</span>{" "}
-                    {editMode ? (
-                      <select
-                        value={target.flow_type || "unknown"}
-                        onChange={(e) => updateField("flow_type", e.target.value)}
-                        className="ml-2 rounded border border-slate-200 px-2 py-1 text-[13px]"
-                      >
-                        <option value="unknown">{lang === "si" ? "නොදනී" : "Unknown"}</option>
-                        <option value="payable">{humanizeFlow("payable", lang)}</option>
-                        <option value="receivable">{humanizeFlow("receivable", lang)}</option>
-                        <option value="cash_inflow">{humanizeFlow("cash_inflow", lang)}</option>
-                        <option value="cash_outflow">{humanizeFlow("cash_outflow", lang)}</option>
-                      </select>
-                    ) : (target.flow_type && target.flow_type !== "NULL" ? humanizeFlow(target.flow_type, lang) : "—")}
-                    <br />
-                    <span className="font-semibold text-[#0f172a]">{t.categoryLabel}:</span>{" "}
-                    {(() => {
-                      const ft = (target.flow_type || "").toLowerCase();
-                      const derived = (target.category && target.category !== "NULL")
-                        ? target.category
-                        : ["receivable","cash_inflow"].includes(ft) ? t.categoryRevenue
-                        : ["payable","cash_outflow"].includes(ft) ? t.categoryExpenses
-                        : t.categoryUnknown;
-                      return (
-                        <span className={`ml-1 inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-bold ${
-                          derived === "Revenue"  ? "bg-green-50 text-green-700" :
-                          derived === "Expenses" ? "bg-red-50 text-red-700"    :
-                                                   "bg-slate-50 text-slate-500"
-                        }`}>{derived}</span>
-                      );
-                    })()}
+                    {/* Hide Flow Type and Category for DN (no amounts) and PO (always payable) */}
+                    {target.document_type !== "dn" && target.document_type !== "po" && (
+                      <>
+                        <span className="font-semibold text-[#0f172a]">{t.flowTypeLabel}:</span>{" "}
+                        {editMode ? (
+                          <select
+                            value={target.flow_type || "unknown"}
+                            onChange={(e) => updateField("flow_type", e.target.value)}
+                            className="ml-2 rounded border border-slate-200 px-2 py-1 text-[13px]"
+                          >
+                            <option value="unknown">{lang === "si" ? "නොදනී" : "Unknown"}</option>
+                            <option value="payable">{humanizeFlow("payable", lang)}</option>
+                            <option value="receivable">{humanizeFlow("receivable", lang)}</option>
+                            <option value="cash_inflow">{humanizeFlow("cash_inflow", lang)}</option>
+                            <option value="cash_outflow">{humanizeFlow("cash_outflow", lang)}</option>
+                          </select>
+                        ) : (target.flow_type && target.flow_type !== "NULL" ? humanizeFlow(target.flow_type, lang) : "—")}
+                        <br />
+                        <span className="font-semibold text-[#0f172a]">{t.categoryLabel}:</span>{" "}
+                        {(() => {
+                          const ft = (target.flow_type || "").toLowerCase();
+                          const derived = (target.category && target.category !== "NULL")
+                            ? target.category
+                            : ["receivable","cash_inflow"].includes(ft) ? t.categoryRevenue
+                            : ["payable","cash_outflow"].includes(ft) ? t.categoryExpenses
+                            : t.categoryUnknown;
+                          return (
+                            <span className={`ml-1 inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-bold ${
+                              derived === "Revenue"  ? "bg-green-50 text-green-700" :
+                              derived === "Expenses" ? "bg-red-50 text-red-700"    :
+                                                       "bg-slate-50 text-slate-500"
+                            }`}>{derived}</span>
+                          );
+                        })()}
+                        <br />
+                      </>
+                    )}
                   </InfoCard>
 
                   <InfoCard title={t.partiesTitle}>
@@ -647,32 +655,67 @@ export default function AnalysisDetailPage() {
                       />
                     ) : target.company_name || "NULL"}
                     <br />
-                    <span className="font-semibold text-[#0f172a]">
-                      {(() => {
-                        const dt = target.document_type || "";
-                        const ft = target.flow_type || "";
-                        if (dt === "dn") return lang === "si" ? "ලබාදෙන්නා:" : "Delivered By (Supplier):";
-                        if (dt === "po") return lang === "si" ? "සැපයුම්කරු:" : "Supplier:";
-                        if (dt === "invoice") {
-                          if (["receivable","cash_inflow"].includes(ft)) return lang === "si" ? "ගනුදෙනුකරු:" : "Bill To (Customer):";
-                          return lang === "si" ? "සැපයුම්කරු:" : "Bill From (Supplier):";
-                        }
-                        if (dt === "receipt") {
-                          if (["cash_inflow","receivable"].includes(ft)) return lang === "si" ? "ලැබුනේ:" : "Received From (Customer):";
-                          return lang === "si" ? "ගෙව්වේ:" : "Paid To (Supplier):";
-                        }
-                        return ["receivable","cash_inflow"].includes(ft)
-                          ? (lang === "si" ? "ගනුදෙනුකරු:" : "Customer:")
-                          : (lang === "si" ? "සැපයුම්කරු:" : "Supplier:");
-                      })()}
-                    </span>{" "}
-                    {editMode ? (
-                      <input
-                        value={target.supplier_name || ""}
-                        onChange={(e) => updateField("supplier_name", e.target.value)}
-                        className="ml-2 rounded border border-slate-200 px-2 py-1 text-[13px]"
-                      />
-                    ) : target.supplier_name || "NULL"}
+
+                    {/* DN: role selector — Delivered By or Delivered To */}
+                    {target.document_type === "dn" && (
+                      <>
+                        <span className="font-semibold text-[#0f172a]">
+                          {lang === "si" ? "භූමිකාව:" : "Role:"}
+                        </span>{" "}
+                        <select
+                          value={target.flow_type === "income" ? "delivered_to" : "delivered_by"}
+                          onChange={(e) => updateField("flow_type", e.target.value === "delivered_to" ? "income" : "expense")}
+                          className="ml-2 rounded border border-slate-200 px-2 py-1 text-[13px]"
+                        >
+                          <option value="delivered_by">{lang === "si" ? "අපට ලබා දෙනු ලැබිණි (Delivered By)" : "Delivered By (we received goods)"}</option>
+                          <option value="delivered_to">{lang === "si" ? "අපි ලබා දුන්නෙමු (Delivered To)" : "Delivered To (we sent goods)"}</option>
+                        </select>
+                        <br />
+                        <span className="font-semibold text-[#0f172a]">
+                          {target.flow_type === "income"
+                            ? (lang === "si" ? "ලබා දුන් ගනුදෙනුකරු:" : "Delivered To (Customer):")
+                            : (lang === "si" ? "ලබාදෙන්නා (සැපයුම්කරු):" : "Delivered By (Supplier):")}
+                        </span>{" "}
+                        {editMode ? (
+                          <input
+                            value={target.supplier_name || ""}
+                            onChange={(e) => updateField("supplier_name", e.target.value)}
+                            className="ml-2 rounded border border-slate-200 px-2 py-1 text-[13px]"
+                          />
+                        ) : target.supplier_name || "NULL"}
+                      </>
+                    )}
+
+                    {/* Non-DN: standard supplier label */}
+                    {target.document_type !== "dn" && (
+                      <>
+                        <span className="font-semibold text-[#0f172a]">
+                          {(() => {
+                            const dt = target.document_type || "";
+                            const ft = target.flow_type || "";
+                            if (dt === "po") return lang === "si" ? "සැපයුම්කරු:" : "Supplier:";
+                            if (dt === "invoice") {
+                              if (["receivable","cash_inflow"].includes(ft)) return lang === "si" ? "ගනුදෙනුකරු:" : "Bill To (Customer):";
+                              return lang === "si" ? "සැපයුම්කරු:" : "Bill From (Supplier):";
+                            }
+                            if (dt === "receipt") {
+                              if (["cash_inflow","receivable"].includes(ft)) return lang === "si" ? "ලැබුනේ:" : "Received From (Customer):";
+                              return lang === "si" ? "ගෙව්වේ:" : "Paid To (Supplier):";
+                            }
+                            return ["receivable","cash_inflow"].includes(ft)
+                              ? (lang === "si" ? "ගනුදෙනුකරු:" : "Customer:")
+                              : (lang === "si" ? "සැපයුම්කරු:" : "Supplier:");
+                          })()}
+                        </span>{" "}
+                        {editMode ? (
+                          <input
+                            value={target.supplier_name || ""}
+                            onChange={(e) => updateField("supplier_name", e.target.value)}
+                            className="ml-2 rounded border border-slate-200 px-2 py-1 text-[13px]"
+                          />
+                        ) : target.supplier_name || "NULL"}
+                      </>
+                    )}
                   </InfoCard>
 
                   {target.document_type !== "dn" && <InfoCard title={target.document_type === "po" ? (lang === "si" ? "ඇණවුම් සාරාංශය" : "Order Summary") : t.financialSummaryTitle}>
@@ -902,24 +945,106 @@ export default function AnalysisDetailPage() {
                   {/* TAX DETAILS — hidden for DN (no financial value) */}
                   {target.document_type !== "dn" && <InfoCard title={t.taxDetailsTitle}>
                     {(() => {
-                      const rawTax = target.tax_amount;
-                      const rawRate = target.tax_rate;
-                      const taxAmt = rawTax != null && rawTax !== "NULL" && rawTax !== "" ? parseFloat(String(rawTax)) : null;
-                      const taxRate = rawRate != null && rawRate !== "NULL" && rawRate !== "" ? parseFloat(String(rawRate)) : null;
                       const cur = target.currency && target.currency !== "NULL" ? target.currency : "LKR";
 
-                      if (taxAmt !== null && !isNaN(taxAmt) && taxAmt > 0) {
-                        const label = taxRate !== null && !isNaN(taxRate)
-                          ? `Tax (${taxRate}%)`
-                          : "Tax";
+                      // Subtotal computed from line items (falls back to qty × unit_price)
+                      const subtotal = (target.items || []).reduce((sum, item) => {
+                        const lt = item.line_total != null && item.line_total !== ""
+                          ? parseFloat(String(item.line_total))
+                          : (parseFloat(String(item.quantity || 0)) || 0) * (parseFloat(String(item.unit_price || 0)) || 0);
+                        return sum + (isNaN(lt) ? 0 : lt);
+                      }, 0);
+
+                      const rawTax  = target.tax_amount;
+                      const rawRate = target.tax_rate;
+                      const taxAmt  = rawTax  != null && rawTax  !== "NULL" && rawTax  !== "" ? parseFloat(String(rawTax))  : 0;
+                      const taxRate = rawRate != null && rawRate !== "NULL" && rawRate !== "" ? parseFloat(String(rawRate)) : 0;
+                      const finalTotal = parseFloat(String(target.final_total_amount ?? 0)) || 0;
+                      const expectedTotal = subtotal + (isNaN(taxAmt) ? 0 : taxAmt);
+                      const mismatch = subtotal > 0 && Math.abs(expectedTotal - finalTotal) > 0.5;
+
+                      // Typing a tax rate auto-computes the tax amount from the subtotal
+                      const handleRateChange = (val: string) => {
+                        updateField("tax_rate", val);
+                        const rateNum = parseFloat(val);
+                        if (!isNaN(rateNum) && subtotal > 0) {
+                          updateField("tax_amount", (subtotal * rateNum / 100).toFixed(2));
+                        }
+                      };
+
+                      if (editMode) {
                         return (
-                          <div className="flex items-center justify-between">
-                            <span className="font-semibold text-[#0f172a]">{label}</span>
-                            <span className="font-bold text-[#2252b5]">{cur} {taxAmt.toFixed(2)}</span>
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between">
+                              <span className="font-semibold text-[#0f172a]">{lang === "si" ? "උප එකතුව (අයිතම වලින්)" : "Subtotal (from items)"}</span>
+                              <span className="font-bold text-[#64748b]">{cur} {subtotal.toFixed(2)}</span>
+                            </div>
+                            <div className="flex items-center justify-between">
+                              <span className="font-semibold text-[#0f172a]">{lang === "si" ? "බදු % (Tax Rate)" : "Tax Rate (%)"}</span>
+                              <input
+                                type="number" min="0" step="0.01"
+                                value={rawRate != null && rawRate !== "NULL" ? String(rawRate) : ""}
+                                onChange={(e) => handleRateChange(e.target.value)}
+                                placeholder="e.g. 15"
+                                className="ml-2 w-28 rounded border border-slate-200 px-2 py-1 text-right text-[13px]"
+                              />
+                            </div>
+                            <div className="flex items-center justify-between">
+                              <span className="font-semibold text-[#0f172a]">{lang === "si" ? "බදු මුදල (Tax Amount)" : "Tax Amount"}</span>
+                              <input
+                                type="number" min="0" step="0.01"
+                                value={rawTax != null && rawTax !== "NULL" ? String(rawTax) : ""}
+                                onChange={(e) => updateField("tax_amount", e.target.value)}
+                                placeholder="0.00"
+                                className="ml-2 w-28 rounded border border-slate-200 px-2 py-1 text-right text-[13px]"
+                              />
+                            </div>
+                            <div className="flex items-center justify-between border-t border-slate-100 pt-2">
+                              <span className="font-semibold text-[#0f172a]">{lang === "si" ? "අපේක්ෂිත එකතුව" : "Expected Total"}</span>
+                              <span className={`font-bold ${mismatch ? "text-red-600" : "text-green-600"}`}>{cur} {expectedTotal.toFixed(2)}</span>
+                            </div>
+                            {mismatch && (
+                              <p className="rounded-lg bg-red-50 px-3 py-2 text-[12px] text-red-600">
+                                {lang === "si"
+                                  ? `නොගැලපේ: උප එකතුව + බදුව (${cur} ${expectedTotal.toFixed(2)}) ≠ මුළු එකතුව (${cur} ${finalTotal.toFixed(2)})`
+                                  : `Mismatch: Subtotal + Tax (${cur} ${expectedTotal.toFixed(2)}) ≠ Final Total (${cur} ${finalTotal.toFixed(2)})`}
+                              </p>
+                            )}
                           </div>
                         );
                       }
-                      return <span className="text-[#94a3b8]">{t.noTaxOnDocument}</span>;
+
+                      // Read-only view
+                      if (!isNaN(taxAmt) && taxAmt > 0) {
+                        const label = !isNaN(taxRate) && taxRate > 0 ? `Tax (${taxRate}%)` : "Tax";
+                        return (
+                          <div className="space-y-1.5">
+                            <div className="flex items-center justify-between">
+                              <span className="font-semibold text-[#0f172a]">{label}</span>
+                              <span className="font-bold text-[#2252b5]">{cur} {taxAmt.toFixed(2)}</span>
+                            </div>
+                            {mismatch && (
+                              <p className="rounded-lg bg-red-50 px-3 py-2 text-[12px] text-red-600">
+                                {lang === "si"
+                                  ? `ගණිතමය නොගැලපීම: ${cur} ${expectedTotal.toFixed(2)} ≠ ${cur} ${finalTotal.toFixed(2)}`
+                                  : `Arithmetic mismatch: Subtotal + Tax (${cur} ${expectedTotal.toFixed(2)}) doesn't match Final Total (${cur} ${finalTotal.toFixed(2)})`}
+                              </p>
+                            )}
+                          </div>
+                        );
+                      }
+                      return (
+                        <div className="space-y-1.5">
+                          <span className="text-[#94a3b8]">{t.noTaxOnDocument}</span>
+                          {mismatch && (
+                            <p className="rounded-lg bg-amber-50 px-3 py-2 text-[12px] text-amber-700">
+                              {lang === "si"
+                                ? `උප එකතුව (${cur} ${subtotal.toFixed(2)}) මුළු එකතුවට (${cur} ${finalTotal.toFixed(2)}) නොගැලපේ — බදුවක් මග හැරී ඇතිදැයි පරීක්ෂා කරන්න.`
+                                : `Subtotal (${cur} ${subtotal.toFixed(2)}) doesn't match the Final Total (${cur} ${finalTotal.toFixed(2)}) — check if a tax amount was missed during extraction.`}
+                            </p>
+                          )}
+                        </div>
+                      );
                     })()}
                   </InfoCard>}
 

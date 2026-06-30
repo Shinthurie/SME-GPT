@@ -16,7 +16,6 @@ import {
 } from "recharts";
 import HealthScoreCard from "@/components/ui/HealthScoreCard";
 import WhoOwesWho     from "@/components/ui/WhoOwesWho";
-import ActivityFeed   from "@/components/ui/ActivityFeed";
 
 const BACKEND_URL = "http://127.0.0.1:8000";
 
@@ -29,7 +28,6 @@ type MismatchAlert = {
 
 type HealthScore    = { net: number; trend_pct: number; color: "green"|"red"; this_month: string };
 type BalanceEntry   = { document_id: string; document_type: string; supplier_name: string; amount: number; currency: string; date: string };
-type ActivityItem   = { event_type: string; content: string; created_at: string };
 
 type SummaryData = {
   total: number;
@@ -45,7 +43,6 @@ type SummaryData = {
   health_score?:      HealthScore;
   top_receivables?:   BalanceEntry[];
   top_payables?:      BalanceEntry[];
-  activity_feed?:     ActivityItem[];
 };
 
 type RecentDocument = {
@@ -297,8 +294,8 @@ export default function DashboardPage() {
           {/* Quick links to reports */}
           <section className="mt-5 flex flex-wrap gap-2">
             {[
-              { label: lang === "si" ? "ලාභ/පාඩු" : "P&L Report", icon: "trending_up", path: "/reports/pnl", color: "#2252b5" },
-              { label: lang === "si" ? "VAT වාර්තාව" : "VAT Report", icon: "receipt_long", path: "/reports/vat", color: "#7c3aed" },
+              { label: lang === "si" ? "ලාභ/පාඩු" : "P&L Report",       icon: "trending_up",  path: "/reports/pnl",      color: "#2252b5" },
+              { label: lang === "si" ? "ගෙවිය යුතු ශේෂ" : "Outstanding Payments", icon: "payments", path: "/reports/payables", color: "#dc2626" },
               { label: lang === "si" ? "සැපයුම්කරුවන්" : "Suppliers", icon: "contacts", path: "/suppliers", color: "#16a34a" },
               { label: lang === "si" ? "ශ්‍රේණිගත" : "Bulk Upload",    icon: "file_copy",  path: "/bulk-upload",    color: "#ea6c0a" },
               { label: lang === "si" ? "අතින් ලේඛනය" : "Manual Entry", icon: "edit_note",  path: "/manual-entry",   color: "#64748b" },
@@ -422,49 +419,6 @@ export default function DashboardPage() {
             </section>
           )}
 
-          {/* IT-41 — Payment Reminder: overdue receivables banner */}
-          {summary?.top_receivables && summary.top_receivables.filter(r => {
-            if (!r.date) return false;
-            const d = new Date(r.date.includes("/") ? r.date.split("/").reverse().join("-") : r.date);
-            return !isNaN(d.getTime()) && (Date.now() - d.getTime()) > 30 * 86400000;
-          }).length > 0 && (() => {
-            const overdue = summary.top_receivables!.filter(r => {
-              if (!r.date) return false;
-              const d = new Date(r.date.includes("/") ? r.date.split("/").reverse().join("-") : r.date);
-              return !isNaN(d.getTime()) && (Date.now() - d.getTime()) > 30 * 86400000;
-            });
-            return (
-              <section className="mt-5">
-                <div className="rounded-2xl p-4" style={{ background: "rgba(220,38,38,0.05)", border: "1px solid rgba(220,38,38,0.2)" }}>
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className="material-symbols-outlined text-[18px]" style={{ color: "#dc2626" }}>schedule</span>
-                    <p className="text-[13px] font-bold" style={{ color: "#dc2626" }}>
-                      {lang === "si" ? "ගෙවීම් ප‍ රමාද" : `${overdue.length} overdue receivable${overdue.length > 1 ? "s" : ""} — over 30 days`}
-                    </p>
-                  </div>
-                  {overdue.slice(0, 3).map(r => (
-                    <div key={r.document_id} className="flex items-center justify-between py-1.5">
-                      <div>
-                        <p className="text-[12px] font-semibold text-[var(--text-1)]">{r.supplier_name}</p>
-                        <p className="text-[11px] text-[var(--text-3)]">{r.document_id} · {r.date}</p>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <span className="text-[12px] font-bold" style={{ color: "#dc2626" }}>
-                          {r.currency} {r.amount.toLocaleString()}
-                        </span>
-                        <button onClick={() => router.push(`/analysis/${r.document_id}`)}
-                          className="rounded-lg px-3 py-1 text-[11px] font-bold text-white transition hover:opacity-90"
-                          style={{ background: "#dc2626" }}>
-                          {lang === "si" ? "බලන්න" : "Open"}
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </section>
-            );
-          })()}
-
           {/* IT-20 — 6-month Cash Flow Chart */}
           {cashFlow.length > 0 && (
             <section className="mt-8">
@@ -520,12 +474,6 @@ export default function DashboardPage() {
             </section>
           ) : null}
 
-          {/* ── Feature 2: Widget 5 — Activity Feed ────────────────────── */}
-          {summary?.activity_feed && summary.activity_feed.length > 0 && (
-            <section className="mt-6">
-              <ActivityFeed items={summary.activity_feed} lang={lang} />
-            </section>
-          )}
         </main>
 
         <BottomNav />
