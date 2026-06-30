@@ -179,59 +179,6 @@ export default function PayablesPage() {
         : "True outstanding liability — POs and Invoices are shown separately to avoid double-counting the same transaction."}
       width="standard"
     >
-      {/* Explanation banner */}
-      <div className="mb-5 rounded-2xl px-5 py-4 text-[12px]"
-        style={{ background: "rgba(34,82,181,0.05)", border: "1px solid rgba(34,82,181,0.15)" }}>
-        <p className="font-semibold text-[var(--text-1)] mb-1">
-          {lang === "si" ? "ඇයි PO සහ ඉන්වොයිස් වෙන් කළේ?" : "Why PO and Invoice are separated"}
-        </p>
-        <p className="text-[var(--text-2)]">
-          {lang === "si"
-            ? "PO යනු ගෙවීමේ පොරොන්දුවක් පමණි — ඉන්වොයිසයක් නොලැබෙන තෙක් මුදල් නොවෙනස් වේ. ඒ නිසා PO සහ ඒ සඳහා ලැබෙන ඉන්වොයිස දෙකම ගෙවිය යුතු ලෙස ගණනය කළ හොත් ශේෂය දෙගුණ වේ."
-            : "A PO is only a promise to pay — no money moves until an Invoice arrives. If both the PO and its Invoice are counted as payable, your liability is overstated. Fulfilled POs are excluded here; their Invoice appears under Outstanding instead."}
-        </p>
-      </div>
-
-      {/* Summary cards */}
-      {s && (
-        <div className="mb-5 grid grid-cols-3 gap-3">
-          {TABS.map(tb => (
-            <div key={tb.key} className="rounded-2xl p-4"
-              style={{ background: `${tb.color}08`, border: `1px solid ${tb.color}20` }}>
-              <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: tb.color }}>
-                {lang === "si" ? tb.label_si : tb.label_en}
-              </p>
-              <p className="mt-1 text-[20px] font-extrabold text-[var(--text-1)]">
-                LKR {tb.total.toLocaleString("en-US", { minimumFractionDigits: 2 })}
-              </p>
-              <p className="mt-0.5 text-[11px] text-[var(--text-3)]">
-                {tb.count} {lang === "si" ? "ලේඛන" : "documents"}
-              </p>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Real liability highlight */}
-      {s && (
-        <div className="mb-5 flex items-center justify-between rounded-2xl px-5 py-4"
-          style={{ background: "rgba(220,38,38,0.06)", border: "1px solid rgba(220,38,38,0.2)" }}>
-          <div>
-            <p className="text-[11px] font-bold uppercase tracking-wider text-red-600">
-              {lang === "si" ? "ඇත්ත ගෙවිය යුතු මුදල (ඉන්වොයිස් පමණ)" : "True Payable (Invoices only — no POs)"}
-            </p>
-            <p className="mt-0.5 text-[12px] text-[var(--text-2)]">
-              {lang === "si"
-                ? "PO ඉවත් කොට ඉතිරි ශේෂය — ගෙවීම් කළ හැකි ඇත්ත ශේෂය"
-                : "This is the amount your business actually owes right now, with no PO double-counting"}
-            </p>
-          </div>
-          <p className="text-[22px] font-extrabold text-red-600 shrink-0 ml-4">
-            LKR {s.outstanding_total.toLocaleString("en-US", { minimumFractionDigits: 2 })}
-          </p>
-        </div>
-      )}
-
       {/* Tabs */}
       <div className="mb-4 flex gap-2">
         {TABS.map(tb => (
