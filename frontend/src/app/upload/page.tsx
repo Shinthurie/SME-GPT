@@ -163,7 +163,6 @@ export default function UploadPage() {
   const videoRef    = useRef<HTMLVideoElement | null>(null);
   const canvasRef   = useRef<HTMLCanvasElement | null>(null);
   const [lang, setLang] = useState<AppLanguage>("en");
-  const [ocrLang, setOcrLang] = useState<"en" | "si">("en");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -284,7 +283,6 @@ export default function UploadPage() {
     try {
       const fd = new FormData();
       fd.append("file", selectedFile);
-      fd.append("ocr_language", ocrLang);
       const res = await fetch(`${BACKEND_URL}/process-document-stream`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
@@ -480,41 +478,6 @@ export default function UploadPage() {
             {t.uploadTitle}
           </h1>
           <p className="mt-1.5 text-[13px] leading-6 text-[var(--text-2)]">{t.uploadSubtitle}</p>
-
-          {/* OCR Language Engine selector */}
-          <div className="mt-5">
-            <div className="mb-2 flex items-center gap-2">
-              <p className="text-[11px] font-bold uppercase tracking-[0.1em] text-[var(--text-3)]">
-                OCR Language Engine
-              </p>
-              <span
-                title="English: best for typed/printed documents. Sinhala: best for Sinhala-primary or handwritten content. The engine always processes both scripts — this hint optimises the correction step."
-                className="flex h-4 w-4 cursor-help items-center justify-center rounded-full text-[10px] font-bold"
-                style={{ background: "var(--brand-tint)", color: "var(--brand-mid)" }}
-              >
-                ?
-              </span>
-            </div>
-            <div className="flex gap-2">
-              {(["en", "si"] as const).map((l) => (
-                <button
-                  key={l}
-                  onClick={() => setOcrLang(l)}
-                  className="flex items-center gap-2 rounded-xl px-5 py-2.5 text-[13px] font-semibold transition"
-                  style={
-                    ocrLang === l
-                      ? { background: "var(--brand)", color: "#fff", boxShadow: "0 2px 8px var(--brand-ring)" }
-                      : { background: "var(--surface)", border: "1px solid var(--border)", color: "var(--text-2)" }
-                  }
-                >
-                  <span className="material-symbols-outlined text-[16px]">
-                    {l === "en" ? "language" : "translate"}
-                  </span>
-                  {l === "en" ? t.english : t.sinhala}
-                </button>
-              ))}
-            </div>
-          </div>
 
           <input
             ref={fileInputRef} type="file"
