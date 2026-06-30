@@ -930,6 +930,8 @@ class UpdateDocumentRequest(BaseModel):
     status: Optional[str] = None
     language: Optional[str] = None
     items: Optional[List[dict]] = None
+    tax_amount: Optional[Any] = None
+    tax_rate: Optional[Any] = None
     # IT-27 — PO approval workflow
     po_status: Optional[str] = None
     approved_by: Optional[str] = None
@@ -1420,7 +1422,7 @@ def update_document(document_id: str, payload: UpdateDocumentRequest, authorizat
     if "items" in update_data:
         update_data["items"] = normalize_items(update_data.get("items", []))
 
-    for numeric_key in ["raw_total_amount", "final_total_amount", "payable_amount", "cash_return", "cash_inflowed", "cash_outflowed"]:
+    for numeric_key in ["raw_total_amount", "final_total_amount", "payable_amount", "cash_return", "cash_inflowed", "cash_outflowed", "tax_amount", "tax_rate"]:
         if numeric_key in update_data:
             update_data[numeric_key] = safe_number(update_data[numeric_key])
 

@@ -282,6 +282,8 @@ export default function AnalysisDetailPage() {
           paid_status: editedDocument.paid_status,
           language: editedDocument.language,
           items: editedDocument.items,
+          tax_amount: editedDocument.tax_amount,
+          tax_rate: editedDocument.tax_rate,
         }),
       });
 
@@ -943,24 +945,106 @@ export default function AnalysisDetailPage() {
                   {/* TAX DETAILS — hidden for DN (no financial value) */}
                   {target.document_type !== "dn" && <InfoCard title={t.taxDetailsTitle}>
                     {(() => {
-                      const rawTax = target.tax_amount;
-                      const rawRate = target.tax_rate;
-                      const taxAmt = rawTax != null && rawTax !== "NULL" && rawTax !== "" ? parseFloat(String(rawTax)) : null;
-                      const taxRate = rawRate != null && rawRate !== "NULL" && rawRate !== "" ? parseFloat(String(rawRate)) : null;
                       const cur = target.currency && target.currency !== "NULL" ? target.currency : "LKR";
 
-                      if (taxAmt !== null && !isNaN(taxAmt) && taxAmt > 0) {
-                        const label = taxRate !== null && !isNaN(taxRate)
-                          ? `Tax (${taxRate}%)`
-                          : "Tax";
+                      // Subtotal computed from line items (falls back to qty × unit_price)
+                      const subtotal = (target.items || []).reduce((sum, item) => {
+                        const lt = item.line_total != null && item.line_total !== ""
+                          ? parseFloat(String(item.line_total))
+                          : (parseFloat(String(item.quantity || 0)) || 0) * (parseFloat(String(item.unit_price || 0)) || 0);
+                        return sum + (isNaN(lt) ? 0 : lt);
+                      }, 0);
+
+                      const rawTax  = target.tax_amount;
+                      const rawRate = target.tax_rate;
+                      const taxAmt  = rawTax  != null && rawTax  !== "NULL" && rawTax  !== "" ? parseFloat(String(rawTax))  : 0;
+                      const taxRate = rawRate != null && rawRate !== "NULL" && rawRate !== "" ? parseFloat(String(rawRate)) : 0;
+                      const finalTotal = parseFloat(String(target.final_total_amount ?? 0)) || 0;
+                      const expectedTotal = subtotal + (isNaN(taxAmt) ? 0 : taxAmt);
+                      const mismatch = subtotal > 0 && Math.abs(expectedTotal - finalTotal) > 0.5;
+
+                      // Typing a tax rate auto-computes the tax amount from the subtotal
+                      const handleRateChange = (val: string) => {
+                        updateField("tax_rate", val);
+                        const rateNum = parseFloat(val);
+                        if (!isNaN(rateNum) && subtotal > 0) {
+                          updateField("tax_amount", (subtotal * rateNum / 100).toFixed(2));
+                        }
+                      };
+
+                      if (editMode) {
                         return (
-                          <div className="flex items-center justify-between">
-                            <span className="font-semibold text-[#0f172a]">{label}</span>
-                            <span className="font-bold text-[#2252b5]">{cur} {taxAmt.toFixed(2)}</span>
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between">
+                              <span className="font-semibold text-[#0f172a]">{lang === "si" ? "උප එකතුව (අයිතම වලින්)" : "Subtotal (from items)"}</span>
+                              <span className="font-bold text-[#64748b]">{cur} {subtotal.toFixed(2)}</span>
+                            </div>
+                            <div className="flex items-center justify-between">
+                              <span className="font-semibold text-[#0f172a]">{lang === "si" ? "බදු % (Tax Rate)" : "Tax Rate (%)"}</span>
+                              <input
+                                type="number" min="0" step="0.01"
+                                value={rawRate != null && rawRate !== "NULL" ? String(rawRate) : ""}
+                                onChange={(e) => handleRateChange(e.target.value)}
+                                placeholder="e.g. 15"
+                                className="ml-2 w-28 rounded border border-slate-200 px-2 py-1 text-right text-[13px]"
+                              />
+                            </div>
+                            <div className="flex items-center justify-between">
+                              <span className="font-semibold text-[#0f172a]">{lang === "si" ? "බදු මුදල (Tax Amount)" : "Tax Amount"}</span>
+                              <input
+                                type="number" min="0" step="0.01"
+                                value={rawTax != null && rawTax !== "NULL" ? String(rawTax) : ""}
+                                onChange={(e) => updateField("tax_amount", e.target.value)}
+                                placeholder="0.00"
+                                className="ml-2 w-28 rounded border border-slate-200 px-2 py-1 text-right text-[13px]"
+                              />
+                            </div>
+                            <div className="flex items-center justify-between border-t border-slate-100 pt-2">
+                              <span className="font-semibold text-[#0f172a]">{lang === "si" ? "අපේක්ෂිත එකතුව" : "Expected Total"}</span>
+                              <span className={`font-bold ${mismatch ? "text-red-600" : "text-green-600"}`}>{cur} {expectedTotal.toFixed(2)}</span>
+                            </div>
+                            {mismatch && (
+                              <p className="rounded-lg bg-red-50 px-3 py-2 text-[12px] text-red-600">
+                                {lang === "si"
+                                  ? `නොගැලපේ: උප එකතුව + බදුව (${cur} ${expectedTotal.toFixed(2)}) ≠ මුළු එකතුව (${cur} ${finalTotal.toFixed(2)})`
+                                  : `Mismatch: Subtotal + Tax (${cur} ${expectedTotal.toFixed(2)}) ≠ Final Total (${cur} ${finalTotal.toFixed(2)})`}
+                              </p>
+                            )}
                           </div>
                         );
                       }
-                      return <span className="text-[#94a3b8]">{t.noTaxOnDocument}</span>;
+
+                      // Read-only view
+                      if (!isNaN(taxAmt) && taxAmt > 0) {
+                        const label = !isNaN(taxRate) && taxRate > 0 ? `Tax (${taxRate}%)` : "Tax";
+                        return (
+                          <div className="space-y-1.5">
+                            <div className="flex items-center justify-between">
+                              <span className="font-semibold text-[#0f172a]">{label}</span>
+                              <span className="font-bold text-[#2252b5]">{cur} {taxAmt.toFixed(2)}</span>
+                            </div>
+                            {mismatch && (
+                              <p className="rounded-lg bg-red-50 px-3 py-2 text-[12px] text-red-600">
+                                {lang === "si"
+                                  ? `ගණිතමය නොගැලපීම: ${cur} ${expectedTotal.toFixed(2)} ≠ ${cur} ${finalTotal.toFixed(2)}`
+                                  : `Arithmetic mismatch: Subtotal + Tax (${cur} ${expectedTotal.toFixed(2)}) doesn't match Final Total (${cur} ${finalTotal.toFixed(2)})`}
+                              </p>
+                            )}
+                          </div>
+                        );
+                      }
+                      return (
+                        <div className="space-y-1.5">
+                          <span className="text-[#94a3b8]">{t.noTaxOnDocument}</span>
+                          {mismatch && (
+                            <p className="rounded-lg bg-amber-50 px-3 py-2 text-[12px] text-amber-700">
+                              {lang === "si"
+                                ? `උප එකතුව (${cur} ${subtotal.toFixed(2)}) මුළු එකතුවට (${cur} ${finalTotal.toFixed(2)}) නොගැලපේ — බදුවක් මග හැරී ඇතිදැයි පරීක්ෂා කරන්න.`
+                                : `Subtotal (${cur} ${subtotal.toFixed(2)}) doesn't match the Final Total (${cur} ${finalTotal.toFixed(2)}) — check if a tax amount was missed during extraction.`}
+                            </p>
+                          )}
+                        </div>
+                      );
                     })()}
                   </InfoCard>}
 
