@@ -1252,6 +1252,26 @@ async def process_document_stream(
     )
 
 
+@app.get("/sessions/{session_id}/image")
+async def get_session_image(session_id: str, authorization: str = Header(default=None)):
+    """Return the temp preview image for a not-yet-saved bulk session."""
+    from fastapi.responses import FileResponse
+    user_id = get_current_user_id(authorization)
+    session = PROCESSING_SESSIONS.get(session_id)
+    if not session or session.get("user_id") != user_id:
+        raise HTTPException(status_code=404, detail="Session not found or expired")
+    src = session.get("meta", {}).get("standard_image")
+    if not src or not Path(str(src)).exists():
+        raise HTTPException(status_code=404, detail="Preview image not available")
+    media = "image/png"
+    ext = Path(str(src)).suffix.lower()
+    if ext in (".jpg", ".jpeg"):
+        media = "image/jpeg"
+    elif ext == ".webp":
+        media = "image/webp"
+    return FileResponse(str(src), media_type=media)
+
+
 @app.post("/confirm-save")
 def confirm_save(payload: ConfirmSaveRequest, authorization: str = Header(default=None)):
     user_id = get_current_user_id(authorization)
