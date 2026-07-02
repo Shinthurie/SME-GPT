@@ -10,7 +10,14 @@ from __future__ import annotations
 
 import json
 
-from ai_helper import call_ollama
+from llm_client import call_llm
+
+_PLAN_SYSTEM = (
+    "You are a financial query planner for a Sri Lankan SME system. "
+    "You convert natural-language questions into strict JSON execution plans. "
+    "You never compute results yourself — you only describe what to compute. "
+    "You must return ONLY valid JSON, no prose, no markdown."
+)
 
 _PLAN_PROMPT = """You are a financial query planner for a Sri Lankan SME system. Convert the user's
 question into a single JSON plan -- you never compute the answer yourself, you only describe what to compute.
@@ -95,7 +102,7 @@ def plan_query(question: str, error_reason: str | None = None) -> dict | None:
     prompt = _PLAN_PROMPT.format(question=question, retry_note=retry_note)
 
     try:
-        raw_reply = call_ollama(prompt)
+        raw_reply = call_llm(prompt, system=_PLAN_SYSTEM, format="json")
     except Exception:
         return None
 

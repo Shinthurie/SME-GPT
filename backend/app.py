@@ -808,17 +808,18 @@ def build_dashboard_summary(records: List[dict]):
     total_receivable = 0.0
 
     for r in records:
-        flow = str(r.get("flow_type", "")).strip().lower()
-        amount = safe_number(r.get("payable_amount"))
+        flow = str(r.get("effective_flow_type") or r.get("flow_type", "")).strip().lower()
+        # Use final_total_amount as primary — payable_amount is semantically wrong for receivables.
+        amount = safe_number(r.get("final_total_amount"))
         if amount == "NULL":
-            amount = safe_number(r.get("final_total_amount"))
+            amount = safe_number(r.get("payable_amount"))
         if amount == "NULL":
             amount = safe_number(r.get("raw_total_amount"))
         amount = 0.0 if amount == "NULL" else float(amount)
 
-        if flow == "payable":
+        if flow in ("payable", "cash_outflow"):
             total_payable += amount
-        elif flow == "receivable":
+        elif flow in ("receivable", "cash_inflow"):
             total_receivable += amount
 
     # GAP-18D: PENDING / READY counts for UI-D2 dashboard mockup
@@ -942,11 +943,18 @@ class UpdateDocumentRequest(BaseModel):
 # =========================
 @app.get("/health")
 def health():
-    from llm_client import check_ollama_health
+    from llm_client import (
+        check_ollama_health, check_gemini_health,
+        GEMINI_API_KEY, QUERY_PROVIDER, PIPELINE_PROVIDER,
+    )
     ollama = check_ollama_health()
+    gemini = check_gemini_health() if GEMINI_API_KEY else {"ok": False, "error": "GEMINI_API_KEY not set"}
     return {
         "success": True,
         "message": "Backend is running.",
+        "llm_provider": QUERY_PROVIDER,
+        "pipeline_llm_provider": PIPELINE_PROVIDER,
+        "gemini": gemini,
         "ollama": ollama,
     }
 

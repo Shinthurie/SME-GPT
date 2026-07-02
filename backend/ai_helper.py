@@ -10,7 +10,7 @@ _QA_SYSTEM = (
 
 
 def call_ollama(prompt: str) -> str:
-    """Routes Q&A calls to local Ollama."""
+    """Routes Q&A calls through the active LLM provider (Gemini or Ollama)."""
     return call_llm(prompt, system=_QA_SYSTEM)
 
 

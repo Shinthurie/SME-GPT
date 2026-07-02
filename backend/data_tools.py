@@ -531,11 +531,20 @@ def build_evidence(records: pd.DataFrame, reason: str):
     evidence = []
 
     for _, row in records.iterrows():
-        amount_used = to_float(row.get("payable_amount", 0))
+        # Use final_total_amount as the authoritative amount — it is flow-neutral and
+        # reflects the confirmed document total after normalization and arithmetic correction.
+        # payable_amount is semantically wrong as a primary source for receivable documents.
+        amount_used = to_float(row.get("final_total_amount", 0))
         if amount_used == 0.0:
-            amount_used = to_float(row.get("final_total_amount", 0))
+            amount_used = to_float(row.get("payable_amount", 0))
         if amount_used == 0.0:
             amount_used = to_float(row.get("raw_total_amount", 0))
+
+        raw_flow = str(row.get("flow_type", "unknown"))
+        flow_direction = (
+            "income" if normalize_flow(raw_flow) in ("receivable", "cash_inflow")
+            else "expense"
+        )
 
         evidence.append({
             "document_id": row.get("document_id", "NULL"),
@@ -544,7 +553,8 @@ def build_evidence(records: pd.DataFrame, reason: str):
             "company_name": row.get("company_name", "NULL"),
             "supplier_name": row.get("supplier_name", "NULL"),
             "order_id": row.get("order_id", "NULL"),
-            "flow_type": row.get("flow_type", "unknown"),
+            "flow_type": raw_flow,
+            "flow_direction": flow_direction,
             "received_status": row.get("received_status", "NULL"),
             "paid_status": row.get("paid_status", "NULL"),
             # Iteration 10: workflow status fields
@@ -877,9 +887,15 @@ def _parse_date_for_filter(date_str) -> date | None:
     """Parse various date string formats to a date object."""
     if not date_str or str(date_str).strip().upper() in ("", "NULL", "NONE"):
         return None
+    s = str(date_str).strip()
+    # Try ISO format first (YYYY-MM-DD) — dateutil with dayfirst=True misparses these.
+    try:
+        return date.fromisoformat(s[:10])
+    except ValueError:
+        pass
     try:
         from dateutil import parser as _dp
-        return _dp.parse(str(date_str), dayfirst=True).date()
+        return _dp.parse(s, dayfirst=True).date()
     except Exception:
         return None
 
@@ -1234,10 +1250,36 @@ def handle_date_range_query(question: str, df: pd.DataFrame, company_name: str):
     date_from, date_to = parse_temporal_filter(question)
     result_df = apply_date_filter(df, date_from, date_to)
 
+    # Detect income/expense context so we filter by flow direction, not just date.
+    # Without this, "how much income did we earn last month?" returns ALL documents
+    # in the period (payables mixed with receivables).
+    _income_terms = ["income", "revenue", "earned", "earning", "revenues", "sales",
+                     "ආදායම", "ලැබිය", "receivable", "inflow", "cash inflow"]
+    _expense_terms = ["expense", "expenses", "expence", "spent", "spend", "spending", "cost", "expenditure",
+                      "වියදම", "ගෙවිය", "payable", "outflow", "cash outflow"]
+    wants_income = any(t in q for t in _income_terms)
+    wants_expense = any(t in q for t in _expense_terms)
+
+    if wants_income and not wants_expense:
+        result_df = result_df[
+            result_df["flow_type"].apply(normalize_flow).isin(["receivable", "cash_inflow"])
+        ].copy()
+        flow_label = "Income"
+        question_type_out = "revenue"
+    elif wants_expense and not wants_income:
+        result_df = result_df[
+            result_df["flow_type"].apply(normalize_flow).isin(["payable", "cash_outflow"])
+        ].copy()
+        flow_label = "Expenses"
+        question_type_out = "expenses"
+    else:
+        flow_label = ""
+        question_type_out = "date_range_query"
+
     # Apply doc type filter if mentioned
     if any(t in q for t in ["invoice", "invoices", "ඉන්වොයිස්"]):
         result_df = result_df[result_df["document_type"].apply(normalize_text) == "invoice"]
-        doc_label = "Invoices"
+        doc_label = f"{flow_label} Invoices" if flow_label else "Invoices"
     elif any(t in q for t in ["po", "purchase order", "ඇණවුම"]):
         result_df = result_df[result_df["document_type"].apply(normalize_text) == "po"]
         doc_label = "Purchase Orders"
@@ -1246,9 +1288,9 @@ def handle_date_range_query(question: str, df: pd.DataFrame, company_name: str):
         doc_label = "Delivery Notes"
     elif any(t in q for t in ["receipt", "receipts", "රිසිට්"]):
         result_df = result_df[result_df["document_type"].apply(normalize_text) == "receipt"]
-        doc_label = "Receipts"
+        doc_label = f"{flow_label} Receipts" if flow_label else "Receipts"
     else:
-        doc_label = "Documents"
+        doc_label = flow_label if flow_label else "Documents"
 
     period_label = ""
     if date_from and date_to:
@@ -1269,10 +1311,11 @@ def handle_date_range_query(question: str, df: pd.DataFrame, company_name: str):
     if total > 0:
         lines.append(f"Total: LKR {total:,.2f}")
 
+    explanation_prefix = f"Total {flow_label.lower()} " if flow_label else ""
     return {
         "success": True,
-        "question_type": "date_range_query",
-        "explanation": f"{doc_label} from {period_label} for '{company_name}'.",
+        "question_type": question_type_out,
+        "explanation": f"{explanation_prefix}{doc_label} from {period_label} for '{company_name}'.",
         "evidence": build_evidence(result_df, f"Date range filter: {period_label}."),
         "metrics": {
             "document_count": len(result_df),
