@@ -99,6 +99,29 @@ function recalcTotal(p: PreviewData): PreviewData {
   return { ...p, items, final_total_amount: total, payable_amount: total };
 }
 
+function _writeBulkQueue(changedItem?: Partial<QueueItem> & { id?: string }) {
+  // keep a lightweight widget-readable list in localStorage
+  // called on status transitions so the floating widget stays current
+  try {
+    const existing = JSON.parse(localStorage.getItem("sme_bulk_queue") || "[]") as Array<{
+      id: string; fileName: string; status: string; sessionId?: string;
+    }>;
+    if (changedItem?.id) {
+      const idx = existing.findIndex((e) => e.id === changedItem.id);
+      const entry = {
+        id: changedItem.id,
+        fileName: (changedItem as QueueItem).file?.name ?? "",
+        status: changedItem.status ?? "pending",
+        sessionId: changedItem.sessionId,
+      };
+      if (idx >= 0) existing[idx] = entry;
+      else existing.push(entry);
+    }
+    localStorage.setItem("sme_bulk_queue", JSON.stringify(existing));
+    window.dispatchEvent(new Event("sme-bulk-updated"));
+  } catch { /* non-fatal */ }
+}
+
 export default function BulkUploadPage() {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -120,6 +143,7 @@ export default function BulkUploadPage() {
       message: lang === "si" ? "රැඳී සිටී..." : "Waiting...",
     }));
     setQueue((q) => [...q, ...items]);
+    items.forEach((item) => _writeBulkQueue(item));
   };
 
   const updateItem = (id: string, patch: Partial<QueueItem>) =>
@@ -180,6 +204,16 @@ export default function BulkUploadPage() {
 
       if (!sessionId || !preview) throw new Error("No session from OCR");
 
+      // Store preview in sessionStorage for the bulk-review page
+      sessionStorage.setItem(`sme_bulk_${sessionId}`, JSON.stringify({
+        preview,
+        fileName: item.file.name,
+        arithmeticStatus: preview ? "unknown" : "unknown",
+      }));
+
+      // Update localStorage widget queue
+      _writeBulkQueue({ ...item, status: "ready", sessionId, preview });
+
       // Stop here — wait for the user to review and explicitly save
       updateItem(item.id, {
         status: "ready",
@@ -192,8 +226,10 @@ export default function BulkUploadPage() {
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") {
         updateItem(item.id, { status: "cancelled", message: lang === "si" ? "අවලංගු කරන ලදී" : "Cancelled" });
+        _writeBulkQueue({ ...item, status: "cancelled" });
       } else {
         updateItem(item.id, { status: "error", message: err instanceof Error ? err.message : "Failed" });
+        _writeBulkQueue({ ...item, status: "error" });
       }
     } finally {
       controllers.current.delete(item.id);
@@ -256,14 +292,16 @@ export default function BulkUploadPage() {
       }
       if (!saveRes.ok || !saveData.success) throw new Error(saveData.message || "Save failed");
 
-      updateItem(item.id, {
+      const doneUpdate: Partial<QueueItem> = {
         status: "done",
         documentId: saveData.document_id,
         documentType: String(item.preview.document_type || ""),
         total: String(item.preview.final_total_amount || ""),
         expanded: false,
         message: `${lang === "si" ? "සුරකිනු ලැබිණි:" : "Saved:"} ${saveData.document_id}`,
-      });
+      };
+      updateItem(item.id, doneUpdate);
+      _writeBulkQueue({ ...item, ...doneUpdate });
 
       addNotification({
         type: "success",
@@ -406,12 +444,12 @@ export default function BulkUploadPage() {
                           {lang === "si" ? "ක‍‍‍ි‍රියාත්මක" : "Process"}
                         </button>
                       )}
-                      {item.status === "ready" && (
-                        <button onClick={() => toggleExpand(item.id)}
+                      {item.status === "ready" && item.sessionId && (
+                        <button onClick={() => router.push(`/bulk-review/${item.sessionId}`)}
                           className="flex items-center gap-1 rounded-lg px-2.5 py-1 text-[10px] font-bold transition hover:opacity-80"
                           style={{ background: "rgba(8,145,178,0.12)", color: "#0891b2" }}>
-                          <span className="material-symbols-outlined text-[13px]">{item.expanded ? "expand_less" : "expand_more"}</span>
-                          {lang === "si" ? "සමාලෝචනය" : "Review"}
+                          <span className="material-symbols-outlined text-[13px]">open_in_new</span>
+                          {lang === "si" ? "සමාලෝචනය" : "Review & Save"}
                         </button>
                       )}
                       {item.status === "done" && item.documentId && (
