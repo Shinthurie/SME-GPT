@@ -120,7 +120,7 @@ def build_row_records(documents_df: pd.DataFrame) -> list[dict]:
             "document_id": doc.get("document_id", "NULL"),
             "doc_date": doc.get("date", "NULL"),
             "vendor": doc.get("supplier_name", "NULL"),
-            "flow_type": dt.normalize_flow(doc.get("flow_type")),
+            "flow_type": dt.normalize_flow(doc.get("effective_flow_type") or doc.get("flow_type")),
             "currency": currency,
         }
 

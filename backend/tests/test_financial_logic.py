@@ -532,3 +532,136 @@ def test_payable_not_in_receivable_sum():
     ]
     recv_total = sum(r["final_total_amount"] for r in records if r["flow_type"] == "receivable")
     assert recv_total == 80_000
+
+
+# ── Regression: date-range query with income/expense context ─────────────────
+# Bug: "how much income did we earn last month?" routed to date_range_query
+# which returned ALL documents in the period, including payable ones.
+
+def test_date_range_income_query_only_returns_receivable():
+    """Income keywords inside a date query must filter to receivable/cash_inflow only."""
+    import pandas as pd
+    from data_tools import handle_date_range_query, enrich_dataset
+
+    records = [
+        _doc({"document_id": "IN1", "flow_type": "receivable", "effective_flow_type": "receivable",
+              "final_total_amount": 100_000, "date": date.today().isoformat()}),
+        _doc({"document_id": "IN2", "flow_type": "payable",    "effective_flow_type": "payable",
+              "final_total_amount": 50_000,  "date": date.today().isoformat()}),
+    ]
+    df = enrich_dataset(pd.DataFrame(records))
+    result = handle_date_range_query("how much income did we earn this month", df, "AIESEC")
+
+    ids = [e["document_id"] for e in result["evidence"]]
+    assert "IN1" in ids, "Receivable document must appear in income query results"
+    assert "IN2" not in ids, "Payable document must NOT appear in income query results"
+
+
+def test_date_range_expense_query_only_returns_payable():
+    """Expense keywords inside a date query must filter to payable/cash_outflow only."""
+    import pandas as pd
+    from data_tools import handle_date_range_query, enrich_dataset
+
+    records = [
+        _doc({"document_id": "IN1", "flow_type": "receivable", "effective_flow_type": "receivable",
+              "final_total_amount": 100_000, "date": date.today().isoformat()}),
+        _doc({"document_id": "IN2", "flow_type": "payable",    "effective_flow_type": "payable",
+              "final_total_amount": 50_000,  "date": date.today().isoformat()}),
+    ]
+    df = enrich_dataset(pd.DataFrame(records))
+    result = handle_date_range_query("how much did we spend this month", df, "AIESEC")
+
+    ids = [e["document_id"] for e in result["evidence"]]
+    assert "IN2" in ids, "Payable document must appear in expense query results"
+    assert "IN1" not in ids, "Receivable document must NOT appear in expense query results"
+
+
+def test_date_range_no_context_returns_all():
+    """A plain date query with no income/expense context returns all document types."""
+    import pandas as pd
+    from data_tools import handle_date_range_query, enrich_dataset
+
+    records = [
+        _doc({"document_id": "IN1", "flow_type": "receivable", "effective_flow_type": "receivable",
+              "final_total_amount": 100_000, "date": date.today().isoformat()}),
+        _doc({"document_id": "IN2", "flow_type": "payable",    "effective_flow_type": "payable",
+              "final_total_amount": 50_000,  "date": date.today().isoformat()}),
+    ]
+    df = enrich_dataset(pd.DataFrame(records))
+    result = handle_date_range_query("show all documents this month", df, "AIESEC")
+
+    ids = [e["document_id"] for e in result["evidence"]]
+    assert "IN1" in ids
+    assert "IN2" in ids
+
+
+# ── Regression: build_evidence uses final_total_amount as primary ─────────────
+
+def test_build_evidence_amount_used_uses_final_total():
+    """amount_used in evidence must be final_total_amount, not payable_amount."""
+    import pandas as pd
+    from data_tools import build_evidence, enrich_dataset
+
+    doc = _doc({"flow_type": "receivable", "effective_flow_type": "receivable",
+                "final_total_amount": 120_000, "payable_amount": 90_000})
+    df = enrich_dataset(pd.DataFrame([doc]))
+    evidence = build_evidence(df, "test reason")
+
+    assert len(evidence) == 1
+    assert evidence[0]["amount_used"] == 120_000.0, (
+        f"amount_used should be final_total_amount=120000, got {evidence[0]['amount_used']}"
+    )
+
+
+def test_build_evidence_includes_flow_direction_income():
+    import pandas as pd
+    from data_tools import build_evidence, enrich_dataset
+
+    doc = _doc({"flow_type": "receivable", "effective_flow_type": "receivable"})
+    df = enrich_dataset(pd.DataFrame([doc]))
+    evidence = build_evidence(df, "test")
+
+    assert evidence[0]["flow_direction"] == "income"
+
+
+def test_build_evidence_includes_flow_direction_expense():
+    import pandas as pd
+    from data_tools import build_evidence, enrich_dataset
+
+    doc = _doc({"flow_type": "payable", "effective_flow_type": "payable"})
+    df = enrich_dataset(pd.DataFrame([doc]))
+    evidence = build_evidence(df, "test")
+
+    assert evidence[0]["flow_direction"] == "expense"
+
+
+# ── Regression: PAL scope uses effective_flow_type ───────────────────────────
+
+def test_pal_scope_prefers_effective_flow_type():
+    """build_row_records must use effective_flow_type over raw flow_type."""
+    import pandas as pd
+    import sys, os
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+    from pal_scope import build_row_records
+
+    # Document where raw flow_type is 'receivable' but effective is 'cash_inflow'
+    # (e.g. a fully-received receivable invoice).
+    doc = {
+        "document_id": "IN-EFT-01",
+        "flow_type": "receivable",
+        "effective_flow_type": "cash_inflow",
+        "supplier_name": "TestCo",
+        "date": date.today().isoformat(),
+        "currency": "LKR",
+        "final_total_amount": 50_000,
+        "payable_amount": 50_000,
+        "structured_json": "{}",
+        "items": [],
+    }
+    df = pd.DataFrame([doc])
+    rows = build_row_records(df)
+
+    assert len(rows) == 1
+    assert rows[0]["flow_type"] == "cash_inflow", (
+        f"Expected effective flow 'cash_inflow', got '{rows[0]['flow_type']}'"
+    )

@@ -5,9 +5,11 @@ from llm_correction import clean_ocr_text
 from llm_client import call_pipeline_llm
 
 _EXTRACTION_SYSTEM = (
-    "You are a financial document data extraction engine for Sri Lankan SME businesses. "
-    "You output ONLY a single valid JSON object — no markdown fences, no explanation, "
-    "no text before or after the JSON. Start your response with { and end with }."
+    "You are the most accurate financial document extraction engine for Sri Lankan SME businesses. "
+    "You have deep knowledge of Sri Lankan invoices, receipts, purchase orders, delivery notes, "
+    "VAT/NBT tax structures, Sinhala and English business documents, and common Sri Lankan company formats. "
+    "You output ONLY a single valid JSON object — no markdown fences, no explanation, no prose. "
+    "Start your response with { and end with }."
 )
 
 
@@ -396,124 +398,160 @@ _TYPE_HINTS = {
 }
 
 
-def _build_extraction_prompt(cleaned_text: str, doc_type_hint: str = "") -> str:
-    """Build a short, type-aware extraction prompt.
-
-    Providing a doc_type_hint skips the type-detection section, reducing
-    prompt length by ~30% and making the model more accurate.
-    """
-    type_section = ""
-    if doc_type_hint and doc_type_hint in _TYPE_HINTS:
-        type_section = f'\nThis document is a {_TYPE_HINTS[doc_type_hint]}\nSet document_type="{doc_type_hint}".\n'
-    else:
-        type_section = """
-DOCUMENT TYPE (pick one):
-- "invoice"  → Invoice/Bill/Tax Invoice header
-- "receipt"  → shop bill, POS receipt, cash receipt
-- "po"       → Purchase Order / PO
-- "dn"       → Delivery Note / Goods Received Note
-- "unknown"  → if none of the above
-"""
-
-    return f"""You are a financial document extraction engine for Sri Lankan SMEs. Return ONLY one valid JSON object.
-
-RULES: Copy values EXACTLY. Preserve Sinhala Unicode. No invented numbers. Use "" for missing fields. Default currency: LKR.
-{type_section}
-PARTIES: company_name = the ISSUER (top of document). supplier_name = the OTHER party (buyer/customer/recipient).
-ITEMS: Extract ALL rows. quantity aliases: Qty/QTY/Nos/Pcs/ප්‍රමාණය. unit_price aliases: Rate/Unit Rate/Price/ඒකක මිල.
-TAX: Only extract tax_amount/tax_rate if explicitly printed. Use "" otherwise.
-
-JSON structure:
-{{"document_id":"","document_type":"unknown","order_id":"","flow_type":"unknown","company_name":"","supplier_name":"","date":"","currency":"LKR","raw_total_amount":"","final_total_amount":"","payable_amount":"","cash_return":"","tax_amount":"","tax_rate":"","received_status":"","paid_status":"","items":[{{"description":"","quantity":"","unit_price":"","line_total":""}}]}}
-
+_FEW_SHOT_EXAMPLES = '''
+=== EXAMPLE 1: English Tax Invoice (we are the buyer — payable) ===
 OCR text:
-{cleaned_text}"""
+TAX INVOICE
+Invoice No: INV-2025-0891
+Date: 12/03/2025
+From: Colombo Office Supplies (Pvt) Ltd
+       No. 45, Galle Road, Colombo 03
+       Tel: 0112-345678
+To: Tech Solutions Lanka (Pvt) Ltd
+    No. 78, Union Place, Colombo 02
+
+Description          Qty   Unit Price    Amount
+A4 Paper (500 sheets)  10      350.00   3,500.00
+Whiteboard Markers     5       180.00     900.00
+Stapler (Heavy Duty)   2       750.00   1,500.00
+
+Subtotal:            5,900.00
+VAT (18%):           1,062.00
+Total:               6,962.00
+Due Date: 12/04/2025
+
+Expected output:
+{"document_id":"","document_type":"invoice","order_id":"INV-2025-0891","flow_type":"payable","company_name":"Colombo Office Supplies (Pvt) Ltd","supplier_name":"Tech Solutions Lanka (Pvt) Ltd","date":"12/03/2025","currency":"LKR","raw_total_amount":"6962.00","final_total_amount":"6962.00","payable_amount":"6962.00","cash_return":"","tax_amount":"1062.00","tax_rate":"18","received_status":"","paid_status":"not_paid","due_date":"12/04/2025","delivery_date":"","approved_by":"","proof_of_delivery":null,"signed":null,"supplier_city":"Colombo 02","supplier_phone":"","supplier_email":"","company_city":"Colombo 03","company_phone":"0112-345678","company_email":"","items":[{"description":"A4 Paper (500 sheets)","quantity":"10","unit_price":"350.00","line_total":"3500.00"},{"description":"Whiteboard Markers","quantity":"5","unit_price":"180.00","line_total":"900.00"},{"description":"Stapler (Heavy Duty)","quantity":"2","unit_price":"750.00","line_total":"1500.00"}]}
+
+=== EXAMPLE 2: Sinhala Receipt (we paid cash — cash_outflow) ===
+OCR text:
+ශ්‍රී ලංකා සුපිරි වෙළෙඳසැල
+කොළඹ 07
+දු.අ: 0112-678901
+
+ලදුපත අංකය: R-4521
+දිනය: 25/05/2025
+කේෂියර්: නිලූකා
+
+විස්තරය         ප්‍රමාණය  ඒකක මිල  එකතුව
+සහල් (1kg)          2      180      360
+කිරිපිටි (400g)      1      420      420
+පාන් (සම්පූර්ණ)      1       95       95
+
+එකතුව:  875.00
+ලැබූ:  1000.00
+ශේෂය:   125.00
+
+Expected output:
+{"document_id":"","document_type":"receipt","order_id":"R-4521","flow_type":"cash_outflow","company_name":"ශ්‍රී ලංකා සුපිරි වෙළෙඳසැල","supplier_name":"","date":"25/05/2025","currency":"LKR","raw_total_amount":"875.00","final_total_amount":"875.00","payable_amount":"875.00","cash_return":"125.00","tax_amount":"","tax_rate":"","received_status":"","paid_status":"","due_date":"","delivery_date":"","approved_by":"","proof_of_delivery":null,"signed":null,"supplier_city":"කොළඹ 07","supplier_phone":"0112-678901","supplier_email":"","company_city":"","company_phone":"","company_email":"","items":[{"description":"සහල් (1kg)","quantity":"2","unit_price":"180","line_total":"360"},{"description":"කිරිපිටි (400g)","quantity":"1","unit_price":"420","line_total":"420"},{"description":"පාන් (සම්පූර්ණ)","quantity":"1","unit_price":"95","line_total":"95"}]}
+
+=== EXAMPLE 3: Purchase Order (we are ordering — payable) ===
+OCR text:
+PURCHASE ORDER
+PO Number: PO-2025-0234
+Date: 01/06/2025
+To (Supplier): Print Masters Lanka
+               123 Baseline Road, Colombo 09
+From (Buyer): AIESEC Sri Lanka
+              341/A, Kotte Road, Nugegoda
+
+Item                    Units  Rate/Unit    Amount
+Event Banners 6x4ft       10    3,500.00   35,000.00
+Brochures A5 (500 pcs)     5    4,200.00   21,000.00
+
+Total: LKR 56,000.00
+Approved by: Kasun Perera
+Delivery by: 15/06/2025
+
+Expected output:
+{"document_id":"","document_type":"po","order_id":"PO-2025-0234","flow_type":"payable","company_name":"AIESEC Sri Lanka","supplier_name":"Print Masters Lanka","date":"01/06/2025","currency":"LKR","raw_total_amount":"56000.00","final_total_amount":"56000.00","payable_amount":"56000.00","cash_return":"","tax_amount":"","tax_rate":"","received_status":"","paid_status":"not_paid","due_date":"","delivery_date":"15/06/2025","approved_by":"Kasun Perera","proof_of_delivery":null,"signed":null,"supplier_city":"Colombo 09","supplier_phone":"","supplier_email":"","company_city":"Nugegoda","company_phone":"","company_email":"","items":[{"description":"Event Banners 6x4ft","quantity":"10","unit_price":"3500.00","line_total":"35000.00"},{"description":"Brochures A5 (500 pcs)","quantity":"5","unit_price":"4200.00","line_total":"21000.00"}]}
+'''
 
 
-def extract_structured_json_from_text(raw_text: str, doc_type_hint: str = "") -> dict:
-    cleaned_text = clean_ocr_text(raw_text)
+def _build_extraction_prompt(cleaned_text: str, doc_type_hint: str = "") -> str:
+    """Build a comprehensive few-shot extraction prompt.
 
-    prompt = _build_extraction_prompt(cleaned_text, doc_type_hint)
+    Includes 3 worked examples covering invoice/receipt/PO, Sinhala and English,
+    payable/cash_outflow/receivable flow types, and all IT-10/IT-11 fields.
+    doc_type_hint narrows the type section when the doc type is already known.
+    """
+    if doc_type_hint and doc_type_hint in _TYPE_HINTS:
+        type_section = (
+            f'This document is a {_TYPE_HINTS[doc_type_hint]}\n'
+            f'Set document_type="{doc_type_hint}".'
+        )
+    else:
+        type_section = (
+            'DOCUMENT TYPE — pick exactly one:\n'
+            '  "invoice"  → document header says Invoice / Bill / Tax Invoice / කුවිතාන්සිය\n'
+            '  "receipt"  → POS receipt / cash bill / shop receipt / ලදුපත\n'
+            '  "po"       → Purchase Order / PO / ඇණවුම\n'
+            '  "dn"       → Delivery Note / Goods Received Note / භාර දීමේ සටහන\n'
+            '  "unknown"  → none of the above'
+        )
 
-    # Use the compact type-aware prompt built above; the old generic prompt is removed.
-    # (prompt variable is already set by _build_extraction_prompt above)
-    _ = f"""  # kept to avoid removing the closing .strip() below — see end of block
-You are a precise financial document extraction engine. Extract structured data from OCR text.
+    return f"""Extract ALL fields from the financial document below. Return ONLY one valid JSON object.
 
-Return ONLY one valid JSON object — no explanations, no notes.
+ABSOLUTE RULES:
+1. Copy field values EXACTLY as they appear — never rephrase or translate
+2. Preserve ALL Sinhala Unicode characters exactly — do NOT romanise or translate Sinhala
+3. Never compute or invent numbers — use "" for any missing field
+4. Default currency is LKR unless another currency is printed
 
-CRITICAL RULES:
-- Copy values EXACTLY from the OCR text
-- Preserve ALL Sinhala characters in Sinhala Unicode script
-- Do NOT translate, transliterate, or replace Sinhala text
-- Do NOT calculate or invent numbers
-- Do NOT add values not present in the text
-- Use "" for any field not found in the text
+PARTY DETECTION (most common extraction error):
+- company_name  = the business at the TOP of the document — the ISSUER (the shop, the supplier, the company sending this document)
+- supplier_name = the OTHER party — the buyer, client, recipient, or counterparty
+- For a shop receipt: company_name = shop name, supplier_name = "" (customer usually not named)
+- For an invoice FROM us TO a client: company_name = our company, supplier_name = client
+- For an invoice FROM a supplier TO us: company_name = supplier, supplier_name = our company
 
-DOCUMENT TYPE (pick one):
-- "invoice"  → document header says Invoice/Bill/Tax Invoice
-- "receipt"  → short shop bill, cash receipt, POS receipt, salon/restaurant bill
-- "po"       → Purchase Order / PO
-- "dn"       → Delivery Note / Goods Received Note
-- "unknown"  → if none of the above
+FLOW TYPE:
+- "payable"      → we owe the supplier (we are buying, not yet paid)
+- "receivable"   → client owes us (we issued the invoice, not yet received payment)
+- "cash_outflow" → we already paid (shop receipt, petty cash, expense already settled)
+- "cash_inflow"  → we already received payment from a client
+- "unknown"      → genuinely unclear
 
-FLOW TYPE (pick one):
-- "payable"      → we owe money to a supplier, not yet paid (we are the buyer)
-- "receivable"   → a customer owes us money, not yet received (we are the seller)
-- "cash_outflow" → already paid retail bill / cash purchase / expense paid
-- "cash_inflow"  → money already received from a customer / income received
-- "unknown"      → when unclear
+{type_section}
 
-FIELD EXTRACTION GUIDE:
-- company_name: the business whose name appears at the TOP of this document — the ISSUER
-  (e.g. the shop that issued the receipt, the company that wrote the invoice)
-- supplier_name: the OTHER party — the buyer, customer, recipient, or counter-party.
-  This is NOT the issuing company. It is whoever is on the other side of the transaction.
-  Examples: for a shop receipt → the customer who paid; for an invoice → the client being billed;
-  for a PO → the supplier being ordered from. Leave empty if only one company name appears.
-- order_id: any invoice number, receipt number, PO number, bill number, reference number
-- date: the document date in any format found. If no date is visible, use today's date.
+LINE ITEMS — extract EVERY row:
+- quantity labels: Qty / QTY / Nos / No. / Pcs / Units / ප්‍රමාණය
+- unit_price labels: Rate / Unit Rate / Price / U/Price / ඒකක මිල / මිල
+- line_total labels: Amount / Total / Line Total / Sub / රු.
+- If a receipt has only price and total (no qty column): set quantity="1"
+- Preserve Sinhala item names exactly
 
-LINE ITEMS — THIS IS CRITICAL:
-Each item row in the document must be a separate object in "items".
-For EACH item look for these columns (they may use different labels):
-  - description: item name/product/service (required — always extract)
-  - quantity: amount/count (also labeled as: Qty, QTY, Nos, No., Pcs, Units, Count, ป๊รมาณย)
-  - unit_price: price per unit (also labeled as: Rate, Unit Rate, Price, U/Price, Unit Price, อาคมิล, มิล)
-  - line_total: row total / amount (also labeled as: Amount, Total, Line Total, Sub, รู.)
-If a column is missing from a row, use "" — do NOT skip the item row entirely.
-For receipts with no explicit qty column: assume quantity = 1 if only price and total are given.
-Extract ALL item rows visible in the document — do not skip any.
+TAX — only extract what is EXPLICITLY printed:
+- tax_amount: actual rupee amount (e.g. "VAT: 1,062.00" → "1062.00")
+- tax_rate: percentage printed (e.g. "VAT 18%" → "18")
+- Do NOT calculate tax from subtotal
 
-AMOUNT FIELDS:
-- raw_total_amount: the grand total as it appears in the OCR
-- final_total_amount: same as raw_total_amount unless a discount is applied
-- payable_amount: amount the buyer must pay (after discount, if any)
-- cash_return: change given back to customer (if shown)
-- currency: LKR, USD, EUR etc. (default LKR if not stated)
+WORKFLOW FIELDS (extract only if explicitly printed, use "" or null otherwise):
+- due_date: payment due date (e.g. "Due Date: 30/04/2025")
+- delivery_date: expected delivery date (e.g. "Delivery by: 15/06/2025")
+- approved_by: name of approver (e.g. "Approved by: Kasun Perera")
+- proof_of_delivery: true if there is a "Received By" / signature section, false if signature box is blank, null if unknown
+- signed: true if a signature is present, false if blank, null if unknown
 
-TAX FIELDS (CRITICAL — only extract if explicitly shown on the document):
-- tax_amount: the actual tax amount printed on the document (e.g. "VAT: 300.00", "Tax: 45.00"). Use "" if no tax is shown.
-- tax_rate: the tax percentage printed on the document (e.g. 15 for "VAT 15%", 8 for "GST 8%"). Use "" if no rate is shown.
-- Do NOT calculate or guess tax. Only extract what is EXPLICITLY printed.
+CONTACT FIELDS (extract only if visible in the document):
+- company_city: city of the issuer (top of document)
+- company_phone: phone of the issuer
+- company_email: email of the issuer
+- supplier_city: city of the counterparty
+- supplier_phone: phone of the counterparty
+- supplier_email: email of the counterparty
 
-WORKFLOW FIELDS (Iteration 10 — only extract if explicitly shown):
-- due_date: payment due date if printed on the document (e.g. "Due: 30/07/2025"). Use "" if not shown.
-- delivery_date: expected delivery date if printed (e.g. "Delivery by: 15/07/2025"). Use "" if not shown.
-- approved_by: name of person who approved the document (e.g. "Approved by: John Silva"). Use "" if not shown.
-- proof_of_delivery: true if document has a "Received By" signature section, false otherwise. Use null if unknown.
-- signed: true if there is a signature on the document, false if signature field is blank. Use null if unknown.
+STATUS FIELDS:
+- paid_status: set "not_paid" for invoice/PO we owe; "" for receipts; "" for receivables
+- received_status: set "not_received" for receivable invoices; "" otherwise
 
-CONTACT FIELDS (Iteration 11 — extract if visible on the document):
-- supplier_city: city or town of the supplier/other-party (e.g. "Colombo", "Kandy", "Galle"). Use "" if not visible.
-- supplier_phone: phone/mobile number of the supplier/other-party. Use "" if not visible.
-- supplier_email: email address of the supplier/other-party. Use "" if not visible.
-- company_city: city or town of the issuing company (top of document). Use "" if not visible.
-- company_phone: phone/mobile of the issuing company. Use "" if not visible.
-- company_email: email of the issuing company. Use "" if not visible.
-Note: For city, look for labels like "City:", "Address:", location text under company names, or any visible address line.
+{_FEW_SHOT_EXAMPLES}
 
-Return this JSON structure:
+=== NOW EXTRACT FROM THE DOCUMENT BELOW ===
+OCR text:
+{cleaned_text}
+
+Return ONLY the JSON object matching this structure (no extra text):
 {{
   "document_id": "",
   "document_type": "unknown",
@@ -543,18 +581,15 @@ Return this JSON structure:
   "company_phone": "",
   "company_email": "",
   "items": [
-    {{
-      "description": "",
-      "quantity": "",
-      "unit_price": "",
-      "line_total": ""
-    }}
+    {{"description": "", "quantity": "", "unit_price": "", "line_total": ""}}
   ]
-}}
+}}"""
 
-OCR text:
-{cleaned_text}
-""".strip()
+
+def extract_structured_json_from_text(raw_text: str, doc_type_hint: str = "") -> dict:
+    cleaned_text = clean_ocr_text(raw_text)
+
+    prompt = _build_extraction_prompt(cleaned_text, doc_type_hint)
 
     llm_response = call_ollama(prompt)
 
