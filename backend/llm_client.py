@@ -86,45 +86,45 @@ QUERY_PROVIDER = os.getenv("QUERY_LLM_PROVIDER", _default_query).strip().lower()
 
 # ── Gemini caller ──────────────────────────────────────────────────────────────
 
+_GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta"
+
+
 def _call_gemini(
     prompt: str,
     system: str = "",
     format: str | None = None,
     model_override: str = "",
 ) -> str:
-    """Call the Gemini API via google-generativeai SDK.
+    """Call Gemini via direct REST API — no google-generativeai SDK required.
 
-    model_override: pass a tuned model ID here (e.g. 'tunedModels/sme-gpt-extraction-v1').
-    format='json': sets response_mime_type to application/json for structured output.
+    model_override: tuned model ID (e.g. 'tunedModels/sme-gpt-extraction-v1').
+    format='json': requests JSON output via response_mime_type.
     """
-    try:
-        import google.generativeai as genai
-    except ImportError:
-        raise Exception(
-            "google-generativeai is not installed. Run: pip install google-generativeai"
-        )
-
-    genai.configure(api_key=GEMINI_API_KEY)
-
     model_name = model_override or GEMINI_MODEL
+    url = f"{_GEMINI_API_BASE}/models/{model_name}:generateContent?key={GEMINI_API_KEY}"
 
-    gen_config: dict = {
-        "temperature": 0,
-        "max_output_tokens": 4096,
-    }
+    contents = []
+    if system:
+        contents.append({"role": "user", "parts": [{"text": f"[SYSTEM]\n{system}"}]})
+        contents.append({"role": "model", "parts": [{"text": "Understood."}]})
+    contents.append({"role": "user", "parts": [{"text": prompt}]})
+
+    generation_config: dict = {"temperature": 0, "maxOutputTokens": 4096}
     if format == "json":
-        gen_config["response_mime_type"] = "application/json"
+        generation_config["responseMimeType"] = "application/json"
+
+    payload = {"contents": contents, "generationConfig": generation_config}
 
     try:
-        model = genai.GenerativeModel(
-            model_name=model_name,
-            system_instruction=system if system else None,
-            generation_config=genai.GenerationConfig(**gen_config),
-        )
-        response = model.generate_content(prompt)
-        return response.text.strip()
+        resp = requests.post(url, json=payload, timeout=_GEMINI_TIMEOUT)
+        resp.raise_for_status()
+        data = resp.json()
+        return data["candidates"][0]["content"]["parts"][0]["text"].strip()
+    except requests.exceptions.HTTPError as e:
+        err = resp.json().get("error", {})
+        raise Exception(f"Gemini API error ({model_name}): {err.get('message', e)}")
     except Exception as e:
-        raise Exception(f"Gemini API error ({model_name}): {e}")
+        raise Exception(f"Gemini call failed ({model_name}): {e}")
 
 
 # ── DeepSeek caller ────────────────────────────────────────────────────────────
