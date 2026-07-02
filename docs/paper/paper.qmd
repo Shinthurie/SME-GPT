@@ -1,0 +1,360 @@
+---
+title: "SME-GPT: A Neuro-Symbolic, Bilingual Document-Understanding and Financial Question-Answering System for Sri Lankan SMEs"
+author:
+  - name: "N. A. M. Ashfak"
+    affiliations:
+      - name: "Department of Computer Science, <Your University>"
+    email: "ashfak@example.com"
+    corresponding: true
+  - name: "M. Shinthurie"
+    affiliations:
+      - name: "Department of Computer Science, <Your University>"
+  - name: "R. Sobatharsan"
+    affiliations:
+      - name: "Department of Computer Science, <Your University>"
+  - name: "L. V. A. U. Pushpakumara"
+    affiliations:
+      - name: "Department of Computer Science, <Your University>"
+  # AUTHORSHIP NOTE (delete before submission): see docs/paper/README.md §Authorship.
+  # Confirm each listed author meets your venue's authorship criteria (substantial
+  # contribution + drafting/approval). For coursework, follow your faculty's rule.
+abstract: |
+  Small and medium enterprises (SMEs) in Sri Lanka rely heavily on paper-based
+  financial documents — invoices, receipts, purchase orders, and delivery notes —
+  written in Sinhala, English, or a mix of both, and frequently captured as low-quality
+  phone photographs. Existing accounting software and document-AI services are
+  English-first, expect clean scans, and either cannot answer natural-language
+  financial questions or delegate the arithmetic to a large language model (LLM) that
+  is prone to numerical error. We present SME-GPT, an end-to-end system that ingests
+  bilingual financial documents and answers natural-language financial questions with
+  **deterministic arithmetic correctness**. SME-GPT contributes four components: (C1) a
+  semantic OCR post-correction stage with a non-negotiable *numeric safeguard* that
+  makes the LLM structurally incapable of altering a monetary value; (C2) a
+  deterministic, layout-aware spatial serialization stage that binds values to headers
+  and preserves per-token provenance; (C3) a neuro-symbolic Program-Aided Language
+  (PAL) query engine in which an LLM only *plans* a computation as validated,
+  allow-listed JSON while a symbolic executor performs the arithmetic; and (C4) a
+  tenant-isolated relationship index that links documents across differing vocabularies
+  (e.g. a purchase order and the invoice that references it). We describe the design,
+  the correctness invariants, and an evaluation protocol covering character error rate,
+  numeric-alteration rate, arithmetic accuracy, plan success rate, retrieval quality,
+  and latency. SME-GPT demonstrates that the flexibility of LLMs and the correctness
+  guarantees required by finance can be reconciled through a *correctness-by-construction*
+  neuro-symbolic architecture.
+keywords:
+  - document understanding
+  - optical character recognition
+  - neuro-symbolic reasoning
+  - retrieval-augmented generation
+  - low-resource languages
+  - Sinhala
+  - financial question answering
+bibliography: references.bib
+# --- Output formatting -------------------------------------------------------
+# Default builds a clean article PDF. To target a specific venue, swap `format`
+# for an extension template (see docs/paper/README.md §Choosing a template):
+#   IEEE  -> quarto add dpsdce/quarto-ieee    then format: ieee-pdf
+#   ACM   -> quarto use template quarto-journals/acm
+#   LNCS  -> quarto add ... (see README)
+format:
+  pdf:
+    documentclass: article
+    number-sections: true
+    colorlinks: true
+    fig-pos: "t"
+    geometry:
+      - margin=1in
+    include-in-header:
+      text: |
+        \usepackage{booktabs}
+        \usepackage{amsmath}
+---
+
+# Introduction {#sec-intro}
+
+Small and medium enterprises are the backbone of the Sri Lankan economy, yet most
+operate without bookkeeping software. The tools that exist — international accounting
+suites and cloud document-AI APIs — are English-first, priced in foreign currency,
+assume clean document scans, and rarely handle Sinhala. Even when a document is
+digitised, the owner cannot *interrogate* the data conversationally; they are handed a
+spreadsheet, not an answer. The unmet need sits at the intersection of three hard
+requirements: **(i)** robust extraction from *bilingual* (Sinhala/English), often
+photographed, financial documents; **(ii)** natural-language question answering over the
+extracted data in either language; and **(iii)** arithmetic that is *correct*, because a
+financial assistant that occasionally miscomputes a total is worse than none.
+
+The naïve design — hand the document text and a question to an LLM and let it answer —
+fails requirement (iii): LLMs are confidently wrong at arithmetic and at binding numbers
+to the right field [@wei2022cot; @gao2022pal; @chen2022pot]. SME-GPT instead adopts a
+*correctness-by-construction* stance: the LLM is used only where natural-language
+flexibility is essential (understanding messy input, phrasing answers), while every
+number is produced or checked by deterministic code.
+
+**Contributions.** This paper makes the following contributions:
+
+1. **A numeric-safeguarded OCR post-correction stage (C1)** that permits an LLM to fix
+   textual OCR errors while making it *structurally impossible* to change any digit or
+   decimal position (@sec-c1).
+2. **A deterministic, layout-aware spatial serialization stage (C2)** that reconstructs
+   table structure and binds each value to its header without any LLM paraphrasing,
+   preserving page/bounding-box provenance (@sec-c2).
+3. **A neuro-symbolic Program-Aided query engine (C3)** in which the LLM emits only a
+   validated, allow-listed JSON *plan* and a pandas executor performs the arithmetic,
+   with graceful degradation and typo-tolerant intent understanding (@sec-c3).
+4. **A tenant-isolated relationship index (C4)** that links documents across
+   heterogeneous vocabularies (PO ↔ invoice) to widen query scope deterministically
+   (@sec-c4).
+5. **An end-to-end bilingual system and an evaluation protocol** tying each component to
+   a measurable correctness/quality metric (@sec-eval).
+
+# Related Work {#sec-related}
+
+**OCR for low-resource scripts.** Sinhala is an abugida with a large glyph inventory and
+scarce annotated data, making OCR difficult [@anuradha2020sinhala; @sinhala2025zeroshot].
+Recent benchmarks compare Surya-OCR, TrOCR, EasyOCR, and Tesseract on Sinhala and Tamil
+and highlight persistent accuracy gaps in low-resource settings [@sinhala2025zeroshot].
+SME-GPT uses Surya for its comparatively strong Sinhala support and treats OCR as a
+pluggable engine behind a service interface.
+
+**Post-OCR correction with LLMs.** LLMs have been applied to correct OCR output in
+historical and low-resource corpora, with mixed results and important caveats
+[@bourne2024nofree; @thomas2024leveraging; @roundtripocr2024]. A recurring risk is that a
+generative model silently rewrites content — unacceptable for monetary figures. Our C1
+addresses this directly with a deterministic numeric safeguard rather than relying on the
+model's restraint (@sec-c1).
+
+**Layout-aware document understanding.** Multimodal models such as LayoutLMv3
+[@huang2022layoutlmv3] and OCR-free parsers such as Donut [@kim2022donut] jointly model
+text, layout, and image for key-information extraction, and benchmarks like DocILE
+[@simsa2023docile] and recent surveys [@kie2024survey] track progress on invoices and
+receipts. These approaches are powerful but data- and compute-hungry and are not tuned for
+bilingual Sinhala/English SME documents. C2 instead uses a lightweight, *deterministic*,
+template-based serialization that preserves provenance and is auditable — a deliberate
+trade of learned generality for verifiability in a finance setting.
+
+**Neuro-symbolic and tool-augmented reasoning.** Chain-of-Thought prompting improves LLM
+reasoning but leaves computation inside the model [@wei2022cot]. Program-of-Thoughts
+[@chen2022pot] and Program-Aided Language models (PAL) [@gao2022pal] *disentangle*
+computation from reasoning by generating a program executed by an external interpreter,
+substantially improving numerical accuracy — including on financial QA datasets
+[@chen2022pot]. C3 adapts this idea with a crucial safety addition for an untrusted,
+tenant-facing setting: the LLM never emits executable code, only a *constrained JSON plan*
+that a symbolic validator must accept before a fixed executor runs it.
+
+**Retrieval-augmented generation.** RAG grounds generation in retrieved evidence
+[@lewis2020rag]; SME-GPT uses multilingual embeddings [@wang2024me5] over a `pgvector`
+store to scope queries, with graph-based cross-document expansion (C4) layered on top.
+
+# System Overview {#sec-system}
+
+SME-GPT has an offline *ingestion* path and an online *query* path (see
+@fig-architecture). During ingestion, a document is converted to images, OCR'd, corrected
+(C1), serialized into layout-aware chunks (C2), indexed into a relationship graph (C4),
+and embedded into a vector store. At query time, a scope resolver selects candidate
+documents (SQL date filter + C4 expansion + optional vector retrieval), the PAL engine
+(C3) plans and executes the computation deterministically, and an answer generator phrases
+the result bilingually with provenance.
+
+```{mermaid}
+%%| label: fig-architecture
+%%| fig-cap: "End-to-end architecture. Ingestion: Upload → Preprocess → OCR → C1 numeric-safe correction → C2 spatial serialization → C4 relationship index + vector indexing. Query: scope resolution → retrieval → C3 Plan→Validate→Execute→Answer → answer with computed value and citations. (Starter diagram — refine or replace with figures/architecture.pdf.)"
+flowchart TB
+  subgraph Ingestion
+    U[Upload PDF/Image] --> P[Preprocess 300 DPI] --> O[OCR: Surya]
+    O --> C1["C1: Numeric-safe correction"]
+    C1 --> C2["C2: Spatial serialization"]
+    C2 --> C4["C4: Relationship index"]
+    C2 --> V[(pgvector index)]
+  end
+  subgraph Query
+    Q[NL question si/en] --> S[Scope resolver: SQL + C4]
+    S --> R[Vector retrieval]
+    R --> PAL["C3: Plan → Validate → Execute → Answer"]
+    PAL --> A[Answer + value + citations]
+  end
+  C4 -. widens scope .-> S
+  V -. evidence .-> R
+```
+
+**Technology stack.** Python/FastAPI backend; Next.js/React frontend (installable PWA);
+PostgreSQL with `pgvector` (Supabase) for relational and vector storage; Surya for OCR;
+a provider-routed LLM layer (local Ollama and/or cloud APIs) for the LLM roles;
+`multilingual-e5-small` [@wang2024me5] for embeddings. Every table carries a `tenant_id`
+and every query filters on it (multi-tenancy invariant).
+
+# Component 1: Semantic OCR Post-Correction {#sec-c1}
+
+C1 runs after OCR and before layout analysis, converting noisy per-box OCR text into text
+that is semantically corrected, **numerically immutable**, and bounding-box aligned. It
+operates on individual OCR lines/boxes (not whole-page blobs) and preserves each box's
+`bbox`; correction is text-only.
+
+**Numeric safeguard (the core invariant).** A correction is *rejected* — falling back to
+the raw OCR text — if the corrected string differs from the raw string in (i) digit count,
+(ii) digit sequence, or (iii) decimal structure. The decimal check is essential: `500.00`
+and `5000.0` share the digit sequence `50000` but denote different values, so a *decimal
+skeleton* (the position of a `.` occurring *between two digits*) is compared in addition to
+the raw digits. This guarantees the LLM can never silently change a monetary value
+(@eq-safeguard).
+
+$$
+\textsf{accept}(r, c) \iff \big(\textsf{digits}(r) = \textsf{digits}(c)\big) \wedge
+\big(\textsf{decskel}(r) = \textsf{decskel}(c)\big)
+$$ {#eq-safeguard}
+
+**Failure handling.** If the LLM times out or errors, C1 keeps the raw OCR text; on an
+unsafe numeric change it rejects the correction; for low-confidence OCR it prefers the
+AI-corrected text. Sinhala code points (U+0D80–U+0DFF) are preserved and never
+"translated". Quality is reported as character error rate (CER) and a numeric-alteration
+rate (NAR); by construction NAR is $0$ (no accepted correction alters a number).
+
+# Component 2: Layout-Aware Spatial Serialization {#sec-c2}
+
+C2 converts spatially grounded, corrected tokens (`text + bbox`) into layout-preserving,
+template-based semantic chunks that bind values to their headers and retain provenance for
+UI highlighting. It is deliberately **deterministic** — template-based, with no LLM
+paraphrasing — to keep it auditable.
+
+**Algorithm.** (1) optional ROI detection for table zones; (2) *row clustering* on the
+$y$-axis using a dynamic threshold derived from the median text height; (3) *header
+detection* via bilingual keyword matching (English: description, qty, unit price, total,
+tax, VAT; Sinhala: විස්තරය, ප්‍රමාණය, ඒකක මිල, මුළු, බදු, වැට්); (4) *header→row binding*
+on the $x$-axis by nearest header centre, with ambiguous tokens marked `unknown_column`;
+and (5) *serialization* using fixed templates (e.g. `LineItem | Description: … | Qty: … |
+UnitPrice: … | Total: …`). Rows are one chunk each up to 30 rows, else grouped into blocks
+of 5–10 with the header repeated per block. A strict rule — **never drop tokens** — forces
+best-effort chunks plus provenance in every failure mode. Each `SpatialChunk` carries a
+type (`line_item_row`, `line_item_block`, `key_value`, `header`, `section_text`), field
+values with token ids, and `provenance.{page,bbox}`.
+
+# Component 3: Neuro-Symbolic Arithmetic QA (PAL) {#sec-c3}
+
+C3 answers finance questions requiring arithmetic with deterministic correctness by
+removing the LLM from computation, following the Program-Aided paradigm
+[@gao2022pal; @chen2022pot] but constraining the LLM to emit a *validated JSON plan*
+rather than free-form code.
+
+**Pipeline (@fig-pal).** `Scope Resolver → Retriever → Planner (LLM→JSON) → Validator
+(allow-list) → Executor (pandas) → Answer Generator (LLM)`.
+
+```{mermaid}
+%%| label: fig-pal
+%%| fig-cap: "The PAL query engine. The LLM decides what to compute (a plan); a symbolic validator gates it; a deterministic executor computes how. Invalid plans are returned to the planner for a bounded retry; on repeated failure the engine degrades to a legacy handler."
+flowchart LR
+  Q[Question] --> PL["Planner (LLM) → JSON plan"]
+  PL --> VAL{"Validator: allow-list"}
+  VAL -- invalid --> PL
+  VAL -- valid --> EX["Executor (pandas): exact arithmetic"]
+  EX --> ANS["Answer generator (LLM): phrasing"]
+  ANS --> OUT[Answer + computed value + provenance]
+  VAL -. repeated failure .-> LEG[Legacy fallback]
+```
+
+**Plan contract.** A plan specifies a `task` (`aggregate_sum`, `aggregate_avg`,
+`aggregate_count`, `compare`, `lookup_value`, `group_by_sum`), `filters` over canonical
+fields (`item, description, qty, unit_price, total, tax, discount, currency, doc_date,
+vendor, flow_type`) using allow-listed operators (`eq, in, contains, gte, lte, between`),
+and a `measure` with an aggregation (`sum, avg, count, max, min`).
+
+**Validator (symbolic guard).** A plan is rejected if the task, an operator, or a field is
+outside the allow-list, or a target field is ambiguous. Only validated plans reach the
+executor, which loads canonical-field row records into a DataFrame and applies filters and
+aggregation *exactly* (no `exec`/`eval`).
+
+**Robustness and safety.** Because the LLM performs the natural-language understanding,
+the engine tolerates paraphrase, code-switching, and typos (e.g. *"have we earned anything
+this mont"*) that brittle keyword rules cannot. Because computation is symbolic, arithmetic
+is exact. Relative periods are resolved against an injected reference date; mixed-currency
+aggregates are reported per-currency rather than summed; on validation failure the planner
+retries up to twice with the `error_reason`, and on persistent failure the system degrades
+gracefully to a deterministic legacy handler. This division — *LLM understands, code
+computes, LLM phrases* — is the paper's central design principle.
+
+# Component 4: Multi-Tenant Relationship Index {#sec-c4}
+
+C4 is a tenant-isolated index linking documents to vendors, to reference numbers (PO/INV),
+and to other documents (an invoice that references a PO). It solves the "vector silo"
+problem in which related documents do not share surface vocabulary (a PO lists "laptop"; the
+invoice says "Payment for PO-101"). Persistence is in PostgreSQL (source of truth) across
+`entities`, `entity_aliases`, and `doc_links` tables, each keyed by `tenant_id` with
+auditable edge evidence (`page`, `bbox`, `chunk_id`). Ingestion is *deterministic-first*:
+vendor names are normalised (case, punctuation, corporate suffixes) and reference numbers
+canonicalised by regex before any *conservative* fuzzy aliasing (attach as alias at
+similarity $\geq 0.92$; store low-confidence alias in $[0.85, 0.92)$; new entity below).
+At query time, `expand_related_docs` widens scope before C3 executes, improving recall on
+cross-document questions ("Did we pay for PO-101?").
+
+# Implementation {#sec-impl}
+
+The ingestion pipeline (PDF→image via Poppler, preprocessing, OCR, correction, extraction,
+arithmetic validation, persistence) and the query pipeline (`/ask-query`) are implemented
+in Python/FastAPI. C1 (`ocr_correction.py`), C2 (`spatial_serialization.py`), and the PAL
+modules (`pal_scope.py`, `pal_planner.py`, `pal_validator.py`, `pal_executor.py`,
+`pal_answer.py`, `pal_qa.py`) are independently unit-tested. The system is multi-tenant,
+role-based-access-controlled, and containerised. *State of integration (report honestly):*
+the PAL engine is live over the relational store; C1/C2 box-level correction and spatial
+serialization are implemented and tested as standalone modules pending a production OCR
+backend that exposes per-token geometry, at which point they wire into the live extraction
+path. Presenting this staged status is a strength — it reflects deliberate, testable
+increments (see @sec-eval and the discussion of limitations).
+
+# Evaluation Protocol {#sec-eval}
+
+We evaluate each component against a targeted metric. *This section defines the protocol;
+populate @tbl-results with measured values from your test set before submission.*
+
+- **C1 — OCR quality & integrity.** Character error rate (CER, target $<5\%$) on a
+  ground-truth transcript set; numeric-alteration rate (NAR, target $0\%$); unsafe-block
+  rejection rate.
+- **C2 — structure fidelity.** Cell-extraction accuracy; schema validity ($100\%$);
+  value↔header association accuracy.
+- **C3 — reasoning correctness.** Arithmetic accuracy ($\approx100\%$ target by
+  construction); plan success rate; field-association accuracy; end-to-end latency;
+  explainability (fraction of answers with valid provenance).
+- **C4 — linking.** Cross-document recall; answer-correctness uplift on linked queries;
+  expansion precision; added latency.
+- **System.** Bilingual (Sinhala/English) accuracy parity; robustness to phrasing/typos
+  (report accuracy on a perturbed query set).
+
+: Evaluation results (fill in). {#tbl-results}
+
+| Component | Metric | Target | Result |
+|---|---|---|---|
+| C1 | CER | $<5\%$ | — |
+| C1 | NAR | $0\%$ | — |
+| C2 | Cell-extraction accuracy | high | — |
+| C2 | Association accuracy | high | — |
+| C3 | Arithmetic accuracy | $\approx100\%$ | — |
+| C3 | Plan success rate | high | — |
+| C3 | Median latency | low | — |
+| C4 | Cross-document recall | high | — |
+
+# Discussion and Limitations {#sec-discuss}
+
+SME-GPT trades some learned generality (C2 is template-based rather than a large multimodal
+model) for *verifiability*, which finance demands. Key limitations: OCR remains the hardest
+stage and bounds end-to-end quality; C1/C2 require an OCR backend exposing per-token
+geometry to reach production; and cloud LLM usage raises data-residency questions addressed
+by an optional on-device (Ollama) tier. The PAL planner can still misparse, which is why the
+validator and legacy fallback exist; we recommend reporting planner failure/fallback rates.
+
+# Conclusion {#sec-conclusion}
+
+We presented SME-GPT, a bilingual, neuro-symbolic system for financial document
+understanding and question answering aimed at Sri Lankan SMEs. Its central thesis — *let
+the LLM understand and phrase, but never compute* — reconciles conversational flexibility
+with the arithmetic guarantees finance requires, via a numeric-safeguarded correction stage,
+a deterministic layout serializer, a plan-validate-execute query engine, and a
+tenant-isolated cross-document index. Future work includes wiring C1/C2 into the live
+pipeline behind a production OCR backend, expanding the evaluation to a released Sinhala
+financial-document benchmark, and user studies with SME owners.
+
+# Acknowledgements {.unnumbered}
+
+<!-- If a team member did not meet authorship criteria, acknowledge them here, e.g.:
+"The authors thank L. V. A. U. Pushpakumara for team support." -->
+
+# References {.unnumbered}
+
+::: {#refs}
+:::

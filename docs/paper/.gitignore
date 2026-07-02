@@ -1,0 +1,7 @@
+# Quarto build outputs (regenerate with `quarto render paper.qmd --to pdf`)
+paper.pdf
+/.quarto/
+/*_files/
+*.aux
+*.log
+*.out
