@@ -276,43 +276,43 @@ def test_build_row_records_defaults_missing_currency_to_lkr():
 # ---------------------------------------------------------------------------
 
 def test_plan_query_parses_valid_json_reply(monkeypatch):
-    monkeypatch.setattr(pal_planner, "call_ollama", lambda _p: '{"task": "aggregate_sum", "measure": {"field": "total", "agg": "sum"}}')
+    monkeypatch.setattr(pal_planner, "call_llm", lambda *a, **k: '{"task": "aggregate_sum", "measure": {"field": "total", "agg": "sum"}}')
     plan = pal_planner.plan_query("How much do I owe?")
     assert plan["task"] == "aggregate_sum"
 
 
 def test_plan_query_returns_none_on_unparseable_reply(monkeypatch):
-    monkeypatch.setattr(pal_planner, "call_ollama", lambda _p: "not json at all")
+    monkeypatch.setattr(pal_planner, "call_llm", lambda *a, **k: "not json at all")
     assert pal_planner.plan_query("anything") is None
 
 
 def test_plan_query_returns_none_when_deepseek_unavailable(monkeypatch):
-    monkeypatch.setattr(pal_planner, "call_ollama", lambda _p: (_ for _ in ()).throw(RuntimeError("offline")))
+    monkeypatch.setattr(pal_planner, "call_llm", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("offline")))
     assert pal_planner.plan_query("anything") is None
 
 
 def test_plan_query_includes_retry_note_with_error_reason(monkeypatch):
     captured = {}
-    monkeypatch.setattr(pal_planner, "call_ollama", lambda p: captured.setdefault("prompt", p) and '{"task": "aggregate_sum"}')
+    monkeypatch.setattr(pal_planner, "call_llm", lambda p, *a, **k: captured.setdefault("prompt", p) and '{"task": "aggregate_sum"}')
     pal_planner.plan_query("q", error_reason="field_not_canonical: 'bogus'")
     assert "field_not_canonical" in captured["prompt"]
 
 
 def test_generate_pal_answer_uses_deepseek_reply_when_valid(monkeypatch):
-    monkeypatch.setattr(pal_answer, "call_ollama", lambda _p: '{"short_answer": "S", "full_answer": "F"}')
+    monkeypatch.setattr(pal_answer, "call_llm", lambda *a, **k: '{"short_answer": "S", "full_answer": "F"}')
     result = pal_answer.generate_pal_answer("q", "Acme", {"task": "aggregate_sum"}, {"value": 100, "currency": "LKR", "row_count": 1, "operation": "sum(total)"})
     assert result == {"short_answer": "S", "full_answer": "F"}
 
 
 def test_generate_pal_answer_falls_back_when_deepseek_unavailable(monkeypatch):
-    monkeypatch.setattr(pal_answer, "call_ollama", lambda _p: (_ for _ in ()).throw(RuntimeError("offline")))
+    monkeypatch.setattr(pal_answer, "call_llm", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("offline")))
     computed = {"value": 600.0, "currency": "LKR", "row_count": 2, "operation": "sum(total)"}
     result = pal_answer.generate_pal_answer("q", "Acme", {"task": "aggregate_sum"}, computed)
     assert "LKR 600.00" in result["short_answer"]
 
 
 def test_generate_pal_answer_fallback_mentions_per_currency_breakdown(monkeypatch):
-    monkeypatch.setattr(pal_answer, "call_ollama", lambda _p: (_ for _ in ()).throw(RuntimeError("offline")))
+    monkeypatch.setattr(pal_answer, "call_llm", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("offline")))
     computed = {"value": None, "currency": "mixed", "row_count": 2, "operation": "sum(total)",
                 "per_currency": [{"currency": "LKR", "value": 600.0}, {"currency": "USD", "value": 10.0}]}
     result = pal_answer.generate_pal_answer("q", "Acme", {"task": "aggregate_sum"}, computed)
