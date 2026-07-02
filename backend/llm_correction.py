@@ -5,8 +5,11 @@ from symspellpy import SymSpell, Verbosity
 from llm_client import call_pipeline_llm
 
 _CORRECTION_SYSTEM = (
-    "You are an OCR text correction assistant for financial documents from Sri Lanka. "
-    "You fix OCR errors in English text while preserving all Sinhala characters exactly as-is. "
+    "You are the most accurate OCR text correction assistant for Sri Lankan financial documents. "
+    "You understand Sri Lankan business names, brands, Sinhala Unicode, LKR currency formats, "
+    "and common OCR errors in scanned invoices, receipts, and purchase orders. "
+    "You fix ONLY genuine OCR typos in common English words — never touch Sinhala, numbers, "
+    "company names, product names, or proper nouns. "
     "You output ONLY the corrected text — no explanations, no commentary, nothing else."
 )
 
@@ -441,24 +444,29 @@ def llm_refine_text(raw_text: str) -> str:
     dictionary_fixed = dictionary_correct_text(cleaned)
     masked, placeholders = preserve_sensitive_tokens(dictionary_fixed)
 
-    prompt = f"""
-You are correcting OCR text from a financial document (invoice, receipt, or purchase order).
+    prompt = f"""Fix OCR spelling errors in this Sri Lankan financial document text. Return ONLY the corrected text.
 
 STRICT RULES:
-- Fix OCR spelling mistakes in COMMON words only (e.g. "invoce" → "invoice", "recept" → "receipt")
-- Do NOT correct company names, brand names, shop names, or proper nouns — leave them exactly as they appear
-- Do NOT correct product names, item descriptions, or model numbers
-- Preserve ALL numbers, prices, totals, dates, phone numbers, IDs, and order numbers exactly
-- Preserve Sinhala text in Sinhala Unicode script — do NOT translate or transliterate
-- Do NOT rewrite, summarise, or reorganise the text
-- Do NOT add explanations, notes, or extra words
-- Keep the same line order and line breaks
-- If a word looks like a name, brand, or abbreviation — leave it unchanged
-- Return ONLY the corrected OCR text, nothing else
+1. Fix ONLY clear OCR typos in common English words:
+   - toatl → total, invioce → invoice, recept → receipt, Subtoal → Subtotal, payabel → payable
+   - Amout → Amount, Discont → Discount, Purchse → Purchase, Delviery → Delivery
+2. NEVER change: company names, brand names, shop names, product names, model numbers, proper nouns
+3. NEVER change: any number, price, date, phone, ID, reference number, order number
+4. NEVER change: ANY Sinhala Unicode text — preserve it character-for-character
+5. NEVER translate, transliterate, romanise or explain Sinhala text
+6. Keep exact same line order, spacing, and line breaks
+7. If unsure whether something is a typo or a proper name — leave it unchanged
+8. Return ONLY the corrected text — no labels, no notes, no "Here is:" prefix
 
-OCR text:
-{masked}
-""".strip()
+EXAMPLES OF CORRECT CORRECTIONS:
+  "INVIOCE No: INV-001" → "INVOICE No: INV-001"   (common word fixed)
+  "Toatl Amout: 3500"   → "Total Amount: 3500"     (common words fixed)
+  "Virtusa (Pvt) Ltd"   → "Virtusa (Pvt) Ltd"      (company name untouched)
+  "ශ්‍රී ලංකා"            → "ශ්‍රී ලංකා"               (Sinhala untouched)
+  "0112-456789"         → "0112-456789"             (phone untouched)
+
+OCR text to correct:
+{masked}"""
 
     corrected = call_ollama(prompt)
     corrected = strip_llm_boilerplate(corrected)
