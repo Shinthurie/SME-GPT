@@ -9,6 +9,7 @@ retry (component-3.md "Retry & clarification", up to 2x).
 from __future__ import annotations
 
 import json
+from datetime import date
 
 from llm_client import call_llm
 
@@ -21,6 +22,15 @@ _PLAN_SYSTEM = (
 
 _PLAN_PROMPT = """You are a financial query planner for a Sri Lankan SME system. Convert the user's
 question into a single JSON plan -- you never compute the answer yourself, you only describe what to compute.
+
+TODAY'S DATE is {today}. Resolve every relative period against this date and emit concrete ISO
+dates in a "between" filter:
+  - "today"        → [today, today]
+  - "this week"    → Monday..Sunday of the current week
+  - "this month"   → first..last day of the current month
+  - "last month"   → first..last day of the previous month
+  - "this year"    → Jan 1..Dec 31 of the current year
+Never hardcode a year from the examples below — always compute from TODAY.
 
 LANGUAGE NOTE: The user may write in English, Sinhala, or a natural mix of both (very common in
 Sri Lanka). Treat Sinhala words as their English semantic equivalents when planning:
@@ -99,7 +109,9 @@ def plan_query(question: str, error_reason: str | None = None) -> dict | None:
         f"\nYour previous plan was rejected: {error_reason}. Fix it and return a corrected plan."
         if error_reason else ""
     )
-    prompt = _PLAN_PROMPT.format(question=question, retry_note=retry_note)
+    prompt = _PLAN_PROMPT.format(
+        question=question, retry_note=retry_note, today=date.today().isoformat()
+    )
 
     try:
         raw_reply = call_llm(prompt, system=_PLAN_SYSTEM, format="json")

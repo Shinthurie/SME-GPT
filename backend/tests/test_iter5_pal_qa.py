@@ -298,6 +298,17 @@ def test_plan_query_includes_retry_note_with_error_reason(monkeypatch):
     assert "field_not_canonical" in captured["prompt"]
 
 
+def test_plan_query_injects_todays_date(monkeypatch):
+    # Relative periods ("this month") can't resolve without a reference date, so the
+    # planner prompt must include today's date.
+    import datetime
+    captured = {}
+    monkeypatch.setattr(pal_planner, "call_llm",
+                        lambda p, *a, **k: captured.setdefault("prompt", p) and '{"task": "aggregate_sum"}')
+    pal_planner.plan_query("how much did we earn this month")
+    assert datetime.date.today().isoformat() in captured["prompt"]
+
+
 def test_generate_pal_answer_uses_deepseek_reply_when_valid(monkeypatch):
     monkeypatch.setattr(pal_answer, "call_llm", lambda *a, **k: '{"short_answer": "S", "full_answer": "F"}')
     result = pal_answer.generate_pal_answer("q", "Acme", {"task": "aggregate_sum"}, {"value": 100, "currency": "LKR", "row_count": 1, "operation": "sum(total)"})
@@ -374,6 +385,55 @@ def test_answer_financial_question_pal_success_path(monkeypatch):
     assert result["metrics"]["task"] == "aggregate_sum"
     assert len(result["evidence"]) == 1
     assert result["evidence"][0]["document_id"] == "INV1"
+
+
+# Mixed income (receivable) + expense (cash_outflow) — mirrors the real R20 bug:
+# an "earn this month" query must sum only the income and exclude the transport expense.
+_MIXED_DF = pd.DataFrame([
+    {"document_id": "IN1", "date": "2026-07-01", "supplier_name": "Client", "company_name": "MyCo",
+     "flow_type": "receivable", "currency": "LKR",
+     "items": [{"description": "Service", "quantity": 1, "unit_price": 8000.0, "line_total": 8000.0}],
+     "final_total_amount": 8000.0, "payable_amount": 8000.0, "raw_total_amount": 8000.0,
+     "document_type": "invoice", "order_id": "NULL", "received_status": "NULL", "paid_status": "NULL"},
+    {"document_id": "R20", "date": "2026-07-02", "supplier_name": "Transport", "company_name": "MyCo",
+     "flow_type": "cash_outflow", "currency": "LKR",
+     "items": [{"description": "Transport", "quantity": 1, "unit_price": 5000.0, "line_total": 5000.0}],
+     "final_total_amount": 5000.0, "payable_amount": 5000.0, "raw_total_amount": 5000.0,
+     "document_type": "receipt", "order_id": "NULL", "received_status": "NULL", "paid_status": "NULL"},
+])
+
+_INCOME_PLAN = {"task": "aggregate_sum",
+                "filters": [{"field": "flow_type", "op": "in", "value": ["receivable", "cash_inflow"]}],
+                "measure": {"field": "total", "agg": "sum"}, "group_by": []}
+
+
+def test_income_query_with_period_routes_to_pal_and_excludes_expense(monkeypatch):
+    # route_question really returns date_range_query for "...this month"; the income
+    # aggregation override must still send it to PAL (not the legacy keyword handler)
+    # and the deterministic executor must exclude the cash_outflow transport receipt.
+    monkeypatch.setattr(pal_qa, "resolve_scope_with_rag", lambda _q, _c, _u: (_MIXED_DF, None))
+    monkeypatch.setattr(pal_qa, "plan_query", lambda _q, error_reason=None: _INCOME_PLAN)
+    monkeypatch.setattr(pal_qa, "generate_pal_answer", lambda *a, **kw: {"short_answer": "S", "full_answer": "F"})
+
+    result = pal_qa.answer_financial_question("how much did we earn this month", "MyCo", "user1")
+
+    assert result["audit"]["engine"] == "pal"
+    assert result["computed"]["value"] == 8000.0
+    ids = [e["document_id"] for e in result["evidence"]]
+    assert "IN1" in ids and "R20" not in ids
+
+
+def test_income_query_with_typo_still_routes_to_pal(monkeypatch):
+    # "have we earned anything this mont" (typo) must not fall into the brittle
+    # keyword path — the aggregation override routes it to PAL.
+    monkeypatch.setattr(pal_qa, "resolve_scope_with_rag", lambda _q, _c, _u: (_MIXED_DF, None))
+    monkeypatch.setattr(pal_qa, "plan_query", lambda _q, error_reason=None: _INCOME_PLAN)
+    monkeypatch.setattr(pal_qa, "generate_pal_answer", lambda *a, **kw: {"short_answer": "S", "full_answer": "F"})
+
+    result = pal_qa.answer_financial_question("have we earned anything this mont", "MyCo", "user1")
+
+    assert result["audit"]["engine"] == "pal"
+    assert result["computed"]["value"] == 8000.0
 
 
 def test_answer_financial_question_degrades_to_legacy_after_exhausting_retries(monkeypatch):
