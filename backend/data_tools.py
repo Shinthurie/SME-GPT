@@ -802,20 +802,6 @@ def _extract_contact_from_row(row) -> dict:
     return {"phone": phone, "email": email, "city": city}
 
 
-def _extract_contact_from_text(text: str) -> dict:
-    """Legacy helper — kept for backward compatibility. Prefer _extract_contact_from_row."""
-    if not text or str(text).strip().upper() in ("NULL", "NONE", ""):
-        return {}
-    contact = {}
-    phones = re.findall(r"(?:\+94|0)[\s\-]?\d{2}[\s\-]?\d{3}[\s\-]?\d{4}", text)
-    if phones:
-        contact["phone"] = phones[0].strip()
-    emails = re.findall(r"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}", text)
-    if emails:
-        contact["email"] = emails[0].strip()
-    return contact
-
-
 _MONTH_NAMES = {
     "january": 1, "february": 2, "march": 3, "april": 4,
     "may": 5, "june": 6, "july": 7, "august": 8,
