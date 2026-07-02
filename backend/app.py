@@ -943,11 +943,18 @@ class UpdateDocumentRequest(BaseModel):
 # =========================
 @app.get("/health")
 def health():
-    from llm_client import check_ollama_health
+    from llm_client import (
+        check_ollama_health, check_gemini_health,
+        GEMINI_API_KEY, QUERY_PROVIDER, PIPELINE_PROVIDER,
+    )
     ollama = check_ollama_health()
+    gemini = check_gemini_health() if GEMINI_API_KEY else {"ok": False, "error": "GEMINI_API_KEY not set"}
     return {
         "success": True,
         "message": "Backend is running.",
+        "llm_provider": QUERY_PROVIDER,
+        "pipeline_llm_provider": PIPELINE_PROVIDER,
+        "gemini": gemini,
         "ollama": ollama,
     }
 

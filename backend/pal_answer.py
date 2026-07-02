@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 
-from ai_helper import call_ollama
+from llm_client import call_llm
 from llm_correction import count_sinhala_chars
 
 _ANSWER_PROMPT = """You are a financial assistant. Answer in {language}.
@@ -73,7 +73,7 @@ def generate_pal_answer(question: str, company_name: str, plan: dict, computed: 
     )
 
     try:
-        raw_reply = call_ollama(prompt)
+        raw_reply = call_llm(prompt, system="You are a financial assistant. Return ONLY valid JSON.", format="json")
         start, end = raw_reply.find("{"), raw_reply.rfind("}")
         if start != -1 and end != -1 and end > start:
             parsed = json.loads(raw_reply[start:end + 1])
