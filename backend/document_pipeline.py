@@ -84,12 +84,6 @@ def _safe_remove_dir_contents(folder: Path):
             shutil.rmtree(child, ignore_errors=True)
 
 
-def clean_temp_files():
-    ensure_dirs()
-    for folder in [RAW_DIR, ORIG_DIR, P_DIR, M_DIR]:
-        _safe_remove_dir_contents(folder)
-
-
 def save_uploaded_file(upload_path: str) -> Path:
     ensure_dirs()
 

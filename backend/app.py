@@ -19,7 +19,7 @@ load_dotenv()  # must run before any local module is imported so env vars are se
 
 import jwt
 import psycopg
-from fastapi import Body, Depends, FastAPI, File, Header, HTTPException, Query, Request, UploadFile
+from fastapi import Body, FastAPI, File, Header, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
