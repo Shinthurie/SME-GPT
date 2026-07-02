@@ -48,7 +48,7 @@ def build_fallback_answer(question: str, company_name: str, result: dict) -> tup
         short_answer = f"The current receivable amount for {company_name} is {format_money(total, currency)}."
 
         full_answer = (
-            f"Based on the analysis result provided, which is based only on financial_documents_clean.csv, "
+            f"Based on the analysis of your saved documents, "
             f"we found {doc_count} receivable document(s) for company '{company_name}'. "
             f"The receivable amount is aggregated to {format_money(total, currency)}. "
             f"These documents were included because they matched the current user, matched the company name, "
@@ -63,7 +63,7 @@ def build_fallback_answer(question: str, company_name: str, result: dict) -> tup
         short_answer = f"The current payable amount for {company_name} is {format_money(total, currency)}."
 
         full_answer = (
-            f"Based on the analysis result provided, which is based only on financial_documents_clean.csv, "
+            f"Based on the analysis of your saved documents, "
             f"we found {doc_count} payable document(s) for company '{company_name}'. "
             f"The payable amount is aggregated to {format_money(total, currency)}. "
             f"These documents were included because they matched the current user, matched the company name, "
@@ -76,7 +76,7 @@ def build_fallback_answer(question: str, company_name: str, result: dict) -> tup
         short_answer = f"I found {doc_count} matching document(s) for {company_name}."
 
         full_answer = (
-            f"Based on the analysis result provided, which is based only on financial_documents_clean.csv, "
+            f"Based on the analysis of your saved documents, "
             f"I found {doc_count} matching document(s) for company '{company_name}'. "
             f"The returned evidence was filtered using the current user context and matching document type."
         )
@@ -111,7 +111,7 @@ Rules:
 - The explanation must be separate and concise
 - If currency is LKR, use LKR in the answer
 - If a total is aggregated, clearly say it is aggregated
-- Mention that evidence comes only from financial_documents_clean.csv
+- Mention that evidence comes only from the user's saved documents
 - Do not mention hidden reasoning
 
 Return ONLY valid JSON in this exact shape:
