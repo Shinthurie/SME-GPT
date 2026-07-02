@@ -80,7 +80,7 @@ function DocIcon({ type }: { type: DocIconType }) {
   );
 }
 
-function StatCard({ label, value, color }: { label: string; value: string; color?: string }) {
+function StatCard({ label, value, color, loading }: { label: string; value: string; color?: string; loading?: boolean }) {
   return (
     <div
       className="rounded-2xl px-4 py-4 shadow-sm"
@@ -89,12 +89,40 @@ function StatCard({ label, value, color }: { label: string; value: string; color
       <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[var(--text-3)]">
         {label}
       </p>
-      <p
-        className="mt-2 text-[22px] font-extrabold leading-none"
-        style={{ color: color || "var(--text-1)" }}
-      >
-        {value}
-      </p>
+      {loading ? (
+        <div
+          className="mt-2 h-[22px] w-12 animate-pulse rounded-md"
+          style={{ background: "var(--border)" }}
+          aria-hidden
+        />
+      ) : (
+        <p
+          className="mt-2 text-[22px] font-extrabold leading-none"
+          style={{ color: color || "var(--text-1)" }}
+        >
+          {value}
+        </p>
+      )}
+    </div>
+  );
+}
+
+// Pulsing placeholder mirroring a recent-document row, shown while the
+// dashboard summary is still fetching (instead of "no documents yet").
+function RecentDocSkeleton() {
+  const bar = (cls: string) => (
+    <div className={`animate-pulse rounded-md ${cls}`} style={{ background: "var(--border)" }} aria-hidden />
+  );
+  return (
+    <div className="w-full rounded-2xl p-4" style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
+      <div className="flex items-center gap-4">
+        <div className="h-11 w-11 shrink-0 animate-pulse rounded-xl" style={{ background: "var(--border)" }} aria-hidden />
+        <div className="min-w-0 flex-1 space-y-2">
+          {bar("h-[15px] w-1/2")}
+          {bar("h-[11px] w-1/3")}
+          {bar("h-[12px] w-2/5")}
+        </div>
+      </div>
     </div>
   );
 }
@@ -176,6 +204,8 @@ export default function DashboardPage() {
 
   const t = ui[lang];
   const recentDocs = summary?.recent_documents || [];
+  // Still fetching the summary — drives skeleton placeholders instead of "0" / "no documents".
+  const loading = !summary && !error;
 
   const getRecentMeta = (doc: RecentDocument) => {
     const amt = formatMoney(doc.final_total_amount, doc.currency) || "—";
@@ -311,10 +341,18 @@ export default function DashboardPage() {
 
           {/* Stats */}
           <section className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <StatCard label={lang === "si" ? "මුළු ලේඛන"  : "Total Documents"} value={String(summary?.total   ?? 0)} />
-            <StatCard label={lang === "si" ? "ඉන්වොයිස්"  : "Invoices"}        value={String(summary?.invoice ?? 0)} color="var(--brand-mid)" />
-            <StatCard label={lang === "si" ? "රිසිට්"      : "Receipts"}        value={String(summary?.receipt ?? 0)} color="#16a34a" />
-            <StatCard label="PO / DN"                                            value={String((summary?.po ?? 0) + (summary?.dn ?? 0))} color="#7c3aed" />
+            {(() => {
+              // Show pulsing skeletons while the summary is still fetching, so counts
+              // never flash a misleading "0" on first load.
+              return (
+                <>
+                  <StatCard label={lang === "si" ? "මුළු ලේඛන"  : "Total Documents"} value={String(summary?.total   ?? 0)} loading={loading} />
+                  <StatCard label={lang === "si" ? "ඉන්වොයිස්"  : "Invoices"}        value={String(summary?.invoice ?? 0)} color="var(--brand-mid)" loading={loading} />
+                  <StatCard label={lang === "si" ? "රිසිට්"      : "Receipts"}        value={String(summary?.receipt ?? 0)} color="#16a34a" loading={loading} />
+                  <StatCard label="PO / DN"                                            value={String((summary?.po ?? 0) + (summary?.dn ?? 0))} color="#7c3aed" loading={loading} />
+                </>
+              );
+            })()}
           </section>
 
           {/* Recent docs */}
@@ -333,7 +371,9 @@ export default function DashboardPage() {
             </div>
 
             <div className="space-y-3">
-              {recentDocs.length === 0 ? (
+              {loading ? (
+                Array.from({ length: 3 }).map((_, i) => <RecentDocSkeleton key={i} />)
+              ) : recentDocs.length === 0 ? (
                 <div
                   className="rounded-2xl px-4 py-8 text-center text-[14px] text-[var(--text-2)]"
                   style={{ background: "var(--surface)", border: "1px solid var(--border)" }}

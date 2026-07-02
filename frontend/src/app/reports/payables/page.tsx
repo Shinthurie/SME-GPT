@@ -69,6 +69,30 @@ function AgeBadge({ days }: { days: number }) {
   );
 }
 
+// Pulsing placeholder for the two report sections (title + tab pills + table
+// rows each), shown while the payables/receivables data is still fetching.
+function ReportSkeleton() {
+  return (
+    <div className="space-y-8" aria-busy>
+      {[0, 1].map((sec) => (
+        <section key={sec}>
+          <div className="mb-3 h-[15px] w-40 animate-pulse rounded" style={{ background: "var(--border)" }} aria-hidden />
+          <div className="mb-4 flex gap-2">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <div key={i} className="h-[34px] w-32 animate-pulse rounded-xl" style={{ background: "var(--border)" }} aria-hidden />
+            ))}
+          </div>
+          <div className="space-y-3 rounded-2xl p-4" style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="h-[18px] w-full animate-pulse rounded" style={{ background: "var(--border)" }} aria-hidden />
+            ))}
+          </div>
+        </section>
+      ))}
+    </div>
+  );
+}
+
 function PayableTable({ rows, currency = "LKR", lang, router, emptyMsg }: {
   rows: PayableRow[]; currency?: string; lang: string;
   router: ReturnType<typeof useRouter>; emptyMsg: string;
@@ -237,10 +261,7 @@ export default function PayablesPage() {
       width="standard"
     >
       {loading ? (
-        <div className="rounded-2xl py-12 text-center text-[14px] text-[var(--text-3)]"
-          style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
-          {lang === "si" ? "පූරණය..." : "Loading…"}
-        </div>
+        <ReportSkeleton />
       ) : error ? (
         <div className="rounded-2xl px-5 py-4 text-[13px] text-red-600"
           style={{ background: "rgba(220,38,38,0.06)", border: "1px solid rgba(220,38,38,0.2)" }}>
