@@ -82,29 +82,45 @@ export default function PnlPage() {
       }
     >
 
-          {/* Summary cards */}
-          {data && (
+          {/* Summary cards — show pulsing skeletons while (re)fetching so revenue/
+              expenses/net don't display stale values on a month-count change. */}
+          {(loading || data) && !error && (
             <div className="mt-5 grid grid-cols-3 gap-3">
               {[
-                { label: lang === "si" ? "ආදායම" : "Revenue",  value: data.total_revenue,  color: "#16a34a" },
-                { label: lang === "si" ? "වියදම" : "Expenses",  value: data.total_expenses, color: "#dc2626" },
-                { label: lang === "si" ? "ශුද්ධ ලාභය" : "Net Profit", value: data.net_profit,
-                  color: data.net_profit >= 0 ? "#2252b5" : "#ea6c0a" },
+                { label: lang === "si" ? "ආදායම" : "Revenue",  value: data?.total_revenue,  color: "#16a34a" },
+                { label: lang === "si" ? "වියදම" : "Expenses",  value: data?.total_expenses, color: "#dc2626" },
+                { label: lang === "si" ? "ශුද්ධ ලාභය" : "Net Profit", value: data?.net_profit,
+                  color: (data?.net_profit ?? 0) >= 0 ? "#2252b5" : "#ea6c0a" },
               ].map(({ label, value, color }) => (
                 <div key={label} className="rounded-2xl p-4"
                   style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
                   <p className="text-[10px] font-bold uppercase text-[var(--text-3)]">{label}</p>
-                  <p className="mt-1 text-[15px] font-extrabold" style={{ color }}>
-                    {fmt(value)}
-                  </p>
+                  {loading ? (
+                    <div className="mt-1 h-[18px] w-3/4 animate-pulse rounded-md" style={{ background: "var(--border)" }} aria-hidden />
+                  ) : (
+                    <p className="mt-1 text-[15px] font-extrabold" style={{ color }}>
+                      {fmt(value ?? 0)}
+                    </p>
+                  )}
                 </div>
               ))}
             </div>
           )}
 
           {loading ? (
-            <div className="mt-8 rounded-2xl py-10 text-center text-[14px] text-[var(--text-2)]"
-              style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>{t.loading}</div>
+            <>
+              {/* Chart skeleton */}
+              <div className="mt-5 rounded-2xl p-4" style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
+                <div className="mb-3 h-[11px] w-24 animate-pulse rounded" style={{ background: "var(--border)" }} aria-hidden />
+                <div className="h-[240px] w-full animate-pulse rounded-xl" style={{ background: "var(--border)" }} aria-hidden />
+              </div>
+              {/* Table skeleton */}
+              <div className="mt-4 space-y-3 rounded-2xl p-4" style={{ background: "var(--surface)", border: "1px solid var(--border)" }} aria-busy aria-label={t.loading}>
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <div key={i} className="h-[16px] w-full animate-pulse rounded" style={{ background: "var(--border)" }} aria-hidden />
+                ))}
+              </div>
+            </>
           ) : error ? (
             <div className="mt-5 rounded-2xl px-4 py-3 text-[13px] text-red-600"
               style={{ background: "rgba(220,38,38,0.06)", border: "1px solid rgba(220,38,38,0.2)" }}>{error}</div>

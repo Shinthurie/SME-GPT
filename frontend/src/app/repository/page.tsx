@@ -65,6 +65,29 @@ function formatFileSize(kb?: number | null) {
   return `${Math.round(n)} KB`;
 }
 
+// Pulsing placeholder that mirrors a real document card's layout, shown while
+// the repository list is still fetching (instead of a "Loading…" text line).
+function SkeletonCard() {
+  const bar = (cls: string) => (
+    <div className={`animate-pulse rounded-md ${cls}`} style={{ background: "var(--border)" }} aria-hidden />
+  );
+  return (
+    <div className="rounded-2xl p-4" style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
+      <div className="flex items-start gap-4">
+        <div className="h-11 w-11 shrink-0 animate-pulse rounded-xl" style={{ background: "var(--border)" }} aria-hidden />
+        <div className="min-w-0 flex-1">
+          {bar("h-[15px] w-1/2")}
+          <div className="mt-2">{bar("h-[11px] w-1/3")}</div>
+          <div className="mt-3 flex items-center justify-between">
+            {bar("h-[22px] w-20")}
+            {bar("h-[13px] w-16")}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function RepositoryPage() {
   const router = useRouter();
   const [lang, setLang] = useState<AppLanguage>("en");
@@ -339,9 +362,8 @@ export default function RepositoryPage() {
 
           {/* Content */}
           {loading ? (
-            <div className="rounded-2xl px-4 py-8 text-center text-[14px] text-[var(--text-2)]"
-              style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
-              {t.loading}
+            <div className="space-y-3" aria-busy aria-label={t.loading}>
+              {Array.from({ length: 5 }).map((_, i) => <SkeletonCard key={i} />)}
             </div>
           ) : error ? (
             <div className="rounded-2xl px-4 py-6 text-center text-[14px] text-red-600"
