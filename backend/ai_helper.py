@@ -85,7 +85,7 @@ def build_fallback_answer(question: str, company_name: str, result: dict) -> tup
     short_answer = f"I found {len(evidence)} matching record(s) for {company_name}."
 
     full_answer = (
-        f"Based on the analysis result provided, which is based only on financial_documents_clean.csv, "
+        f"Based on the analysis of your saved documents, "
         f"I found {len(evidence)} matching record(s) for company '{company_name}'. "
         f"The result was generated using only the current user's saved records."
     )
