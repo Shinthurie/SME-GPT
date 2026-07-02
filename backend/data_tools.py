@@ -1253,10 +1253,11 @@ def handle_date_range_query(question: str, df: pd.DataFrame, company_name: str):
     # Detect income/expense context so we filter by flow direction, not just date.
     # Without this, "how much income did we earn last month?" returns ALL documents
     # in the period (payables mixed with receivables).
-    _income_terms = ["income", "revenue", "earned", "earning", "revenues", "sales",
-                     "ආදායම", "ලැබිය", "receivable", "inflow", "cash inflow"]
-    _expense_terms = ["expense", "expenses", "expence", "spent", "spend", "spending", "cost", "expenditure",
-                      "වියදම", "ගෙවිය", "payable", "outflow", "cash outflow"]
+    # Use word stems as substrings: "earn" also catches earned/earning/earnings.
+    _income_terms = ["income", "revenue", "earn", "sale", "turnover",
+                     "ආදාය", "ලැබිය", "ඉපැය", "receivable", "inflow", "cash inflow"]
+    _expense_terms = ["expense", "expence", "spent", "spend", "spending", "cost", "expenditure",
+                      "වියද", "ගෙවිය", "payable", "outflow", "cash outflow"]
     wants_income = any(t in q for t in _income_terms)
     wants_expense = any(t in q for t in _expense_terms)
 

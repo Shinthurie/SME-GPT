@@ -557,6 +557,28 @@ def test_date_range_income_query_only_returns_receivable():
     assert "IN2" not in ids, "Payable document must NOT appear in income query results"
 
 
+def test_date_range_bare_earn_keyword_filters_to_income():
+    """Regression (the R20 bug): the exact query "how much did we earn this month" —
+    bare "earn", no "income" word — must still trigger the income filter and exclude
+    the transport expense. Previously _income_terms had "earned"/"earning" but not
+    the bare stem "earn", so no flow filter was applied and expenses leaked in."""
+    import pandas as pd
+    from data_tools import handle_date_range_query, enrich_dataset
+
+    records = [
+        _doc({"document_id": "IN1", "flow_type": "receivable", "effective_flow_type": "receivable",
+              "final_total_amount": 8_000, "date": date.today().isoformat()}),
+        _doc({"document_id": "R20", "flow_type": "cash_outflow", "effective_flow_type": "cash_outflow",
+              "supplier_name": "Transport", "final_total_amount": 5_000, "date": date.today().isoformat()}),
+    ]
+    df = enrich_dataset(pd.DataFrame(records))
+    result = handle_date_range_query("how much did we earn this month", df, "AIESEC")
+
+    ids = [e["document_id"] for e in result["evidence"]]
+    assert "IN1" in ids, "Receivable must appear for a bare 'earn' income query"
+    assert "R20" not in ids, "The transport expense (cash_outflow) must be excluded"
+
+
 def test_date_range_expense_query_only_returns_payable():
     """Expense keywords inside a date query must filter to payable/cash_outflow only."""
     import pandas as pd

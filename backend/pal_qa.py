@@ -52,6 +52,35 @@ _LEGACY_DIRECT_INTENTS = {
     "financial_comparison",
 }
 
+# Intents whose income/expense aggregations we prefer to answer with PAL instead
+# of the brittle keyword handlers. Routing (route_question) grabs "how much did we
+# earn this month" as date_range_query because of "this month"; the legacy handler
+# then misses the income filter for phrasings/typos it doesn't have keywords for.
+# PAL's LLM planner understands the intent (typo-tolerant), computes deterministically
+# (flow_type filter + date range), and phrases a friendly answer — falling back to
+# legacy if it can't produce a valid plan.
+_PAL_ELIGIBLE_ON_AGG = {
+    "date_range_query", "revenue", "expenses", "cash_inflow", "cash_outflow",
+}
+
+# Income/expense signal words (substrings, so "earn" also catches earned/earning/
+# earnings). English + a few common Sinhala stems. Liberal on purpose: a false
+# positive only sends the query to PAL, which degrades to legacy if it can't plan.
+_FINANCIAL_AGG_WORDS = (
+    # income
+    "earn", "income", "revenue", "sale", "turnover", "inflow", "receiv",
+    "ආදාය", "ලැබ", "ඉපැය",
+    # expense
+    "spend", "spent", "expens", "expence", "cost", "expenditure", "outflow", "payable",
+    "වියද", "ගෙවිය",
+)
+
+
+def _wants_financial_aggregation(normalized_q: str) -> bool:
+    """True when the question is about money earned or spent — the case where PAL's
+    neuro-symbolic path (LLM understanding + deterministic math) beats keyword rules."""
+    return any(w in normalized_q for w in _FINANCIAL_AGG_WORDS)
+
 
 def _legacy_answer(
     question: str,
@@ -112,13 +141,22 @@ def answer_financial_question(question: str, company_name: str, user_id: str) ->
     _normalized = dt.normalize_query(_corrected)
     question_type = dt.route_question(_normalized)
 
-    if question_type in _NON_ARITHMETIC_INTENTS:
-        # Listing queries — no provenance check (empty set is a valid answer)
-        return _legacy_answer(question, company_name, user_id, require_provenance=False)
+    # Prefer PAL for income/expense aggregations (e.g. "how much did we earn this
+    # month", typos included) — the LLM planner understands the intent robustly and
+    # the executor computes it deterministically with the correct flow_type filter.
+    _pal_override = (
+        question_type in _PAL_ELIGIBLE_ON_AGG
+        and _wants_financial_aggregation(_normalized)
+    )
 
-    if question_type in _LEGACY_DIRECT_INTENTS:
-        # Deterministic aggregation — bypass PAL planner to avoid LLM flow_type errors
-        return _legacy_answer(question, company_name, user_id, require_provenance=True)
+    if not _pal_override:
+        if question_type in _NON_ARITHMETIC_INTENTS:
+            # Listing queries — no provenance check (empty set is a valid answer)
+            return _legacy_answer(question, company_name, user_id, require_provenance=False)
+
+        if question_type in _LEGACY_DIRECT_INTENTS:
+            # Deterministic aggregation — bypass PAL planner to avoid LLM flow_type errors
+            return _legacy_answer(question, company_name, user_id, require_provenance=True)
 
     # Iteration 15 — FR-19: hybrid RAG + SQL scope; degrades silently to SQL-only
     documents_df, scope_error = resolve_scope_with_rag(question, company_name, user_id)
