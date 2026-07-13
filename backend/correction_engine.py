@@ -119,9 +119,15 @@ def _parse_date_flexible(date_str: str):
     """Try common date formats, return date object or None."""
     if not date_str or str(date_str).strip().upper() in ("", "NULL", "NONE"):
         return None
+    s = str(date_str).strip()
+    try:
+        # ISO YYYY-MM-DD must be parsed first — dayfirst=True mangles it to YYYY-DD-MM
+        return _date_today.fromisoformat(s)
+    except ValueError:
+        pass
     from dateutil import parser as _dparser
     try:
-        return _dparser.parse(str(date_str), dayfirst=True).date()
+        return _dparser.parse(s, dayfirst=True).date()
     except Exception:
         return None
 
