@@ -9,7 +9,7 @@ import {
 } from "recharts";
 import * as XLSX from "xlsx";
 
-const BACKEND_URL = "http://127.0.0.1:8000";
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://127.0.0.1:8000";
 
 type PnlMonth = { month: string; revenue: number; expenses: number; net: number; doc_count: number };
 

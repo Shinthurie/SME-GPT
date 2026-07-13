@@ -10,7 +10,7 @@ import { AppLanguage, getStoredLanguage, ui } from "@/lib/i18n";
 import { isHiddenMetric, metricLabel, metricValue, humanizeFlow } from "@/lib/humanize";
 import { formatMoney, otherPartyName } from "@/lib/format";
 
-const BACKEND_URL = "http://127.0.0.1:8000";
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://127.0.0.1:8000";
 
 type EvidenceItem = {
   document_id: string;

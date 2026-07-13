@@ -8,7 +8,7 @@ import BboxOverlayViewer from "@/components/ui/BboxOverlayViewer";
 import { AppLanguage, getStoredLanguage, ui } from "@/lib/i18n";
 import { addNotification } from "@/lib/notifications";
 
-const BACKEND_URL = "http://127.0.0.1:8000";
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://127.0.0.1:8000";
 
 type PreviewItem = {
   description: string;

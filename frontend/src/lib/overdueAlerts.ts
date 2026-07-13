@@ -5,7 +5,7 @@
 import { addNotification } from "@/lib/notifications";
 import { getStoredLanguage, ui } from "@/lib/i18n";
 
-const BACKEND_URL = "http://127.0.0.1:8000";
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://127.0.0.1:8000";
 const NOTIFIED_KEY = "sme_overdue_notified";
 
 export type OverdueAlert = {

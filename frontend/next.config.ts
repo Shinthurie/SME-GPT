@@ -3,6 +3,8 @@ import path from "path";
 
 const nextConfig: NextConfig = {
   reactCompiler: true,
+  // TEMPORARY — allow LAN + cloudflared tunnel phone testing. Remove when done.
+  allowedDevOrigins: ["192.168.8.125", "*.trycloudflare.com"],
   turbopack: {
     // Pin Turbopack's root to the frontend directory.
     // Without this Next.js walks up from frontend/ looking for lockfiles and
