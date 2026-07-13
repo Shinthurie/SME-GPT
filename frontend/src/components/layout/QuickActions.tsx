@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { getStoredLanguage } from "@/lib/i18n";
 import { addNotification } from "@/lib/notifications";
 
-const BACKEND_URL = "http://127.0.0.1:8000";
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://127.0.0.1:8000";
 
 const CASH_CATEGORIES = [
   { key: "transport",  icon: "directions_car",  en: "Transport",  si: "ප‍ොදු",       color: "#2252b5" },

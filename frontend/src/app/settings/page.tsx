@@ -11,7 +11,7 @@ import { getSession, logoutUser, SessionUser, getStoredToken } from "@/lib/auth"
 import { AppLanguage, getStoredLanguage, ui, setStoredLanguage } from "@/lib/i18n";
 import { useTheme } from "@/lib/theme";
 
-const BACKEND_URL = "http://127.0.0.1:8000";
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://127.0.0.1:8000";
 
 type ProfileData = {
   fullName: string; profileImage: string; companyName: string; businessUnit: string;

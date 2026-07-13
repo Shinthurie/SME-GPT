@@ -15,7 +15,7 @@ Full-stack document processing and financial query system for Sri Lankan SMEs. U
 | Backend | Python 3.12, FastAPI, Uvicorn |
 | Frontend | Next.js 16.2, React 19, TypeScript 5, Tailwind CSS 4 |
 | Database | PostgreSQL via Supabase (psycopg + psycopg_pool on backend, Prisma 7 on frontend) |
-| LLM | Ollama (local Llama3, routed via `llm_client.py`) |
+| LLM | Multi-provider via `llm_client.py`. **Query** tasks (PAL planner/answer, Q&A) → Gemini if `GEMINI_API_KEY` set, else local Ollama. **Pipeline** tasks (OCR correction, extraction) → Gemini, else DeepSeek if `DEEPSEEK_API_KEY` set, else Ollama. DeepSeek is pipeline-only. |
 | OCR | Surya OCR — remote via Google Colab (primary), local Surya fallback |
 | Embeddings | `intfloat/multilingual-e5-small` via sentence-transformers (384-dim, CPU, supports Sinhala) |
 | Auth | JWT + bcrypt, optional 2FA, device trust |

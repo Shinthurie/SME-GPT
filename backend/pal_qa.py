@@ -4,7 +4,7 @@ into the live /ask-query endpoint (app.py).
 
 Falls back to the pre-PAL ad-hoc logic (data_tools.analyze_financial_query +
 ai_helper.generate_explainable_answer) whenever PAL can't confidently
-answer: DeepSeek is unavailable, the plan never validates within the retry
+answer: the query LLM is unavailable, the plan never validates within the retry
 budget, the question doesn't map to one of PAL's arithmetic tasks (e.g.
 "list my invoices"), or the validated plan matched zero rows. This keeps
 every existing live query working while adding hallucination-free

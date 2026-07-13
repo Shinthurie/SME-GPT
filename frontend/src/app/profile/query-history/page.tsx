@@ -9,7 +9,7 @@ import ThemeToggle from "@/components/layout/ThemeToggle";
 import { getStoredToken } from "@/lib/auth";
 import { AppLanguage, getStoredLanguage, ui } from "@/lib/i18n";
 
-const BACKEND_URL = "http://127.0.0.1:8000";
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://127.0.0.1:8000";
 
 type QueryHistoryItem = {
   id: string;

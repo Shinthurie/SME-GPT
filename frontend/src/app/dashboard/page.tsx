@@ -17,7 +17,7 @@ import {
 import HealthScoreCard from "@/components/ui/HealthScoreCard";
 import WhoOwesWho     from "@/components/ui/WhoOwesWho";
 
-const BACKEND_URL = "http://127.0.0.1:8000";
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://127.0.0.1:8000";
 
 type MismatchAlert = {
   document_id: string;

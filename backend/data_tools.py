@@ -173,7 +173,19 @@ _SKIP_CORRECTION = {"po", "dn", "in", "of", "by", "to", "is", "a", "an", "the",
                     "month", "week", "year", "day", "today", "from", "this",
                     "last", "next", "are", "was", "were", "have", "has", "been",
                     "with", "that", "their", "its", "than", "more", "less",
-                    "above", "below", "over", "under", "between", "still", "yet"}
+                    "above", "below", "over", "under", "between", "still", "yet",
+                    # Real English words that fuzzy-match a vocab term and get
+                    # wrongly "corrected" (e.g. supplies→suppliers), especially
+                    # when they appear in entity names.
+                    "supplies", "supply", "services", "service", "solutions",
+                    "holdings", "traders", "trading", "stores", "store"}
+
+
+# Double-quoted spans (straight or curly quotes) are treated as literal
+# entity names the user typed deliberately -- e.g. a supplier called
+# "Lanka Beverage Supplies". Correcting inside them turns "Supplies" into
+# "Suppliers" and derails routing, so we mask these spans out entirely.
+_QUOTED_SPAN_RE = re.compile(r'"[^"]*"|“[^”]*”')
 
 
 def spell_correct_query(question: str) -> tuple[str, list[str]]:
@@ -181,9 +193,22 @@ def spell_correct_query(question: str) -> tuple[str, list[str]]:
     Correct common financial-term typos in a query using fuzzy matching.
     Returns (corrected_question, list_of_corrections_made).
     Example: "show my payahles" -> ("show my payables", ["payahles → payables"])
+
+    Text inside double quotes is left untouched -- users quote entity names
+    (supplier/customer) precisely so they are not "corrected" into vocab words.
     """
     corrections = []
-    words = question.split()
+
+    # Mask quoted literals so the tokenizer never touches them, restore after.
+    protected: list[str] = []
+
+    def _stash(match: re.Match) -> str:
+        protected.append(match.group(0))
+        return f"\x00{len(protected) - 1}\x00"
+
+    masked = _QUOTED_SPAN_RE.sub(_stash, question)
+
+    words = masked.split()
     corrected_words = []
 
     for word in words:
@@ -221,7 +246,11 @@ def spell_correct_query(question: str) -> tuple[str, list[str]]:
         else:
             corrected_words.append(word)
 
-    return " ".join(corrected_words), corrections
+    result = " ".join(corrected_words)
+    # Restore the quoted literals we masked out above.
+    for idx, original in enumerate(protected):
+        result = result.replace(f"\x00{idx}\x00", original)
+    return result, corrections
 
 
 _SINHALA_VERB_MAP = {
