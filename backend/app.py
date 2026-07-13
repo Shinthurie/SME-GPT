@@ -68,6 +68,8 @@ CORS_ORIGINS = list(dict.fromkeys(_ALWAYS_ALLOW + _env_extra))  # dedup, preserv
 app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS,
+    # TEMPORARY — allow cloudflared tunnels for phone testing. Remove when done.
+    allow_origin_regex=r"https://.*\.trycloudflare\.com",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

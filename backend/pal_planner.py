@@ -1,4 +1,8 @@
-"""Component 3 — Planner: DeepSeek -> strict JSON plan (never raw code).
+"""Component 3 — Planner: query LLM -> strict JSON plan (never raw code).
+
+The query LLM is whatever llm_client.call_llm routes to (Gemini when
+GEMINI_API_KEY is set, otherwise local Ollama) -- never DeepSeek, which is
+pipeline-only.
 
 The LLM only ever proposes a plan; it never computes anything
 (docs/components/component-3.md "Why": LLMs hallucinate arithmetic, so PAL
@@ -53,6 +57,14 @@ category values: Revenue, Expenses
 revenue/income queries → use flow_type in [receivable, cash_inflow]
 expense/cost queries  → use flow_type in [payable, cash_outflow]
 
+CHOOSING THE TASK (important):
+- A "how much / total / what is our <money>" question (receivable, payable, revenue,
+  spend, outstanding, balance, etc.) is ALWAYS aggregate_sum with
+  measure {{"field": "total", "agg": "sum"}} -- NEVER lookup_value.
+- A "how many / count" question is aggregate_count.
+- lookup_value is ONLY for returning a stored field of one specific document
+  (e.g. "what is the due date of invoice IN10"). Never use it to add up or count money.
+
 Return ONLY valid JSON, no prose, in this exact shape:
 {{
   "task": "aggregate_sum",
@@ -83,6 +95,9 @@ Q: "Monthly breakdown of income this year"
 Q: "Unpaid invoices above LKR 50000 from Virtusa"
 → {{"task":"aggregate_sum","filters":[{{"field":"flow_type","op":"eq","value":"receivable"}},{{"field":"vendor","op":"contains","value":"Virtusa"}},{{"field":"total","op":"gte","value":50000}}],"measure":{{"field":"total","agg":"sum"}},"group_by":[],"output":{{"format":"currency"}}}}
 
+Q: "What's the total receivable we have?"
+→ {{"task":"aggregate_sum","filters":[{{"field":"flow_type","op":"eq","value":"receivable"}}],"measure":{{"field":"total","agg":"sum"}},"group_by":[],"output":{{"format":"currency"}}}}
+
 Q: "Compare spending this month vs last month"
 → {{"task":"compare","compare_filters":[[{{"field":"doc_date","op":"between","value":["2026-06-01","2026-06-30"]}},{{"field":"flow_type","op":"in","value":["payable","cash_outflow"]}}],[{{"field":"doc_date","op":"between","value":["2026-05-01","2026-05-31"]}},{{"field":"flow_type","op":"in","value":["payable","cash_outflow"]}}]],"measure":{{"field":"total","agg":"sum"}},"group_by":[],"output":{{"format":"currency"}}}}
 
@@ -102,7 +117,7 @@ User question:
 
 
 def plan_query(question: str, error_reason: str | None = None) -> dict | None:
-    """Returns a parsed plan dict, or None if DeepSeek is unavailable or
+    """Returns a parsed plan dict, or None if the query LLM is unavailable or
     didn't return parseable JSON (the orchestrator treats None the same as a
     validation failure -- both consume a retry)."""
     retry_note = (

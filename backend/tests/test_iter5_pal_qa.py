@@ -331,6 +331,35 @@ def test_generate_pal_answer_fallback_mentions_per_currency_breakdown(monkeypatc
     assert "USD 10.00" in result["short_answer"]
 
 
+def test_generate_pal_answer_rejects_ungrounded_number(monkeypatch):
+    # LLM invents a total (100,000) that the executor never computed -> the
+    # grounding guard must distrust it and use the deterministic fallback.
+    monkeypatch.setattr(
+        pal_answer, "call_llm",
+        lambda *a, **k: '{"short_answer": "You have LKR 100,000 receivable.", "full_answer": "Total LKR 100,000."}',
+    )
+    computed = {"value": 125000.0, "currency": "LKR", "row_count": 2, "operation": "sum(total)"}
+    result = pal_answer.generate_pal_answer("q", "Acme", {"task": "aggregate_sum"}, computed)
+    assert "100,000" not in result["short_answer"]
+    assert "LKR 125,000.00" in result["short_answer"]
+
+
+def test_generate_pal_answer_accepts_grounded_number(monkeypatch):
+    monkeypatch.setattr(
+        pal_answer, "call_llm",
+        lambda *a, **k: '{"short_answer": "You have LKR 125,000.00 receivable.", "full_answer": "Total across 2 documents is LKR 125,000.00."}',
+    )
+    computed = {"value": 125000.0, "currency": "LKR", "row_count": 2, "operation": "sum(total)"}
+    result = pal_answer.generate_pal_answer("q", "Acme", {"task": "aggregate_sum"}, computed)
+    assert result["short_answer"] == "You have LKR 125,000.00 receivable."
+
+
+def test_answer_grounding_allows_years_and_counts():
+    allowed = pal_answer._collect_allowed_numbers({"value": 125000.0, "row_count": 2})
+    # a year and a small count must not trip the money guard
+    assert pal_answer._answer_is_grounded("In 2026 across 2 docs: LKR 125,000.00", allowed)
+
+
 def test_detect_language_sinhala_question():
     assert pal_answer.detect_language("මට කොච්චර ගෙවන්න තියෙනවද") == "Sinhala"
 
