@@ -197,6 +197,20 @@ export const ui = {
     higher: "HIGHER",
     lower: "LOWER",
 
+    // ── AI Assistant (chat, Phase 1 backend) ────────────────────────────────
+    aiAssistant: "AI Assistant",
+    aiAssistantBeta: "BETA",
+    tryAiAssistant: "Try the new AI Assistant (Beta)",
+    aiAssistantSubtitle: "Ask follow-up questions naturally — it remembers the conversation.",
+    aiAssistantGreeting: "Hi! Ask me anything about your invoices, receipts, purchase orders, or delivery notes.",
+    aiAssistantPlaceholder: "Message the AI Assistant…",
+    aiAssistantSending: "Thinking…",
+    aiAssistantNewChat: "New Chat",
+    aiAssistantSources: "Sources",
+    aiAssistantDisabled: "The AI Assistant isn't enabled on this server yet. Ask your administrator to set AGENT_QUERY_ENGINE_ENABLED=true.",
+    aiAssistantSendError: "Something went wrong. Please try again.",
+    aiAssistantSend: "Send",
+
     // ── Analysis (Document viewer) ────────────────────────────────────────────
     financialDocAnalysis: "Financial Document Analysis",
     documentDetail: "Document Detail",
@@ -641,6 +655,20 @@ export const ui = {
     priceDiscrepancyFound: "මිල වෙනසක් හඳුනාගෙන ඇත",
     higher: "වැඩිය",
     lower: "අඩුය",
+
+    // ── AI Assistant (chat, Phase 1 backend) ────────────────────────────────
+    aiAssistant: "AI සහායක",
+    aiAssistantBeta: "බීටා",
+    tryAiAssistant: "නව AI සහායක උත්සාහ කරන්න (බීටා)",
+    aiAssistantSubtitle: "පහසුවෙන් ගැළපෙන ප්‍රශ්න අසන්න — එය සංවාදය මතක තබා ගනී.",
+    aiAssistantGreeting: "ආයුබෝවන්! ඔබේ ඉන්වොයිස්, රිසිට්පත්, මිලදී ගැනීමේ ඇණවුම් හෝ බෙදාහැරීමේ සටහන් ගැන ඕනෑම දෙයක් අසන්න.",
+    aiAssistantPlaceholder: "AI සහායකට පණිවිඩයක් යවන්න…",
+    aiAssistantSending: "සිතමින්…",
+    aiAssistantNewChat: "නව සංවාදය",
+    aiAssistantSources: "මූලාශ්‍ර",
+    aiAssistantDisabled: "AI සහායක තවම මෙම සර්වරයේ සක්‍රිය කර නැත. AGENT_QUERY_ENGINE_ENABLED=true සකසන ලෙස ඔබේ පරිපාලකගෙන් ඉල්ලන්න.",
+    aiAssistantSendError: "යමක් වැරදුණි. නැවත උත්සාහ කරන්න.",
+    aiAssistantSend: "යවන්න",
 
     // ── Analysis ──────────────────────────────────────────────────────────────
     financialDocAnalysis: "මූල්‍ය ලේඛන විශ්ලේෂණය",
