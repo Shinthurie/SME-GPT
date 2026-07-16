@@ -144,6 +144,32 @@ export default function QueryPage() {
       }
     >
 
+          {/* AI Assistant (Phase 1 backend, beta) — entry point to the new conversational engine */}
+          <button
+            onClick={() => router.push("/query/chat")}
+            className="mt-6 flex w-full items-center gap-3 rounded-2xl px-5 py-4 text-left transition hover:opacity-90"
+            style={{ background: "var(--brand-tint)", border: "1px solid var(--border)" }}
+          >
+            <span className="material-symbols-outlined text-[20px]" style={{ color: "var(--brand-mid)" }}>
+              forum
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="flex items-center gap-2 text-[14px] font-bold text-[var(--text-1)]">
+                {t.tryAiAssistant}
+                <span
+                  className="rounded-md px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider"
+                  style={{ background: "var(--brand-mid)", color: "#fff" }}
+                >
+                  {t.aiAssistantBeta}
+                </span>
+              </p>
+              <p className="mt-0.5 truncate text-[12px] text-[var(--text-3)]">{t.aiAssistantSubtitle}</p>
+            </div>
+            <span className="material-symbols-outlined text-[18px]" style={{ color: "var(--text-3)" }}>
+              chevron_right
+            </span>
+          </button>
+
           {/* Company context */}
           {/* Company context — auto-filled from user profile, read-only */}
           <div
