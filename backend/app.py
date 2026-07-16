@@ -2912,8 +2912,66 @@ def chat(payload: ChatRequest, authorization: str = Header(default=None)):
         "question": payload.question.strip(),
         "answer": result.get("answer", ""),
         "evidence": result.get("evidence", []),
+        "trace": result.get("trace", []),
         "thread_id": result.get("thread_id"),
     }
+
+
+def _require_agent_engine():
+    if not AGENT_QUERY_ENGINE_ENABLED:
+        raise HTTPException(
+            status_code=503,
+            detail="The conversational agent query engine is not enabled on this deployment.",
+        )
+
+
+@app.get("/chat/threads")
+def list_chat_threads(authorization: str = Header(default=None)):
+    """Stage A — ChatGPT-style thread list for the sidebar (newest first)."""
+    _require_agent_engine()
+    user_id = get_current_user_id(authorization)
+    from agent.threads import list_threads
+    return {"success": True, "threads": list_threads(user_id)}
+
+
+@app.get("/chat/threads/{thread_id}")
+def get_chat_thread(thread_id: str, authorization: str = Header(default=None)):
+    """Stage A — full message replay (content + evidence + trace per turn)."""
+    _require_agent_engine()
+    user_id = get_current_user_id(authorization)
+    from agent.threads import get_thread_messages
+    messages = get_thread_messages(thread_id, user_id)
+    if messages is None:
+        raise HTTPException(status_code=404, detail="Thread not found.")
+    return {"success": True, "thread_id": thread_id, "messages": messages}
+
+
+class RenameThreadRequest(BaseModel):
+    title: str
+
+
+@app.patch("/chat/threads/{thread_id}")
+def rename_chat_thread(thread_id: str, payload: RenameThreadRequest,
+                       authorization: str = Header(default=None)):
+    _require_agent_engine()
+    user_id = get_current_user_id(authorization)
+    if not payload.title.strip():
+        raise HTTPException(status_code=400, detail="Title is required.")
+    from agent.threads import rename_thread
+    if not rename_thread(thread_id, user_id, payload.title.strip()):
+        raise HTTPException(status_code=404, detail="Thread not found.")
+    return {"success": True, "thread_id": thread_id, "title": payload.title.strip()}
+
+
+@app.delete("/chat/threads/{thread_id}")
+def delete_chat_thread(thread_id: str, authorization: str = Header(default=None)):
+    _require_agent_engine()
+    user_id = get_current_user_id(authorization)
+    from agent.threads import delete_thread
+    if not delete_thread(thread_id, user_id):
+        raise HTTPException(status_code=404, detail="Thread not found.")
+    _log_audit_event(user_id, "AGENT_CHAT_THREAD_DELETED", f"thread: {thread_id[:80]}")
+    return {"success": True, "message": "Thread deleted."}
 
 
 @app.get("/query-history")
