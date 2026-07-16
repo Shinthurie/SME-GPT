@@ -17,6 +17,29 @@
 
 - **`backend/temp_processing/`** — Temporary files created during OCR processing. These are short-lived and deleted after each pipeline run, but should also reside on an encrypted volume in production.
 
+## Third-Party LLM Processing / Data Residency
+
+**Acknowledged trade-off (recorded here and in code; deliberately not surfaced in the UI).**
+
+Earlier versions supported a *local* LLM (Ollama / Llama 3) so that OCR'd document text and
+user queries could be processed entirely on-premise, keeping financial data inside the deployment
+boundary. Local inference was removed because CPU-only Llama 3 was too slow and produced poor
+Sinhala output, which is unacceptable for user-facing answers.
+
+**Consequence:** OCR'd financial-document text and every natural-language query are now transmitted
+to a third-party cloud LLM API — **DeepSeek** by default, or **Gemini** when a key is configured.
+Financial data therefore leaves the machine. This is an accepted trade-off (speed + Sinhala quality
+prioritised over on-prem data residency) for this deployment.
+
+- Documented in code at the top of [`backend/llm_client.py`](../backend/llm_client.py)
+  (the `PRIVACY TRADE-OFF` note) and via `LLMUnavailableError` semantics.
+- **Mitigations:** numbers/dates and Sinhala tokens are masked before OCR-correction calls
+  (`llm_correction.py`); prompts carry only the minimum text needed; provider API keys are never
+  logged. Choose a provider whose data-retention terms match your compliance needs.
+- **Not shown in the UI** per an explicit product decision. The research paper's discussion of
+  local/on-prem inference is intentionally left unchanged (local inference remains *possible* but
+  compute-heavy; the API path is used for the product build).
+
 ## Authentication
 
 - JWT tokens signed with HS256; secret must be set via `JWT_SECRET` env var (app refuses to start with the default or empty secret).

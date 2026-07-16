@@ -13,11 +13,11 @@ _EXTRACTION_SYSTEM = (
 )
 
 
-def call_ollama(prompt: str) -> str:
-    """Routes extraction calls to local Ollama.
+def extract_via_llm(prompt: str) -> str:
+    """Routes extraction calls through the active cloud LLM (Gemini or DeepSeek).
 
-    Uses Ollama's JSON output mode (format="json") so the model is constrained
-    to emit a single valid JSON object. This eliminates most of the conversational
+    Requests JSON output mode (format="json") so the model is constrained to emit
+    a single valid JSON object. This eliminates most of the conversational
     preamble / markdown-fence noise that the regex scraping in extract_json_block()
     previously had to recover from, reducing JSON parse failures (IT-28).
     """
@@ -375,7 +375,7 @@ OCR text:
 {raw_text}
 """.strip()
 
-    return call_ollama(retry_prompt)
+    return extract_via_llm(retry_prompt)
 
 
 _TYPE_HINTS = {
@@ -591,7 +591,7 @@ def extract_structured_json_from_text(raw_text: str, doc_type_hint: str = "") ->
 
     prompt = _build_extraction_prompt(cleaned_text, doc_type_hint)
 
-    llm_response = call_ollama(prompt)
+    llm_response = extract_via_llm(prompt)
 
     try:
         json_block = extract_json_block(llm_response)

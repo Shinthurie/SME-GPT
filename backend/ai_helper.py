@@ -9,8 +9,8 @@ _QA_SYSTEM = (
 )
 
 
-def call_ollama(prompt: str) -> str:
-    """Routes Q&A calls through the active LLM provider (Gemini or Ollama)."""
+def _generate_qa(prompt: str) -> str:
+    """Routes Q&A calls through the active cloud LLM provider (Gemini or DeepSeek)."""
     return call_llm(prompt, system=_QA_SYSTEM)
 
 
@@ -131,7 +131,7 @@ Analysis Result:
 """.strip()
 
     try:
-        response = call_ollama(prompt)
+        response = _generate_qa(prompt)
         start = response.find("{")
         end = response.rfind("}")
 

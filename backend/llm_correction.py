@@ -431,8 +431,8 @@ def dictionary_correct_text(text: str) -> str:
     return corrected
 
 
-def call_ollama(prompt: str) -> str:
-    """Routes correction calls to local Ollama."""
+def correct_via_llm(prompt: str) -> str:
+    """Routes OCR-correction calls through the active cloud LLM (Gemini or DeepSeek)."""
     return call_pipeline_llm(prompt, system=_CORRECTION_SYSTEM)
 
 
@@ -468,7 +468,7 @@ EXAMPLES OF CORRECT CORRECTIONS:
 OCR text to correct:
 {masked}"""
 
-    corrected = call_ollama(prompt)
+    corrected = correct_via_llm(prompt)
     corrected = strip_llm_boilerplate(corrected)
     corrected = restore_sensitive_tokens(corrected, placeholders)
 

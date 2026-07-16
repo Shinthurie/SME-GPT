@@ -15,7 +15,7 @@ Full-stack document processing and financial query system for Sri Lankan SMEs. U
 | Backend | Python 3.12, FastAPI, Uvicorn |
 | Frontend | Next.js 16.2, React 19, TypeScript 5, Tailwind CSS 4 |
 | Database | PostgreSQL via Supabase (psycopg + psycopg_pool on backend, Prisma 7 on frontend) |
-| LLM | Multi-provider via `llm_client.py`. **Query** tasks (PAL planner/answer, Q&A) → Gemini if `GEMINI_API_KEY` set, else local Ollama. **Pipeline** tasks (OCR correction, extraction) → Gemini, else DeepSeek if `DEEPSEEK_API_KEY` set, else Ollama. DeepSeek is pipeline-only. |
+| LLM | Cloud-only via `llm_client.py` (local Ollama removed). **Both** tiers route to Gemini if `GEMINI_API_KEY` set, else DeepSeek. **Query** = `call_llm` (PAL planner/answer, Q&A); **Pipeline** = `call_pipeline_llm` (OCR correction, extraction). No local fallback: if no provider is configured/reachable, `LLMUnavailableError` is raised. See the PRIVACY TRADE-OFF note atop `llm_client.py`. |
 | OCR | Surya OCR — remote via Google Colab (primary), local Surya fallback |
 | Embeddings | `intfloat/multilingual-e5-small` via sentence-transformers (384-dim, CPU, supports Sinhala) |
 | Auth | JWT + bcrypt, optional 2FA, device trust |
@@ -26,11 +26,10 @@ Full-stack document processing and financial query system for Sri Lankan SMEs. U
 
 ## Running the Project
 
-### Ollama (required before starting backend)
-```bash
-ollama serve
-ollama pull llama3   # or the model set in OLLAMA_MODEL env var
-```
+### LLM provider (required before starting backend)
+Local Ollama has been removed. Set at least one cloud key in `backend/.env`:
+`DEEPSEEK_API_KEY` (default provider) or `GEMINI_API_KEY` (preferred when set).
+The backend raises `LLMUnavailableError` on LLM calls if neither is configured.
 
 ### Backend
 ```bash
@@ -69,9 +68,9 @@ python scripts/run_migration.py migrations/006_po_dn_workflow.sql
 
 ### backend/.env
 ```
-OLLAMA_HOST=             # default: http://localhost:11434
-OLLAMA_MODEL=            # default: llama3
-OLLAMA_TIMEOUT_SECS=     # default: 600 (CPU inference is slow)
+DEEPSEEK_API_KEY=        # default cloud LLM provider (both tiers)
+GEMINI_API_KEY=          # optional; preferred over DeepSeek when set
+# At least one of DEEPSEEK_API_KEY / GEMINI_API_KEY must be set (no local fallback)
 COLAB_OCR_URL=           # ngrok URL of running Colab notebook
 POPPLER_PATH=            # e.g. C:\poppler\bin on Windows
 DATABASE_URL=            # PostgreSQL/Supabase connection string (port 6543 for pooler)
@@ -94,8 +93,8 @@ SMTP_HOST= / SMTP_PORT= / SMTP_USER= / SMTP_PASS=
 1. PDF → images via pdf2image + Poppler
 2. Preprocess: resize to 1600px, two variants — "P" (printed) and "M" (messy)
 3. OCR: Colab remote → fallback to local Surya (`ocr_selector.py` picks the best output)
-4. LLM correction (`llm_correction.py`): SymSpell + Ollama; masks numbers/dates before sending, restores after
-5. Structured extraction (`ocr_to_json_extractor.py`): Ollama → JSON with all financial fields
+4. LLM correction (`llm_correction.py`): SymSpell + cloud LLM; masks numbers/dates before sending, restores after
+5. Structured extraction (`ocr_to_json_extractor.py`): cloud LLM → JSON with all financial fields
 6. Field normalization (`normalize_root_fields`): enforces doc-type rules (DN has no amounts, PO is always payable, etc.)
 7. Arithmetic validation (`arithmetic_validator.py`)
 8. Post-extraction correction (`correction_engine.py`): recalculates totals, derives `po_status`/`dn_status`/`invoice_status`
@@ -106,10 +105,10 @@ SMTP_HOST= / SMTP_PORT= / SMTP_USER= / SMTP_PASS=
 
 **Tier 1 — PAL engine** (`pal_qa.py` orchestrates):
 - `pal_scope.py`: resolves which documents the question is about (tenant + company SQL filter → C4 graph expansion → optional RAG via pgvector)
-- `pal_planner.py`: Ollama generates a strict JSON plan (`task`, `filters`, `measure`, `group_by`)
+- `pal_planner.py`: the query LLM (Gemini/DeepSeek) generates a strict JSON plan (`task`, `filters`, `measure`, `group_by`)
 - `pal_validator.py`: symbolic allow-list guard — rejects plans with non-canonical fields or unknown ops; plan never reaches executor unless it passes
 - `pal_executor.py`: deterministic pandas execution (no LLM arithmetic)
-- `pal_answer.py`: Ollama formats the computed result into a human-readable answer
+- `pal_answer.py`: the query LLM formats the computed result into a human-readable answer
 - Up to 2 retries on validation failure; falls back to Tier 2 on any failure
 
 **Tier 2 — Legacy engine** (`data_tools.analyze_financial_query()`):
@@ -179,8 +178,8 @@ Numbered SQL files in `backend/migrations/`. Run with `python scripts/run_migrat
 
 - Sinhala detected via Unicode range `[඀-෿]` / `[඀-෿]`
 - `normalize_query()` in `data_tools.py` maps ~40 Sinhala phrases to English equivalents before intent routing
-- LLM correction (`llm_correction.py`) masks Sinhala tokens before sending to Ollama and restores them after
-- PAL planner prompt includes a bilingual glossary so Ollama understands mixed Sinhala/English queries
+- LLM correction (`llm_correction.py`) masks Sinhala tokens before sending to the LLM and restores them after
+- PAL planner prompt includes a bilingual glossary so the LLM understands mixed Sinhala/English queries
 - UI language toggle (`localStorage['sme_gpt_language']`) fires a `app-language-changed` event + page reload; voice input switches between `si-LK` and `en-US`
 - All UI strings in `frontend/src/lib/i18n.ts` under `ui.en` / `ui.si`
 
@@ -208,6 +207,6 @@ DN tab: Pending / Delivered / Delayed / Partial / Failed / Returned
 
 - **LLM never computes numbers.** The PAL validator rejects any plan whose fields or operators fall outside the canonical allow-list before it reaches the executor. All arithmetic is pandas.
 - **Tenant isolation is non-negotiable.** Every DB read/write filters by `tenantId = user_id` from the JWT. `pal_scope.py`, `data_tools.filter_user_context()`, and every `load_records()` call enforce this.
-- **Graceful degradation everywhere.** PAL falls back to the legacy engine on any failure. C4 graph expansion, RAG retrieval, and vector indexing all degrade silently to SQL-only scope if unavailable.
+- **Graceful degradation everywhere.** PAL falls back to the legacy engine on any failure (including LLM outage — `LLMUnavailableError`); answer generators fall back to deterministic templates and OCR correction falls back to raw text. C4 graph expansion, RAG retrieval, and vector indexing all degrade silently to SQL-only scope if unavailable. Note: there is **no local LLM fallback** — extraction genuinely needs a cloud provider and surfaces a friendly error without one.
 - **Spatial/vector components not yet wired into the live pipeline.** `embedding_service.py`, `vector_index.py`, `spatial_serialization.py`, `spatial_serializer.py` are standalone tested modules. The live `/process-document` endpoint does not produce SpatialChunks yet.
 - **Session state is in-memory.** The `app.py` dict that holds extraction results between `/process-document` and `/confirm-save` is lost on backend restart. Do not rely on it for anything persistent.

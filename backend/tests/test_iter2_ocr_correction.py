@@ -114,7 +114,7 @@ def test_correct_pages_falls_back_to_raw_without_deepseek(monkeypatch):
     def _boom(_prompt):
         raise RuntimeError("no network in test")
 
-    monkeypatch.setattr(ocr_correction, "call_ollama", _boom)
+    monkeypatch.setattr(ocr_correction, "correct_via_llm", _boom)
 
     service = MockSuryaOCRService(FIXTURE)
     pages = service.run(["invoice.png"])
@@ -136,7 +136,7 @@ def test_correct_pages_never_alters_digits_even_when_deepseek_corrupts_them(monk
     def _corrupt(_prompt):
         return "Total 999999"
 
-    monkeypatch.setattr(ocr_correction, "call_ollama", _corrupt)
+    monkeypatch.setattr(ocr_correction, "correct_via_llm", _corrupt)
 
     box = {"text": "Total 600", "bbox": [0, 0, 1, 1], "confidence": 0.9, "label": "Text", "page": 1}
     result = ocr_correction.correct_box(box)
@@ -147,7 +147,7 @@ def test_correct_pages_never_alters_digits_even_when_deepseek_corrupts_them(monk
 
 
 def test_write_final_safe_boxes_schema(tmp_path, monkeypatch):
-    monkeypatch.setattr(ocr_correction, "call_ollama", lambda _p: (_ for _ in ()).throw(RuntimeError("offline")))
+    monkeypatch.setattr(ocr_correction, "correct_via_llm", lambda _p: (_ for _ in ()).throw(RuntimeError("offline")))
 
     service = MockSuryaOCRService(FIXTURE)
     pages = service.run(["invoice.png"])
@@ -163,7 +163,7 @@ def test_write_final_safe_boxes_schema(tmp_path, monkeypatch):
 
 
 def test_quality_report_numeric_accuracy_always_one(monkeypatch):
-    monkeypatch.setattr(ocr_correction, "call_ollama", lambda _p: (_ for _ in ()).throw(RuntimeError("offline")))
+    monkeypatch.setattr(ocr_correction, "correct_via_llm", lambda _p: (_ for _ in ()).throw(RuntimeError("offline")))
 
     service = MockSuryaOCRService(FIXTURE)
     pages = service.run(["invoice.png"])

@@ -1,24 +1,25 @@
 """Tests for Iteration 21 quick wins:
 
-- IT-28: Ollama JSON output mode in the extraction LLM call.
+- IT-28: JSON output mode in the extraction LLM call.
 - IT-21: upload-date range filter on load_records / count_records.
 
-All hermetic — Ollama HTTP and the DB connection are faked.
+All hermetic — the LLM HTTP call and the DB connection are faked. Local Ollama
+inference has been removed; the query/pipeline tiers route to DeepSeek here.
 """
 from __future__ import annotations
 
 from datetime import datetime
 
 
-# ──────────────────────────── IT-28: Ollama JSON mode ────────────────────────
+# ──────────────────────────── IT-28: DeepSeek JSON mode ──────────────────────
 
 def _fake_requests_post(captured):
     class FakeResponse:
         def raise_for_status(self): pass
-        def json(self): return {"message": {"content": "{}"}}
+        def json(self): return {"choices": [{"message": {"content": "{}"}}]}
         text = ""
 
-    def _post(url, json=None, timeout=None):  # noqa: A002 - mirror requests API
+    def _post(url, json=None, timeout=None, headers=None):  # noqa: A002 - mirror requests API
         captured.append(json)
         return FakeResponse()
 
@@ -26,40 +27,44 @@ def _fake_requests_post(captured):
 
 
 def test_call_llm_passes_json_format(monkeypatch):
-    """format='json' must be forwarded to Ollama as payload['format']."""
+    """format='json' must be forwarded to DeepSeek as response_format json_object."""
     import llm_client
     captured: list = []
+    monkeypatch.setattr(llm_client, "DEEPSEEK_API_KEY", "test-key")
+    monkeypatch.setattr(llm_client, "QUERY_PROVIDER", "deepseek")
     monkeypatch.setattr(llm_client.requests, "post", _fake_requests_post(captured))
 
     llm_client.call_llm("hi", system="sys", format="json")
 
-    assert captured, "Ollama was not called"
-    assert captured[0].get("format") == "json"
+    assert captured, "DeepSeek was not called"
+    assert captured[0].get("response_format") == {"type": "json_object"}
 
 
 def test_call_llm_omits_format_by_default(monkeypatch):
-    """Without an explicit format, no 'format' key should be sent (free-form text)."""
+    """Without an explicit format, no 'response_format' key should be sent (free-form text)."""
     import llm_client
     captured: list = []
+    monkeypatch.setattr(llm_client, "DEEPSEEK_API_KEY", "test-key")
+    monkeypatch.setattr(llm_client, "QUERY_PROVIDER", "deepseek")
     monkeypatch.setattr(llm_client.requests, "post", _fake_requests_post(captured))
 
     llm_client.call_llm("hi")
 
     assert captured
-    assert "format" not in captured[0]
+    assert "response_format" not in captured[0]
 
 
 def test_extractor_uses_json_format(monkeypatch):
-    """ocr_to_json_extractor.call_ollama must request JSON output mode (IT-28)."""
+    """ocr_to_json_extractor.extract_via_llm must request JSON output mode (IT-28)."""
     import ocr_to_json_extractor as ex
     captured: dict = {}
 
-    def fake_call_llm(prompt, system="", format=None):
+    def fake_call_pipeline_llm(prompt, system="", format=None):
         captured["format"] = format
         return "{}"
 
-    monkeypatch.setattr(ex, "call_pipeline_llm", fake_call_llm)
-    ex.call_ollama("some prompt")
+    monkeypatch.setattr(ex, "call_pipeline_llm", fake_call_pipeline_llm)
+    ex.extract_via_llm("some prompt")
 
     assert captured.get("format") == "json"
 
