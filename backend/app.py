@@ -75,6 +75,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ── Phase 1: agentic conversational query engine (backend/agent/), feature-flagged
+# alongside the existing PAL/legacy engine behind /ask-query. Off by default —
+# /chat returns 503 until explicitly enabled. See backend/agent/service.py.
+AGENT_QUERY_ENGINE_ENABLED = os.getenv("AGENT_QUERY_ENGINE_ENABLED", "false").strip().lower() == "true"
+
 # ── Iteration 8: in-process rate limiter ────────────────────────────────────
 # Sliding-window counter per IP. Configure via environment variables.
 _RATE_WINDOW    = int(os.getenv("RATE_LIMIT_WINDOW_SECS",    "60"))
@@ -83,6 +88,7 @@ _RATE_PROCESS   = int(os.getenv("RATE_LIMIT_PROCESS_DOC",    "10"))
 _RATE_DEFAULT   = int(os.getenv("RATE_LIMIT_DEFAULT",        "120"))
 _RATE_LIMITS: Dict[str, int] = {
     "/ask-query":               _RATE_ASK_QUERY,
+    "/chat":                    _RATE_ASK_QUERY,
     "/process-document":        _RATE_PROCESS,
     "/process-document-stream": _RATE_PROCESS,
 }
@@ -912,6 +918,12 @@ class ManualDocumentRequest(BaseModel):
 class QueryRequest(BaseModel):
     company_name: str
     question: str
+
+
+class ChatRequest(BaseModel):
+    company_name: str
+    question: str
+    thread_id: Optional[str] = None  # omit to start a new conversation
 
 
 class UpdateDocumentRequest(BaseModel):
@@ -2855,6 +2867,52 @@ def ask_query(payload: QueryRequest, authorization: str = Header(default=None)):
         "history_error": history_error,
         "history_id": history_id,
         "discrepancies": discrepancies,
+    }
+
+
+@app.post("/chat")
+def chat(payload: ChatRequest, authorization: str = Header(default=None)):
+    """Phase 1 — agentic conversational query engine (backend/agent/), feature-
+    flagged alongside /ask-query. The LLM only plans by calling deterministic
+    tools; pal_executor/pal_validator do the arithmetic and a grounding guard
+    is the last line of defense (see agent/graph.py, agent/guard.py). Runs
+    alongside the existing PAL/legacy engine without replacing it."""
+    if not AGENT_QUERY_ENGINE_ENABLED:
+        raise HTTPException(
+            status_code=503,
+            detail="The conversational agent query engine is not enabled on this deployment.",
+        )
+
+    user_id = get_current_user_id(authorization)
+
+    if not payload.company_name.strip():
+        raise HTTPException(status_code=400, detail="Company name is required.")
+    if not payload.question.strip():
+        raise HTTPException(status_code=400, detail="Question is required.")
+
+    from agent.service import chat as agent_chat
+    from llm_client import LLMUnavailableError
+
+    try:
+        result = agent_chat(
+            question=payload.question.strip(),
+            user_id=user_id,
+            company_name=payload.company_name.strip(),
+            thread_id=payload.thread_id,
+        )
+    except LLMUnavailableError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+
+    _log_audit_event(user_id, "AGENT_CHAT_EXECUTED",
+                     f"Q: {payload.question.strip()[:120]} | co: {payload.company_name.strip()}")
+
+    return {
+        "success": result.get("success", True),
+        "company_name": payload.company_name.strip(),
+        "question": payload.question.strip(),
+        "answer": result.get("answer", ""),
+        "evidence": result.get("evidence", []),
+        "thread_id": result.get("thread_id"),
     }
 
 
