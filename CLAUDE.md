@@ -134,6 +134,11 @@ SMTP_HOST= / SMTP_PORT= / SMTP_USER= / SMTP_PASS=
 - Runs alongside `/ask-query` without touching it — feature-flagged off by default via
   `AGENT_QUERY_ENGINE_ENABLED` (returns 503 until set to `true`).
 - Frontend entry point: `/query/chat` (opt-in "Beta" link from `/query`).
+- Stage A (Phase 3): ChatGPT-style thread registry (`chat_thread`/`chat_message` tables,
+  migration 008; `agent/threads.py`) with list/replay/rename/delete via `/chat/threads*`
+  endpoints; each `/chat` response now includes a `trace` (the tool calls actually made —
+  the derivation trace); `find_discrepancies` tool compares invoice-vs-PO prices per order,
+  only when asked.
 - Migration plan for retiring Tier 1/2 in favor of this engine, including a per-intent
   coverage map and what's still missing: [docs/phase3-retirement-plan.md](docs/phase3-retirement-plan.md).
 

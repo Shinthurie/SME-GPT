@@ -9,26 +9,79 @@ last-line-of-defense check). Conversation memory persists per `thread_id`
 engines: user_id is bound into the tools server-side, never an LLM-suppliable
 argument (CLAUDE.md "Architecture Invariants").
 
+Stage A additions (docs/phase3-retirement-plan.md): each turn also returns a
+`trace` -- the tool calls the agent actually made (name, args, result summary),
+which IS the derivation trace for the UI: exactly what was computed, with what
+filters, from how many rows. The turn (messages + evidence + trace) is
+persisted to the chat_thread/chat_message registry (agent/threads.py) for
+ChatGPT-style thread listing and replay.
+
 Runs alongside the existing /ask-query (pal_qa.answer_financial_question)
 without touching it -- see app.py's AGENT_QUERY_ENGINE_ENABLED flag.
 """
 from __future__ import annotations
 
+import json
 import uuid
 
-from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
 from agent.graph import build_agent_graph
 from agent.memory import get_checkpointer
+from agent.threads import record_turn
 from agent.tools import build_tools
+
+# Keep per-tool-call result snapshots in the trace bounded -- the full evidence
+# already travels separately; the trace is a readable derivation summary.
+_TRACE_RESULT_MAX_CHARS = 600
+
+
+def _summarize_result(content) -> str:
+    if isinstance(content, (dict, list)):
+        text = json.dumps(content, ensure_ascii=False, default=str)
+    else:
+        text = str(content)
+    return text if len(text) <= _TRACE_RESULT_MAX_CHARS else text[:_TRACE_RESULT_MAX_CHARS] + "…"
+
+
+def extract_turn_trace(messages: list) -> list[dict]:
+    """Derivation trace for the CURRENT turn: every tool call the agent made
+    since the latest user message, paired with the deterministic result it got
+    back. Pure function over the graph's message list (hermetically testable)."""
+    last_human_idx = max(
+        (i for i, m in enumerate(messages) if isinstance(m, HumanMessage)), default=0
+    )
+    turn = messages[last_human_idx:]
+
+    results_by_call_id: dict[str, ToolMessage] = {
+        m.tool_call_id: m for m in turn
+        if isinstance(m, ToolMessage) and getattr(m, "tool_call_id", None)
+    }
+
+    trace: list[dict] = []
+    step = 0
+    for m in turn:
+        if not (isinstance(m, AIMessage) and getattr(m, "tool_calls", None)):
+            continue
+        for call in m.tool_calls:
+            step += 1
+            result_msg = results_by_call_id.get(call.get("id"))
+            trace.append({
+                "step": step,
+                "tool": call.get("name"),
+                "args": call.get("args") or {},
+                "result": _summarize_result(result_msg.content) if result_msg is not None else None,
+            })
+    return trace
 
 
 def chat(question: str, user_id: str, company_name: str, thread_id: str | None = None) -> dict:
     """Runs one turn of the conversational agent.
 
-    Returns a dict with `success`, `answer`, `evidence`, `thread_id`. Raises
-    llm_client.LLMUnavailableError if no cloud LLM provider is configured
-    (there is no local fallback -- see llm_client.py's PRIVACY TRADE-OFF note).
+    Returns a dict with `success`, `answer`, `evidence`, `trace`, `thread_id`.
+    Raises llm_client.LLMUnavailableError if no cloud LLM provider is
+    configured (there is no local fallback -- see llm_client.py's PRIVACY
+    TRADE-OFF note).
     """
     thread_id = thread_id or f"{user_id}:{uuid.uuid4().hex}"
 
@@ -41,10 +94,18 @@ def chat(question: str, user_id: str, company_name: str, thread_id: str | None =
 
     final = result["messages"][-1]
     answer_text = final.content if isinstance(final, AIMessage) else str(getattr(final, "content", ""))
+    trace = extract_turn_trace(result["messages"])
+
+    # Best-effort UI history (never fails the request) -- see agent/threads.py.
+    record_turn(
+        thread_id=thread_id, user_id=user_id, company_name=company_name,
+        question=question, answer=answer_text, evidence=evidence, trace=trace,
+    )
 
     return {
         "success": True,
         "answer": answer_text,
         "evidence": evidence,
+        "trace": trace,
         "thread_id": thread_id,
     }

@@ -199,4 +199,51 @@ def build_tools(user_id: str, company_name: str) -> tuple[list, list[dict]]:
         evidence.extend(ev)
         return ev[0]
 
-    return [aggregate_financials, search_documents, get_document_status], evidence
+    @tool
+    def find_discrepancies(order_id: Optional[str] = None) -> dict:
+        """Compare line-item prices between an invoice and its linked purchase order
+        to detect billing discrepancies (invoice charging more/less than the PO
+        agreed). Use ONLY when the user asks about discrepancies, mismatches,
+        overcharging, or invoice-vs-PO differences -- never volunteer this on
+        unrelated questions.
+
+        Args:
+          order_id: optional order ID linking the documents (e.g. "PO-2026-501").
+            When omitted, every order that has both an invoice and a PO is checked.
+
+        Returns {"discrepancies": [...], "orders_checked": N}. Each discrepancy has
+        description, invoice_price, po_price, diff_pct, and is_discrepancy (True
+        when the gap exceeds 2%).
+        """
+        df, err = resolve_scope_with_c4(company_name, user_id)
+        if err or df.empty:
+            return {"error": err or "No documents found for this company."}
+
+        if order_id:
+            df = df[df["order_id"].astype(str).str.lower() == order_id.strip().lower()]
+            if df.empty:
+                return {"error": f"No documents found with order ID '{order_id}'."}
+
+        # Group by order_id: a discrepancy is only meaningful between an invoice
+        # and the PO for the SAME order -- comparing across unrelated orders
+        # would manufacture false positives.
+        all_found: list[dict] = []
+        orders_checked = 0
+        for oid, group in df.groupby(df["order_id"].astype(str)):
+            if not oid or oid.upper() in ("", "NULL", "NONE"):
+                continue
+            types = set(group["document_type"].astype(str).str.lower())
+            if not ({"invoice", "po"} <= types):
+                continue
+            orders_checked += 1
+            ev = dt.build_evidence(group, f"Invoice-vs-PO price check for order {oid}.")
+            found = dt.detect_discrepancies_in_evidence(ev)
+            if any(d.get("is_discrepancy") for d in found):
+                evidence.extend(ev)
+            for d in found:
+                d["order_id"] = oid
+            all_found.extend(found)
+
+        return {"discrepancies": all_found, "orders_checked": orders_checked}
+
+    return [aggregate_financials, search_documents, get_document_status, find_discrepancies], evidence
