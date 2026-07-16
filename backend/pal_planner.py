@@ -1,8 +1,9 @@
 """Component 3 — Planner: query LLM -> strict JSON plan (never raw code).
 
 The query LLM is whatever llm_client.call_llm routes to (Gemini when
-GEMINI_API_KEY is set, otherwise local Ollama) -- never DeepSeek, which is
-pipeline-only.
+GEMINI_API_KEY is set, otherwise DeepSeek). There is no local fallback; if no
+provider is available the planner returns no plan and pal_qa.py degrades to the
+deterministic legacy engine.
 
 The LLM only ever proposes a plan; it never computes anything
 (docs/components/component-3.md "Why": LLMs hallucinate arithmetic, so PAL

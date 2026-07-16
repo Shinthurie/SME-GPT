@@ -18,7 +18,7 @@ import re
 from pathlib import Path
 
 from llm_correction import (
-    call_ollama,
+    correct_via_llm,
     count_sinhala_chars,
     looks_like_bad_rewrite,
     preserve_sensitive_tokens,
@@ -95,7 +95,7 @@ def correct_box(box: dict) -> dict:
     masked, placeholders = preserve_sensitive_tokens(raw_text)
 
     try:
-        raw_reply = call_ollama(_BOX_PROMPT.format(masked_text=masked))
+        raw_reply = correct_via_llm(_BOX_PROMPT.format(masked_text=masked))
     except Exception:
         # DeepSeek unavailable/timed out -> keep raw OCR text (component-1.md failure table).
         result["text"] = raw_text

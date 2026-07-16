@@ -26,10 +26,10 @@ Full detail: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 ## Tech stack
 
 Python 3.12 · FastAPI · Next.js 16 / React 19 / TypeScript / Tailwind 4 · **Supabase Postgres +
-pgvector** (Prisma 7 on the frontend, psycopg on the backend) · **Ollama** (local Llama 3 / a
-fine-tuned GGUF, routed via `llm_client.py`) · **Surya OCR** (remote via Colab, local fallback) ·
-`multilingual-e5-small` embeddings · **Supabase Storage** for document images · JWT + bcrypt auth
-with optional 2FA · Docker.
+pgvector** (Prisma 7 on the frontend, psycopg on the backend) · **Cloud LLM** (DeepSeek by default,
+Gemini 2.5 Flash when a key is set, routed via `llm_client.py`) · **Surya OCR** (remote via Colab,
+local fallback) · `multilingual-e5-small` embeddings · **Supabase Storage** for document images ·
+JWT + bcrypt auth with optional 2FA · Docker.
 
 ---
 
@@ -50,18 +50,18 @@ with optional 2FA · Docker.
 
 ## Quick start
 
-### Ollama (required before the backend)
-```bash
-ollama serve
-ollama pull llama3          # or import a fine-tuned GGUF and set OLLAMA_MODEL to its name
-```
+### LLM provider (required before the backend)
+Local Ollama inference has been removed (CPU Llama 3 was too slow and weak at Sinhala).
+Set at least one cloud key in `backend/.env`: `DEEPSEEK_API_KEY` (default) or
+`GEMINI_API_KEY` (preferred when set). This means document text and queries are sent to a
+third-party LLM — see the privacy note in [docs/SECURITY.md](docs/SECURITY.md).
 
 ### Backend
 ```bash
 cd backend
 python -m venv venv && source venv/Scripts/activate   # Windows Git Bash
 pip install -r requirements.txt
-cp .env.example .env        # fill in your keys (DATABASE_URL, JWT_SECRET, OLLAMA_*, SUPABASE_*)
+cp .env.example .env        # fill in your keys (DATABASE_URL, JWT_SECRET, DEEPSEEK_API_KEY / GEMINI_API_KEY, SUPABASE_*)
 uvicorn app:app --reload --port 8000
 ```
 

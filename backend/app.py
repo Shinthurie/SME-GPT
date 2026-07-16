@@ -946,10 +946,10 @@ class UpdateDocumentRequest(BaseModel):
 @app.get("/health")
 def health():
     from llm_client import (
-        check_ollama_health, check_gemini_health,
-        GEMINI_API_KEY, QUERY_PROVIDER, PIPELINE_PROVIDER,
+        check_deepseek_health, check_gemini_health,
+        GEMINI_API_KEY, DEEPSEEK_API_KEY, QUERY_PROVIDER, PIPELINE_PROVIDER,
     )
-    ollama = check_ollama_health()
+    deepseek = check_deepseek_health()
     gemini = check_gemini_health() if GEMINI_API_KEY else {"ok": False, "error": "GEMINI_API_KEY not set"}
     return {
         "success": True,
@@ -957,7 +957,7 @@ def health():
         "llm_provider": QUERY_PROVIDER,
         "pipeline_llm_provider": PIPELINE_PROVIDER,
         "gemini": gemini,
-        "ollama": ollama,
+        "deepseek": deepseek,
     }
 
 
