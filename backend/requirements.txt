@@ -21,3 +21,12 @@ jellyfish>=1.0.0
 apscheduler>=3.10.0
 openpyxl>=3.1.0
 # google-generativeai SDK not needed — Gemini is called via direct REST API (requests)
+
+# Agentic query engine (Phase 1, backend/agent/) — conversational LangGraph
+# tool-calling agent, feature-flagged alongside the existing PAL/legacy engine.
+langgraph>=1.2,<2.0
+langchain-core>=0.3
+langchain-openai>=0.3          # DeepSeek is OpenAI-compatible; also used if GEMINI routes here
+langgraph-checkpoint-postgres>=2.0
+# langchain-google-genai is optional — only needed if GEMINI_API_KEY is set for the
+# agent engine; install it separately (see agent/llm.py) rather than forcing it here.

@@ -75,6 +75,7 @@ COLAB_OCR_URL=           # ngrok URL of running Colab notebook
 POPPLER_PATH=            # e.g. C:\poppler\bin on Windows
 DATABASE_URL=            # PostgreSQL/Supabase connection string (port 6543 for pooler)
 JWT_SECRET=              # must be set; app refuses to start without it
+AGENT_QUERY_ENGINE_ENABLED=  # "true" to enable POST /chat (Tier 3, experimental); default off (503)
 ```
 
 ### frontend/.env
@@ -118,6 +119,20 @@ SMTP_HOST= / SMTP_PORT= / SMTP_USER= / SMTP_PASS=
 - Used directly for listing/status intents (PAL skips them) and as fallback when PAL fails
 
 **PAL is skipped entirely for**: `invoice_list`, `receipt_list`, `po_list`, `dn_list`, `revenue`, `expenses`, `cash_inflow`, `cash_outflow`, and all Iteration 10 intents (status queries, date range, supplier, customer, etc.)
+
+**Tier 3 (Phase 1, experimental) — Agentic conversational engine** (`backend/agent/`, `POST /chat`):
+- Generalizes PAL's single rigid plan-execute-answer cycle into a multi-turn, tool-calling
+  LangGraph agent. Same core invariant as PAL: the LLM only *plans* by calling deterministic
+  tools (`agent/tools.py`, backed by `pal_executor`/`pal_validator`); it never computes a
+  number itself. `agent/guard.py` is a last-line-of-defense check that overrides any final
+  answer stating a monetary figure no tool call actually produced.
+- No hardcoded keyword routing — the LLM chooses which tool to call (`aggregate_financials`,
+  `search_documents`, `get_document_status`) instead of `route_question()`'s ~40 keyword groups.
+- Conversation memory persists per `thread_id` via a Postgres checkpointer
+  (`langgraph-checkpoint-postgres`; falls back to in-process `MemorySaver` if
+  `DATABASE_URL` is unreachable).
+- Runs alongside `/ask-query` without touching it — feature-flagged off by default via
+  `AGENT_QUERY_ENGINE_ENABLED` (returns 503 until set to `true`).
 
 ### Query Intents (22 total in `route_question()`)
 `document_lookup`, `po_status_query`, `invoice_status_query`, `dn_status_query`, `date_range_query`, `supplier_query`, `customer_query`, `cross_document_query`, `count_query`, `financial_comparison`, `activity_query`, `payment_query`, `receivable`, `payable`, `invoice_list`, `receipt_list`, `po_list`, `dn_list`, `cash_inflow`, `cash_outflow`, `expenses`, `revenue`, `summary`
