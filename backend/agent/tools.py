@@ -58,11 +58,28 @@ def build_tools(user_id: str, company_name: str) -> tuple[list, list[dict]]:
           filters: list of {"field": ..., "op": ..., "value": ...} objects to
             narrow the rows. Canonical fields: item, description, qty,
             unit_price, total, tax, discount, currency, doc_date, vendor,
-            flow_type. Ops: eq, in, contains, gte, lte, between. flow_type
-            values: payable (we owe), receivable (owed to us), cash_inflow,
-            cash_outflow -- for income/revenue use flow_type in [receivable,
-            cash_inflow]; for expenses/spending use flow_type in [payable,
-            cash_outflow]. For dates use {"field":"doc_date","op":"between",
+            flow_type, paid_status, received_status. Ops: eq, in, contains,
+            gte, lte, between (there is no "not equal" -- express exclusion
+            with "in" over the values you DO want).
+
+            flow_type values: payable (we owe), receivable (owed to us),
+            cash_inflow (money already received), cash_outflow (money already
+            paid out) -- for income/revenue use flow_type in [receivable,
+            cash_inflow]; for expense/spending HISTORY (money that has
+            already moved) use flow_type in [payable, cash_outflow].
+
+            "How much do we STILL owe" / outstanding payables (NOT the same as
+            spending history -- cash_outflow is already-paid money and must be
+            excluded): filter flow_type eq "payable" AND paid_status in
+            ["not_paid", "partial"]. Without the paid_status filter you will
+            overcount by including invoices/POs that have already been paid.
+
+            "How much are we STILL owed" / outstanding receivables: filter
+            flow_type eq "receivable" AND received_status in
+            ["not_received", "partial"]. Without it you will overcount by
+            including amounts already received.
+
+            For dates use {"field":"doc_date","op":"between",
             "value":["YYYY-MM-DD","YYYY-MM-DD"]} -- resolve relative periods
             ("this month", "last month", "this year") against today's date
             yourself before calling.
