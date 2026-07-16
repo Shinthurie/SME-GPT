@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import pandas as pd
 
+from correction_engine import _parse_date_flexible
+
 _OPS = {
     "eq": lambda series, value: series == value,
     "in": lambda series, value: series.isin(value if isinstance(value, list) else [value]),
@@ -19,6 +21,28 @@ _OPS = {
     "lte": lambda series, value: pd.to_numeric(series, errors="coerce") <= value,
     "between": lambda series, value: pd.to_numeric(series, errors="coerce").between(value[0], value[1]),
 }
+
+# doc_date is the only date-typed canonical field (pal_validator.CANONICAL_FIELDS).
+# Its underlying values come straight from the extracted `date` column, which OCR
+# produces in wildly inconsistent formats ("16 Apr 2026", "8/4/2022", "29-06-2026",
+# "Nov 18, 2020" all coexist in real data) -- numeric coercion (the default _OPS
+# path) turns every one of them into NaN and then crashes comparing NaN against the
+# ISO date-string bounds the planner emits. Reuse the same ISO-first/dayfirst-
+# fallback parser already used for due_date/delivery_date (correction_engine.py) so
+# doc_date filtering agrees with the rest of the app's date semantics.
+_DATE_FIELDS = {"doc_date"}
+_DATE_OPS = {"gte", "lte", "between"}
+
+
+def _date_op(series: pd.Series, op: str, value) -> pd.Series:
+    parsed = series.map(lambda v: _parse_date_flexible(str(v)) if v not in (None, "NULL", "") else None)
+    if op == "between":
+        lo, hi = _parse_date_flexible(str(value[0])), _parse_date_flexible(str(value[1]))
+        return parsed.map(lambda d: d is not None and lo is not None and hi is not None and lo <= d <= hi)
+    bound = _parse_date_flexible(str(value))
+    if op == "gte":
+        return parsed.map(lambda d: d is not None and bound is not None and d >= bound)
+    return parsed.map(lambda d: d is not None and bound is not None and d <= bound)  # lte
 
 _AGGS = {
     "sum": lambda s: float(s.sum()) if len(s) else 0.0,
@@ -34,7 +58,10 @@ def _apply_filters(df: pd.DataFrame, filters: list[dict] | None) -> pd.DataFrame
         field, op, value = f["field"], f["op"], f.get("value")
         if field not in df.columns:
             return df.iloc[0:0]
-        mask = _OPS[op](df[field], value)
+        if field in _DATE_FIELDS and op in _DATE_OPS:
+            mask = _date_op(df[field], op, value)
+        else:
+            mask = _OPS[op](df[field], value)
         df = df[mask.fillna(False)]
     return df
 

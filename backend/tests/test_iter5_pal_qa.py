@@ -226,6 +226,67 @@ def test_execute_filter_on_missing_field_returns_no_rows():
 
 
 # ---------------------------------------------------------------------------
+# pal_executor date filtering on doc_date (regression: numeric-coercing a date
+# string column crashed with TypeError -- surfaced live via the agent's
+# aggregate_financials tool on "what's my receivable for june"). Real `date`
+# values come out of OCR in wildly inconsistent formats, so these mirror what
+# actually shows up in production data.
+# ---------------------------------------------------------------------------
+
+def _date_row(doc_id, doc_date, total):
+    return {"document_id": doc_id, "line_no": 1, "vendor": "V", "flow_type": "receivable",
+            "currency": "LKR", "doc_date": doc_date, "item": "x", "description": "x",
+            "qty": 1, "unit_price": total, "total": total}
+
+
+def test_execute_doc_date_between_handles_mixed_date_formats_no_crash():
+    rows = [
+        _date_row("R1", "16 Apr 2026", 100.0),    # April -- out of range
+        _date_row("R2", "8/4/2022", 200.0),        # dayfirst -> Apr 2022 -- out of range
+        _date_row("R3", "2026-06-15", 300.0),      # ISO -- in range
+        _date_row("R4", "29-06-2026", 400.0),      # dayfirst -> June 29 2026 -- in range
+    ]
+    plan = {
+        "task": "aggregate_sum",
+        "filters": [{"field": "doc_date", "op": "between", "value": ["2026-06-01", "2026-06-30"]}],
+        "measure": {"field": "total", "agg": "sum"},
+    }
+    result = execute_plan(plan, rows)
+    assert result["value"] == 700.0
+    assert result["row_count"] == 2
+
+
+def test_execute_doc_date_gte_filter():
+    rows = [
+        _date_row("R1", "2025-01-01", 100.0),
+        _date_row("R2", "Nov 18, 2026", 200.0),
+    ]
+    plan = {
+        "task": "aggregate_sum",
+        "filters": [{"field": "doc_date", "op": "gte", "value": "2026-01-01"}],
+        "measure": {"field": "total", "agg": "sum"},
+    }
+    result = execute_plan(plan, rows)
+    assert result["value"] == 200.0
+    assert result["row_count"] == 1
+
+
+def test_execute_doc_date_filter_excludes_unparseable_dates():
+    rows = [
+        _date_row("R1", "NULL", 100.0),
+        _date_row("R2", "2026-06-10", 200.0),
+    ]
+    plan = {
+        "task": "aggregate_sum",
+        "filters": [{"field": "doc_date", "op": "between", "value": ["2026-06-01", "2026-06-30"]}],
+        "measure": {"field": "total", "agg": "sum"},
+    }
+    result = execute_plan(plan, rows)
+    assert result["value"] == 200.0
+    assert result["row_count"] == 1
+
+
+# ---------------------------------------------------------------------------
 # pal_scope.build_row_records
 # ---------------------------------------------------------------------------
 
