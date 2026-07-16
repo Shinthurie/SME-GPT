@@ -43,6 +43,7 @@ JWT + bcrypt auth with optional 2FA · Docker.
 | [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) | Branching, commits, PRs, local setup |
 | [docs/TESTING.md](docs/TESTING.md) | Test strategy + research metrics |
 | [docs/gap-analysis.md](docs/gap-analysis.md) | SRS FR/NFR traceability |
+| [docs/phase3-retirement-plan.md](docs/phase3-retirement-plan.md) | Legacy query engine → agentic engine migration plan |
 | [docs/components/](docs/components/) | Per-component specs (C1–C4) |
 | [API_CONTRACT.md](API_CONTRACT.md) | Backend ↔ frontend contract |
 

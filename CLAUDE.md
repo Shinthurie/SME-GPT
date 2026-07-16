@@ -133,6 +133,9 @@ SMTP_HOST= / SMTP_PORT= / SMTP_USER= / SMTP_PASS=
   `DATABASE_URL` is unreachable).
 - Runs alongside `/ask-query` without touching it — feature-flagged off by default via
   `AGENT_QUERY_ENGINE_ENABLED` (returns 503 until set to `true`).
+- Frontend entry point: `/query/chat` (opt-in "Beta" link from `/query`).
+- Migration plan for retiring Tier 1/2 in favor of this engine, including a per-intent
+  coverage map and what's still missing: [docs/phase3-retirement-plan.md](docs/phase3-retirement-plan.md).
 
 ### Query Intents (22 total in `route_question()`)
 `document_lookup`, `po_status_query`, `invoice_status_query`, `dn_status_query`, `date_range_query`, `supplier_query`, `customer_query`, `cross_document_query`, `count_query`, `financial_comparison`, `activity_query`, `payment_query`, `receivable`, `payable`, `invoice_list`, `receipt_list`, `po_list`, `dn_list`, `cash_inflow`, `cash_outflow`, `expenses`, `revenue`, `summary`
