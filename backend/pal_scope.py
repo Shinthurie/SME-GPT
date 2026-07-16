@@ -104,6 +104,15 @@ def resolve_scope_with_rag(question: str, company_name: str, user_id: str) -> tu
     return sql_df, sql_err
 
 
+def _status_or_null(value) -> str:
+    """normalize_text() lowercases everything, including a literal "NULL"
+    sentinel -> "null", which would silently break the "NULL"-means-unset
+    convention every other field in this row dict relies on. Preserve it."""
+    if str(value or "").strip().upper() in ("", "NULL", "NONE"):
+        return "NULL"
+    return dt.normalize_text(value)
+
+
 def build_row_records(documents_df: pd.DataFrame) -> list[dict]:
     """One row per LineItem, joined with its parent document's canonical
     fields. Documents without a line-item breakdown get one synthetic row
@@ -122,6 +131,8 @@ def build_row_records(documents_df: pd.DataFrame) -> list[dict]:
             "vendor": doc.get("supplier_name", "NULL"),
             "flow_type": dt.normalize_flow(doc.get("effective_flow_type") or doc.get("flow_type")),
             "currency": currency,
+            "paid_status": _status_or_null(doc.get("paid_status")),
+            "received_status": _status_or_null(doc.get("received_status")),
         }
 
         items = dt.extract_items_from_row(doc)

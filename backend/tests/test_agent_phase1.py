@@ -100,6 +100,27 @@ def test_aggregate_financials_applies_filters(monkeypatch):
     assert result["row_count"] == 1
 
 
+def test_aggregate_financials_outstanding_payable_excludes_paid(monkeypatch):
+    """IN1 is not_paid (5000.0), IN2 is paid (1500.0) -- an 'outstanding
+    payable' style call must exclude IN2, matching the tool docstring's
+    guidance for 'how much do we still owe'."""
+    df = _sample_df()
+    monkeypatch.setattr("agent.tools.resolve_scope_with_c4", lambda company, user: (df, None))
+    tools, _ = build_tools(user_id="u1", company_name="AIESEC")
+    aggregate = next(t for t in tools if t.name == "aggregate_financials")
+
+    result = aggregate.invoke({
+        "measure_field": "total", "agg": "sum",
+        "filters": [
+            {"field": "flow_type", "op": "eq", "value": "payable"},
+            {"field": "paid_status", "op": "in", "value": ["not_paid", "partial"]},
+        ],
+    })
+
+    assert result["value"] == 5000.0
+    assert result["row_count"] == 1
+
+
 def test_aggregate_financials_rejects_non_canonical_field(monkeypatch):
     df = _sample_df()
     monkeypatch.setattr("agent.tools.resolve_scope_with_c4", lambda company, user: (df, None))

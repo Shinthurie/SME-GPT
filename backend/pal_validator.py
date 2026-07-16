@@ -13,14 +13,21 @@ TASKS = {"aggregate_sum", "aggregate_avg", "aggregate_count", "compare", "lookup
 FILTER_OPS = {"eq", "in", "contains", "gte", "lte", "between"}
 AGGREGATIONS = {"sum", "avg", "count", "max", "min"}
 
-# component-3.md's 10 canonical fields, plus `flow_type` -- a deliberate,
-# documented extension. Payable/receivable/expense/income classification is
-# core to every financial query this app answers and there's no other
-# canonical field to express it. Company-level scoping is handled before the
-# plan ever runs (pal_scope.py), so `company_name` doesn't need to be here.
+# component-3.md's 10 canonical fields, plus `flow_type`, `paid_status`, and
+# `received_status` -- deliberate, documented extensions. Payable/receivable/
+# expense/income classification is core to every financial query this app
+# answers and there's no other canonical field to express it. `paid_status`/
+# `received_status` were added because "how much do we owe"/"how much are we
+# owed" queries need to exclude already-settled amounts to answer correctly --
+# without them, aggregate_financials/PAL could only sum ALL payable/receivable
+# activity, settled or not (mirrors what data_tools.analyze_financial_query's
+# legacy "payable"/"receivable" handlers already do -- see agent/tools.py's
+# aggregate_financials docstring for the query-time guidance this enables).
+# Company-level scoping is handled before the plan ever runs (pal_scope.py),
+# so `company_name` doesn't need to be here.
 CANONICAL_FIELDS = {
     "item", "description", "qty", "unit_price", "total", "tax", "discount",
-    "currency", "doc_date", "vendor", "flow_type",
+    "currency", "doc_date", "vendor", "flow_type", "paid_status", "received_status",
 }
 
 _NEEDS_MEASURE = {"aggregate_sum", "aggregate_avg", "aggregate_count", "group_by_sum", "compare"}

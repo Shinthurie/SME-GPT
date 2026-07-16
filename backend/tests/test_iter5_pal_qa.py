@@ -107,6 +107,21 @@ def test_validate_plan_not_a_dict():
     assert validate_plan(None) == (False, "plan_is_not_an_object")
 
 
+def test_validate_plan_accepts_paid_status_filter():
+    plan = {"task": "aggregate_sum",
+            "filters": [{"field": "flow_type", "op": "eq", "value": "payable"},
+                        {"field": "paid_status", "op": "in", "value": ["not_paid", "partial"]}],
+            "measure": {"field": "total", "agg": "sum"}}
+    assert validate_plan(plan) == (True, "")
+
+
+def test_validate_plan_accepts_received_status_filter():
+    plan = {"task": "aggregate_sum",
+            "filters": [{"field": "received_status", "op": "in", "value": ["not_received", "partial"]}],
+            "measure": {"field": "total", "agg": "sum"}}
+    assert validate_plan(plan) == (True, "")
+
+
 # ---------------------------------------------------------------------------
 # pal_executor
 # ---------------------------------------------------------------------------
@@ -286,6 +301,35 @@ def test_execute_doc_date_filter_excludes_unparseable_dates():
     assert result["row_count"] == 1
 
 
+def test_execute_outstanding_payable_excludes_already_paid():
+    """Regression: 'how much do we owe' summed ALL payable activity including
+    already-paid invoices/POs, overstating the real outstanding balance
+    (found by manually reconciling a live query result). paid_status must be
+    filterable so the plan can exclude paid_status == 'paid'."""
+    rows = [
+        {"document_id": "PO1", "line_no": 1, "vendor": "A", "flow_type": "payable", "currency": "LKR",
+         "paid_status": "not_paid", "doc_date": "2026-01-01", "item": "x", "description": "x",
+         "qty": 1, "unit_price": 500.0, "total": 500.0},
+        {"document_id": "IN1", "line_no": 1, "vendor": "B", "flow_type": "payable", "currency": "LKR",
+         "paid_status": "paid", "doc_date": "2026-01-01", "item": "x", "description": "x",
+         "qty": 1, "unit_price": 300.0, "total": 300.0},
+        {"document_id": "PO2", "line_no": 1, "vendor": "C", "flow_type": "payable", "currency": "LKR",
+         "paid_status": "partial", "doc_date": "2026-01-01", "item": "x", "description": "x",
+         "qty": 1, "unit_price": 200.0, "total": 200.0},
+    ]
+    plan = {
+        "task": "aggregate_sum",
+        "filters": [
+            {"field": "flow_type", "op": "eq", "value": "payable"},
+            {"field": "paid_status", "op": "in", "value": ["not_paid", "partial"]},
+        ],
+        "measure": {"field": "total", "agg": "sum"},
+    }
+    result = execute_plan(plan, rows)
+    assert result["value"] == 700.0  # PO1 (500) + PO2 (200); IN1 (paid) excluded
+    assert result["row_count"] == 2
+
+
 # ---------------------------------------------------------------------------
 # pal_scope.build_row_records
 # ---------------------------------------------------------------------------
@@ -301,6 +345,30 @@ def test_build_row_records_one_row_per_item():
     assert rows[0]["total"] == 500.0
     assert rows[0]["vendor"] == "Acme"
     assert rows[0]["flow_type"] == "payable"
+
+
+def test_build_row_records_includes_normalized_paid_and_received_status():
+    df = pd.DataFrame([{
+        "document_id": "PO1", "date": "2026-01-01", "supplier_name": "Acme", "flow_type": "payable",
+        "currency": "LKR", "items": [], "paid_status": "Not_Paid", "received_status": "NULL",
+        "final_total_amount": 500.0, "payable_amount": 500.0, "raw_total_amount": 500.0,
+    }])
+    rows = build_row_records(df)
+    assert rows[0]["paid_status"] == "not_paid"    # normalize_text lowercases
+    assert rows[0]["received_status"] == "NULL"    # NULL sentinel preserved, not lowercased to "null"
+
+
+def test_build_row_records_missing_status_columns_default_to_null():
+    """Documents without paid_status/received_status columns at all (e.g. older
+    fixtures/tests) must not crash -- default to the NULL sentinel."""
+    df = pd.DataFrame([{
+        "document_id": "INV1", "date": "2025-01-10", "supplier_name": "Acme", "flow_type": "payable",
+        "currency": "LKR", "items": [],
+        "final_total_amount": 100.0, "payable_amount": 100.0, "raw_total_amount": 100.0,
+    }])
+    rows = build_row_records(df)
+    assert rows[0]["paid_status"] == "NULL"
+    assert rows[0]["received_status"] == "NULL"
 
 
 def test_build_row_records_synthesizes_total_when_line_total_missing():

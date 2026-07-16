@@ -49,14 +49,23 @@ Sri Lanka). Treat Sinhala words as their English semantic equivalents when plann
   - "ගනුදෙනුකරු" → customer/client
 
 Allowed tasks: aggregate_sum, aggregate_avg, aggregate_count, compare, lookup_value, group_by_sum
-Allowed filter ops: eq, in, contains, gte, lte, between
+Allowed filter ops: eq, in, contains, gte, lte, between (there is no "not equal" -- express
+exclusion with "in" over the values you DO want)
 Allowed aggregations: sum, avg, count, max, min
 Canonical fields ONLY (reject anything else): item, description, qty, unit_price, total, tax,
-discount, currency, doc_date, vendor, flow_type, category
-flow_type values: payable, receivable, cash_inflow, cash_outflow
-category values: Revenue, Expenses
+discount, currency, doc_date, vendor, flow_type, paid_status, received_status
+flow_type values: payable (we owe), receivable (owed to us), cash_inflow (already received),
+cash_outflow (already paid out)
 revenue/income queries → use flow_type in [receivable, cash_inflow]
-expense/cost queries  → use flow_type in [payable, cash_outflow]
+expense/cost HISTORY queries (money that has already moved) → use flow_type in [payable, cash_outflow]
+
+OUTSTANDING (unpaid/unreceived) amounts -- NOT the same as spending/income history:
+- "How much do we STILL owe" / outstanding payables: flow_type eq "payable" AND paid_status
+  in ["not_paid", "partial"]. cash_outflow is already-paid money and must be excluded, and
+  omitting the paid_status filter overcounts by including already-paid invoices/POs.
+- "How much are we STILL owed" / outstanding receivables: flow_type eq "receivable" AND
+  received_status in ["not_received", "partial"]. Omitting the filter overcounts by including
+  amounts already received.
 
 CHOOSING THE TASK (important):
 - A "how much / total / what is our <money>" question (receivable, payable, revenue,
@@ -94,10 +103,13 @@ Q: "Monthly breakdown of income this year"
 → {{"task":"group_by_sum","filters":[{{"field":"doc_date","op":"between","value":["2026-01-01","2026-12-31"]}},{{"field":"flow_type","op":"in","value":["receivable","cash_inflow"]}}],"measure":{{"field":"total","agg":"sum"}},"group_by":["doc_date"],"output":{{"format":"currency"}}}}
 
 Q: "Unpaid invoices above LKR 50000 from Virtusa"
-→ {{"task":"aggregate_sum","filters":[{{"field":"flow_type","op":"eq","value":"receivable"}},{{"field":"vendor","op":"contains","value":"Virtusa"}},{{"field":"total","op":"gte","value":50000}}],"measure":{{"field":"total","agg":"sum"}},"group_by":[],"output":{{"format":"currency"}}}}
+→ {{"task":"aggregate_sum","filters":[{{"field":"flow_type","op":"eq","value":"receivable"}},{{"field":"received_status","op":"in","value":["not_received","partial"]}},{{"field":"vendor","op":"contains","value":"Virtusa"}},{{"field":"total","op":"gte","value":50000}}],"measure":{{"field":"total","agg":"sum"}},"group_by":[],"output":{{"format":"currency"}}}}
 
-Q: "What's the total receivable we have?"
-→ {{"task":"aggregate_sum","filters":[{{"field":"flow_type","op":"eq","value":"receivable"}}],"measure":{{"field":"total","agg":"sum"}},"group_by":[],"output":{{"format":"currency"}}}}
+Q: "What's the total receivable we have?" / "How much are we still owed?"
+→ {{"task":"aggregate_sum","filters":[{{"field":"flow_type","op":"eq","value":"receivable"}},{{"field":"received_status","op":"in","value":["not_received","partial"]}}],"measure":{{"field":"total","agg":"sum"}},"group_by":[],"output":{{"format":"currency"}}}}
+
+Q: "How much do we owe in total?" / "What's our outstanding payable?"
+→ {{"task":"aggregate_sum","filters":[{{"field":"flow_type","op":"eq","value":"payable"}},{{"field":"paid_status","op":"in","value":["not_paid","partial"]}}],"measure":{{"field":"total","agg":"sum"}},"group_by":[],"output":{{"format":"currency"}}}}
 
 Q: "Compare spending this month vs last month"
 → {{"task":"compare","compare_filters":[[{{"field":"doc_date","op":"between","value":["2026-06-01","2026-06-30"]}},{{"field":"flow_type","op":"in","value":["payable","cash_outflow"]}}],[{{"field":"doc_date","op":"between","value":["2026-05-01","2026-05-31"]}},{{"field":"flow_type","op":"in","value":["payable","cash_outflow"]}}]],"measure":{{"field":"total","agg":"sum"}},"group_by":[],"output":{{"format":"currency"}}}}
