@@ -133,12 +133,16 @@ SMTP_HOST= / SMTP_PORT= / SMTP_USER= / SMTP_PASS=
   `DATABASE_URL` is unreachable).
 - Runs alongside `/ask-query` without touching it — feature-flagged off by default via
   `AGENT_QUERY_ENGINE_ENABLED` (returns 503 until set to `true`).
-- Frontend entry point: `/query/chat` (opt-in "Beta" link from `/query`).
+- Frontend entry point: `/query` **is** the chat (Stage B). Old form-based flow parked at
+  `/query/classic`; `/query/chat` redirects to `/query`.
 - Stage A (Phase 3): ChatGPT-style thread registry (`chat_thread`/`chat_message` tables,
   migration 008; `agent/threads.py`) with list/replay/rename/delete via `/chat/threads*`
   endpoints; each `/chat` response now includes a `trace` (the tool calls actually made —
-  the derivation trace); `find_discrepancies` tool compares invoice-vs-PO prices per order,
-  only when asked.
+  the derivation trace, rendered in the UI's "How I worked this out"); `find_discrepancies`
+  tool compares invoice-vs-PO prices per order, only when asked.
+- Stage C: document-scoped chat — `/chat` accepts `document_id` (tags the thread, injects
+  a "current document" hint so the LLM resolves "this document" to a real id); the analysis
+  page's "Ask about this document" opens `/query?doc=<id>` with the document image inline.
 - Migration plan for retiring Tier 1/2 in favor of this engine, including a per-intent
   coverage map and what's still missing: [docs/phase3-retirement-plan.md](docs/phase3-retirement-plan.md).
 

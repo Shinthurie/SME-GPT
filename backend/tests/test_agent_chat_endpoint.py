@@ -71,7 +71,7 @@ def test_chat_enabled_returns_agent_answer(client, app_module, monkeypatch):
 
     import agent.service as agent_service
 
-    def fake_chat(question, user_id, company_name, thread_id=None):
+    def fake_chat(question, user_id, company_name, thread_id=None, document_id=None):
         assert user_id == "u1"
         assert company_name == "AIESEC"
         return {
@@ -96,13 +96,34 @@ def test_chat_enabled_returns_agent_answer(client, app_module, monkeypatch):
     assert body["evidence"] == []
 
 
+def test_chat_forwards_document_id(client, app_module, monkeypatch):
+    monkeypatch.setattr(app_module, "AGENT_QUERY_ENGINE_ENABLED", True)
+
+    import agent.service as agent_service
+    seen = {}
+
+    def fake_chat(question, user_id, company_name, thread_id=None, document_id=None):
+        seen["document_id"] = document_id
+        return {"success": True, "answer": "About IN11.", "evidence": [], "trace": [], "thread_id": "u1:t1"}
+
+    monkeypatch.setattr(agent_service, "chat", fake_chat)
+
+    resp = client.post(
+        "/chat",
+        json={"company_name": "AIESEC", "question": "what is this?", "document_id": "IN11"},
+        headers={"Authorization": _bearer(app_module, userId="u1", role="owner")},
+    )
+    assert resp.status_code == 200
+    assert seen["document_id"] == "IN11"
+
+
 def test_chat_returns_503_when_llm_unavailable(client, app_module, monkeypatch):
     monkeypatch.setattr(app_module, "AGENT_QUERY_ENGINE_ENABLED", True)
 
     import agent.service as agent_service
     from llm_client import LLMUnavailableError
 
-    def fake_chat(question, user_id, company_name, thread_id=None):
+    def fake_chat(question, user_id, company_name, thread_id=None, document_id=None):
         raise LLMUnavailableError("no provider configured")
 
     monkeypatch.setattr(agent_service, "chat", fake_chat)

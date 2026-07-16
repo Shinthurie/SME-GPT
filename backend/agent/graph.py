@@ -40,6 +40,16 @@ tool -- only use tools for questions that need real financial data.
 
 Keep answers concise and business-friendly. Mention the currency when quoting an amount."""
 
+# Appended to the system prompt when the conversation was opened from a specific
+# document (Stage C -- "Ask about this document"). Resolves deictic references
+# ("this invoice", "this document") to a concrete id the tools can look up.
+_DOC_CONTEXT = """
+
+CURRENT DOCUMENT: the user opened this conversation from document {document_id} and is looking \
+at it right now. When they say "this document", "this invoice", "this PO", "this receipt", or \
+similar, they mean {document_id} -- call get_document_status("{document_id}") to get its details \
+before answering about it."""
+
 # Bounds the ReAct loop per-turn so a confused agent can't loop forever.
 MAX_TOOL_ITERATIONS = 6
 
@@ -87,11 +97,12 @@ def _guard_node(state: MessagesState) -> dict:
     return {"messages": [AIMessage(content=fallback, id=final.id)]}
 
 
-def build_agent_graph(tools: list, checkpointer, company_name: str):
+def build_agent_graph(tools: list, checkpointer, company_name: str, document_id: str | None = None):
     model = get_chat_model().bind_tools(tools)
-    system = SystemMessage(content=_SYSTEM_PROMPT.format(
-        company_name=company_name, today=date.today().isoformat(),
-    ))
+    prompt = _SYSTEM_PROMPT.format(company_name=company_name, today=date.today().isoformat())
+    if document_id:
+        prompt += _DOC_CONTEXT.format(document_id=document_id)
+    system = SystemMessage(content=prompt)
 
     def agent_node(state: MessagesState) -> dict:
         response = model.invoke([system] + list(state["messages"]))

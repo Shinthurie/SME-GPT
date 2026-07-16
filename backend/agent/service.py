@@ -75,8 +75,14 @@ def extract_turn_trace(messages: list) -> list[dict]:
     return trace
 
 
-def chat(question: str, user_id: str, company_name: str, thread_id: str | None = None) -> dict:
+def chat(question: str, user_id: str, company_name: str, thread_id: str | None = None,
+         document_id: str | None = None) -> dict:
     """Runs one turn of the conversational agent.
+
+    document_id (Stage C): when set, the conversation is scoped to that document
+    -- the agent resolves "this document" to it, and the thread is tagged so the
+    UI can keep showing its image. Bound into the thread at creation; carried on
+    every turn so the system prompt stays document-aware across the conversation.
 
     Returns a dict with `success`, `answer`, `evidence`, `trace`, `thread_id`.
     Raises llm_client.LLMUnavailableError if no cloud LLM provider is
@@ -87,7 +93,7 @@ def chat(question: str, user_id: str, company_name: str, thread_id: str | None =
 
     tools, evidence = build_tools(user_id=user_id, company_name=company_name)
     checkpointer = get_checkpointer()
-    graph = build_agent_graph(tools, checkpointer, company_name=company_name)
+    graph = build_agent_graph(tools, checkpointer, company_name=company_name, document_id=document_id)
 
     config = {"configurable": {"thread_id": thread_id}}
     result = graph.invoke({"messages": [HumanMessage(content=question)]}, config=config)
@@ -100,6 +106,7 @@ def chat(question: str, user_id: str, company_name: str, thread_id: str | None =
     record_turn(
         thread_id=thread_id, user_id=user_id, company_name=company_name,
         question=question, answer=answer_text, evidence=evidence, trace=trace,
+        document_id=document_id,
     )
 
     return {

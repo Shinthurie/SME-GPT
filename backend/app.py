@@ -923,7 +923,8 @@ class QueryRequest(BaseModel):
 class ChatRequest(BaseModel):
     company_name: str
     question: str
-    thread_id: Optional[str] = None  # omit to start a new conversation
+    thread_id: Optional[str] = None   # omit to start a new conversation
+    document_id: Optional[str] = None  # Stage C: scope the conversation to one document
 
 
 class UpdateDocumentRequest(BaseModel):
@@ -2899,6 +2900,7 @@ def chat(payload: ChatRequest, authorization: str = Header(default=None)):
             user_id=user_id,
             company_name=payload.company_name.strip(),
             thread_id=payload.thread_id,
+            document_id=(payload.document_id.strip() or None) if payload.document_id else None,
         )
     except LLMUnavailableError as exc:
         raise HTTPException(status_code=503, detail=str(exc))

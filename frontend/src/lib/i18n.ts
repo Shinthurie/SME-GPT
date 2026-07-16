@@ -222,6 +222,11 @@ export const ui = {
     aiAssistantClassicView: "Classic view",
     aiAssistantLoadError: "Couldn't load conversations.",
     aiAssistantThreadLoadError: "Couldn't load this conversation.",
+    aiAssistantAskAboutDoc: "Ask about this document",
+    aiAssistantViewingDoc: "Viewing document",
+    aiAssistantShowImage: "Show image",
+    aiAssistantHideImage: "Hide image",
+    aiAssistantDocGreeting: "Ask me anything about this document — its total, status, line items, or how it compares to a linked PO.",
 
     // ── Analysis (Document viewer) ────────────────────────────────────────────
     financialDocAnalysis: "Financial Document Analysis",
@@ -693,6 +698,11 @@ export const ui = {
     aiAssistantClassicView: "සම්භාව්‍ය දසුන",
     aiAssistantLoadError: "සංවාද පූරණය කළ නොහැක.",
     aiAssistantThreadLoadError: "මෙම සංවාදය පූරණය කළ නොහැක.",
+    aiAssistantAskAboutDoc: "මෙම ලේඛනය ගැන අසන්න",
+    aiAssistantViewingDoc: "ලේඛනය බලමින්",
+    aiAssistantShowImage: "රූපය පෙන්වන්න",
+    aiAssistantHideImage: "රූපය සඟවන්න",
+    aiAssistantDocGreeting: "මෙම ලේඛනය ගැන ඕනෑම දෙයක් අසන්න — එහි එකතුව, තත්ත්වය, අයිතම, හෝ සම්බන්ධිත PO සමඟ සැසඳීම.",
 
     // ── Analysis ──────────────────────────────────────────────────────────────
     financialDocAnalysis: "මූල්‍ය ලේඛන විශ්ලේෂණය",
