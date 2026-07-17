@@ -8,6 +8,7 @@ import LanguageSwitcher from "@/components/layout/LanguageSwitcher";
 import ThemeToggle from "@/components/layout/ThemeToggle";
 import { getStoredToken } from "@/lib/auth";
 import { AppLanguage, getStoredLanguage, ui } from "@/lib/i18n";
+import { confirmDialog, noticeDialog } from "@/lib/confirm";
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://127.0.0.1:8000";
 
@@ -99,7 +100,11 @@ export default function QueryHistoryPage() {
   };
 
   const handleDeleteOne = async (id: string) => {
-    const confirmed = window.confirm(t.qhConfirmDeleteOne);
+    const confirmed = await confirmDialog({
+      title: t.qhConfirmDeleteOne,
+      confirmLabel: t.delete,
+      variant: "danger",
+    });
     if (!confirmed) return;
 
     try {
@@ -122,14 +127,18 @@ export default function QueryHistoryPage() {
 
       setHistory((prev) => prev.filter((item) => item.id !== id));
     } catch (err) {
-      alert(err instanceof Error ? err.message : t.qhLoadFailed);
+      await noticeDialog({ title: t.qhLoadFailed, message: err instanceof Error ? err.message : undefined });
     } finally {
       setDeletingId("");
     }
   };
 
   const handleClearAll = async () => {
-    const confirmed = window.confirm(t.qhConfirmClear);
+    const confirmed = await confirmDialog({
+      title: t.qhConfirmClear,
+      confirmLabel: t.clearAll,
+      variant: "danger",
+    });
     if (!confirmed) return;
 
     try {
@@ -152,7 +161,7 @@ export default function QueryHistoryPage() {
 
       setHistory([]);
     } catch (err) {
-      alert(err instanceof Error ? err.message : t.qhLoadFailed);
+      await noticeDialog({ title: t.qhLoadFailed, message: err instanceof Error ? err.message : undefined });
     } finally {
       setClearing(false);
     }
