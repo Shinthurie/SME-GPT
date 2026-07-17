@@ -121,6 +121,7 @@ def test_chat_threads_document_id_end_to_end(monkeypatch):
     model = ScriptedToolCallingModel(responses=[AIMessage(content="It's invoice IN11.")])
     monkeypatch.setattr(agent_graph, "get_chat_model", lambda temperature=0.0: model)
     monkeypatch.setattr(agent_service, "get_checkpointer", lambda: MemorySaver())
+    monkeypatch.setattr(agent_service, "generate_thread_title", lambda q, a: None)
 
     recorded: dict = {}
     monkeypatch.setattr(agent_service, "record_turn", lambda **kw: recorded.update(kw))
