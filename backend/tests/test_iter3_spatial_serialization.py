@@ -15,7 +15,11 @@ from spatial_serialization import (
     build_spatial_chunks,
     classify_key_value,
     cluster_rows,
+    column_tolerance,
     detect_header_row,
+    is_summary_row,
+    is_table_header,
+    row_aligns_to_headers,
 )
 
 FIXTURE = Path(__file__).resolve().parent.parent / "sample_docs" / "invoice_mock_surya_v2.json"
@@ -246,6 +250,168 @@ def test_build_spatial_chunks_no_header_falls_back_to_positional_rows():
     assert chunks[0]["header_id"] is None
     assert chunks[0]["quality"]["header_bound"] is False
     assert set(chunks[0]["fields"].keys()) == {"unknown_column_0", "unknown_column_1"}
+
+
+# ---------------------------------------------------------------------------
+# Geometric table reconstruction (Surya v1 — boxes carry no table_id)
+# ---------------------------------------------------------------------------
+
+def _hdr(text, x1, x2, field):
+    return {**_box(text, x1, 0, x2, 15), "canonical_field": field}
+
+
+_V1_HEADERS = [
+    _hdr("Description", 0, 100, "description"),
+    _hdr("Qty", 120, 160, "qty"),
+    _hdr("Total", 200, 260, "total"),
+]
+
+
+def _v1_page(extra_rows=()):
+    """A v1-style invoice table: a header row plus line items, no table_id
+    anywhere (Surya v1 emits no table structure)."""
+    boxes = [
+        _box("Description", 0, 0, 100, 15),
+        _box("Qty", 120, 0, 160, 15),
+        _box("Total", 200, 0, 260, 15),
+        _box("Printer Paper", 0, 20, 100, 35),
+        _box("5", 120, 20, 160, 35),
+        _box("600", 200, 20, 260, 35),
+        _box("Ink Cartridge", 0, 40, 100, 55),
+        _box("2", 120, 40, 160, 55),
+        _box("400", 200, 40, 260, 55),
+    ]
+    boxes.extend(extra_rows)
+    return [{"page": 1, "boxes": boxes}]
+
+
+def _line_items(pages):
+    result = build_spatial_chunks(pages, tenant_id="t1", document_id="d1")
+    return [c for c in result["pages"][0]["chunks"] if c["chunk_type"] == "line_item_row"]
+
+
+def test_is_table_header_requires_two_distinct_canonical_fields():
+    assert is_table_header(_V1_HEADERS) is True
+    # A lone "Total: 1250.00" line scores 1.0 in detect_header_row but must not
+    # anchor a table.
+    assert is_table_header([_hdr("Total", 0, 100, "total")]) is False
+    # Two cells, same field -> not a table.
+    assert is_table_header([_hdr("Total", 0, 100, "total"), _hdr("Amount", 120, 200, "total")]) is False
+
+
+def test_column_tolerance_scales_with_header_spacing():
+    # header x-centers 50/140/230 -> median gap 90 * 0.6
+    assert column_tolerance(_V1_HEADERS) == 54.0
+    assert column_tolerance([_hdr("Total", 0, 100, "total")]) == 0.0
+
+
+def test_row_aligns_to_headers_accepts_wide_cell_overlapping_narrow_header():
+    row = [_box("Widget assembly kit, large", 0, 20, 200, 35), _box("600", 200, 20, 260, 35)]
+    assert row_aligns_to_headers(row, _V1_HEADERS, column_tolerance(_V1_HEADERS)) is True
+
+
+def test_row_aligns_to_headers_rejects_single_cell_and_offset_rows():
+    assert row_aligns_to_headers([_box("Thanks!", 0, 20, 80, 35)], _V1_HEADERS, 60.0) is False
+    far = [_box("A", 900, 20, 940, 35), _box("B", 960, 20, 1000, 35)]
+    assert row_aligns_to_headers(far, _V1_HEADERS, 60.0) is False
+
+
+def test_is_summary_row_needs_both_narrow_row_and_summary_label():
+    assert is_summary_row([_box("Total", 0, 60, 60, 75), _box("1000", 200, 60, 260, 75)], _V1_HEADERS) is True
+    # Full-width row matching "total" on the description is a real line item.
+    line_item = [_box("Total station tripod", 0, 20, 100, 35), _box("2", 120, 20, 160, 35), _box("45000", 200, 20, 260, 35)]
+    assert is_summary_row(line_item, _V1_HEADERS) is False
+    # Narrow row with no summary label.
+    assert is_summary_row([_box("Colombo", 0, 60, 60, 75)], _V1_HEADERS) is False
+
+
+def test_v1_boxes_without_table_id_now_produce_line_items():
+    """The regression this change targets: on v1 geometry every row below the
+    header used to fall through to section_text."""
+    items = _line_items(_v1_page())
+    assert len(items) == 2
+    assert [c["fields"]["description"]["value"] for c in items] == ["Printer Paper", "Ink Cartridge"]
+    assert [c["fields"]["qty"]["value"] for c in items] == ["5", "2"]
+    assert [c["fields"]["total"]["value"] for c in items] == ["600", "400"]
+    assert all(c["quality"]["header_bound"] for c in items)
+    assert all(c["table_id"] is None for c in items)
+    assert all(c["fields"]["total"]["locked_digits"] is True for c in items)
+
+
+def test_geometric_binding_stops_at_summary_row():
+    pages = _v1_page([
+        _box("Subtotal", 0, 60, 80, 75),
+        _box("1000", 200, 60, 260, 75),
+        # Anything after the totals block stays out of the table.
+        _box("Grand Total", 0, 80, 90, 95),
+        _box("1150", 200, 80, 260, 95),
+    ])
+    items = _line_items(pages)
+    assert [c["fields"]["description"]["value"] for c in items] == ["Printer Paper", "Ink Cartridge"]
+
+
+def test_geometric_binding_stops_at_large_vertical_gap():
+    # Median text height 15 -> gap limit 37.5. This row starts 100px below.
+    pages = _v1_page([
+        _box("Detached", 0, 155, 100, 170),
+        _box("9", 120, 155, 160, 170),
+        _box("999", 200, 155, 260, 170),
+    ])
+    items = _line_items(pages)
+    assert len(items) == 2
+    assert "Detached" not in [c["fields"].get("description", {}).get("value") for c in items]
+
+
+def test_geometric_binding_stops_at_non_aligned_row():
+    pages = _v1_page([
+        _box("Please remit within 30 days", 600, 60, 900, 75),
+        _box("of the invoice date", 600, 75, 900, 90),
+    ])
+    items = _line_items(pages)
+    assert len(items) == 2
+
+
+def test_geometric_binding_leaves_rows_above_the_header_alone():
+    pages = _v1_page()
+    pages[0]["boxes"].append(_box("ACME Traders", 0, -40, 120, -25))
+    result = build_spatial_chunks(pages, tenant_id="t1", document_id="d1")
+    chunks = result["pages"][0]["chunks"]
+    assert any(c["chunk_type"] == "section_text" and "ACME Traders" in c["text"] for c in chunks)
+    assert len([c for c in chunks if c["chunk_type"] == "line_item_row"]) == 2
+
+
+def test_geometric_binding_does_not_engage_without_a_real_table_header():
+    pages = [{"page": 1, "boxes": [
+        _box("Total: 1250.00", 0, 0, 120, 15),
+        _box("Thank you for your business", 0, 20, 200, 35),
+        _box("Please call us", 0, 40, 150, 55),
+    ]}]
+    result = build_spatial_chunks(pages, tenant_id="t1", document_id="d1")
+    chunks = result["pages"][0]["chunks"]
+    assert [c["chunk_type"] for c in chunks if c["chunk_type"] == "line_item_row"] == []
+
+
+def test_geometric_binding_never_drops_tokens():
+    pages = _v1_page([
+        _box("Subtotal", 0, 60, 80, 75),
+        _box("1000", 200, 60, 260, 75),
+        _box("Thanks for your business", 0, 200, 200, 215),
+    ])
+    input_boxes = len(pages[0]["boxes"])
+    result = build_spatial_chunks(pages, tenant_id="t1", document_id="d1")
+    consumed = sum(
+        len(c["provenance"]["token_bboxes"]) for p in result["pages"] for c in p["chunks"]
+    )
+    assert consumed == input_boxes
+
+
+def test_geometric_binding_ignored_when_table_ids_are_present():
+    """Surya v2 geometry must keep taking the table_id path unchanged."""
+    pages = _table_with_n_rows(3)
+    result = build_spatial_chunks(pages, tenant_id="t1", document_id="d1")
+    items = [c for c in result["pages"][0]["chunks"] if c["chunk_type"] == "line_item_row"]
+    assert len(items) == 3
+    assert all(c["table_id"] == "t1" for c in items)
 
 
 # ---------------------------------------------------------------------------

@@ -116,7 +116,41 @@ Cell-extraction accuracy, 100% schema validity, association accuracy (number ↔
 - **Wired live (Iter 9).** `document_pipeline.py` produces `final_safe_boxes` (C1) and
   `spatial_chunks.json` (C2); on confirm-save, `app.py::_post_save_enrich` runs
   `build_spatial_chunks` → `embed_rows` → `upsert_chunk_embeddings` (pgvector). Verified live:
-  254 chunks embedded. **Caveat:** on real data the chunk mix is mostly `section_text`/`key_value`/
-  `header` — the `line_item`/`line_item_block` table branch is implemented + unit-tested but dormant
-  because the live OCR (Surya v1 via Colab) doesn't emit table-cell coordinates (`table_id`/
-  `row_index`/`col_index`); it activates unchanged once Surya v2 (with layout) is served.
+  254 chunks embedded.
+
+### Geometric table reconstruction (no table-detection model)
+
+The table branch originally depended on `table_id`/`row_index`/`col_index`, which only Surya v2
+emits. The live OCR is Surya v1 (`surya-ocr==0.17.1` via Colab) and emits no table structure at
+all, so `header_table_id` was always `None`, the `in_header_table` gate never opened, and every
+row under a detected header fell through to `section_text`. Live chunks: 254 total — 224
+`section_text`, 18 `key_value`, 12 `header`, **0 line items** — headers were being found with
+nothing ever bound beneath them.
+
+`build_spatial_chunks` now reconstructs the table from raw OCR geometry when no `table_id` is
+present. A detected header row anchors the column positions and the rows beneath it are bound with
+the same `bind_row_to_headers` (x-center nearest column) the v2 path uses; the table stays open
+until a stop condition fires (`_geometric_table_ends`):
+
+| Stop condition | Rationale |
+|---|---|
+| **Summary row** (`is_summary_row`) | The totals block ends the table. Requires *both* a summary label (`total`/`subtotal`/`balance`/`බදු`/`මුළු`…) in one of the first two cells *and* a row narrower than the header — so a real line item like `Total station tripod \| 2 \| 45000`, which matches the keyword alone, stays in. |
+| **Large vertical gap** | A row starting more than `median_text_height * 2.5` below the previous bound row is detached from the table. |
+| **Column misalignment** (`row_aligns_to_headers`) | Under half the row's cells land on a column. A cell counts if it horizontally *overlaps* a header box (a wide description under a narrow "Description") or its center is within `column_tolerance` (= 0.6 × median header spacing, so it scales with the document's own columns). Single-cell rows never align. |
+
+`is_table_header` gates the whole path: the header must have ≥2 cells resolving to ≥2 *distinct*
+canonical fields. This is not hypothetical — on live data `detect_header_row` scores 1.0 on a shop
+address (`No. 655, Chilaw Road, Negombo`, matching `no.`) and on a Sinhala grand-total line
+(`මුළු එකතුව | 1.556.00`, matching `මුළු`). The guard rejects both, so geometric mode simply
+doesn't engage rather than mis-binding a page.
+
+This is a heuristic and is deliberately biased toward stopping early: a false stop costs one
+`section_text` chunk, a false bind invents a line item. Unit tests in
+`tests/test_iter3_spatial_serialization.py` cover each stop condition, the header guard, the
+never-drop-tokens invariant, and that v2 `table_id` geometry still takes the original path
+unchanged. Verified live: re-embedding R17 produced the first `line_item_row` chunks in the
+database (`LineItem | Qty: 1 | Description: Front and rear brake cables | UnitPrice: 100.00 |
+Total: 100.00`), retrievable through `vector_index.retrieve_top_k`.
+
+When Surya v2 (with layout) is served, `table_id` reappears and the original branch takes over
+automatically — the geometric path is the fallback, not a replacement.
