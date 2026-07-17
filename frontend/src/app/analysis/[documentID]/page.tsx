@@ -419,7 +419,7 @@ export default function AnalysisDetailPage() {
       <button
         onClick={async () => {
           const token = localStorage.getItem("token") || sessionStorage.getItem("token") || "";
-          const res  = await fetch(`http://127.0.0.1:8000/documents/${documentId}/share`, {
+          const res  = await fetch(`${BACKEND_URL}/documents/${documentId}/share`, {
             method: "POST", headers: { Authorization: `Bearer ${token}` },
           });
           const data = await res.json();
