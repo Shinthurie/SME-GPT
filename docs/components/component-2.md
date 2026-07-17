@@ -113,6 +113,10 @@ Cell-extraction accuracy, 100% schema validity, association accuracy (number ↔
 - Row clustering currently runs once across all boxes on a page, not per `table_id`. Two tables
   sharing a y-range on the same page would need per-table clustering first — tracked as an
   Iteration 3 follow-up in `docs/ROADMAP.md` (not hit by the single-table mock fixture).
-- **Not yet wired into `document_pipeline.py`** — same status as C1 (Iter 2): both are standalone,
-  tested modules pending a real OCR engine and the decision to replace the live whole-text-blob
-  extraction flow.
+- **Wired live (Iter 9).** `document_pipeline.py` produces `final_safe_boxes` (C1) and
+  `spatial_chunks.json` (C2); on confirm-save, `app.py::_post_save_enrich` runs
+  `build_spatial_chunks` → `embed_rows` → `upsert_chunk_embeddings` (pgvector). Verified live:
+  254 chunks embedded. **Caveat:** on real data the chunk mix is mostly `section_text`/`key_value`/
+  `header` — the `line_item`/`line_item_block` table branch is implemented + unit-tested but dormant
+  because the live OCR (Surya v1 via Colab) doesn't emit table-cell coordinates (`table_id`/
+  `row_index`/`col_index`); it activates unchanged once Surya v2 (with layout) is served.
