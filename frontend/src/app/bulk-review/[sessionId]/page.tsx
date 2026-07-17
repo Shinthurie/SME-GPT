@@ -45,9 +45,9 @@ function parseAmt(v: string | number | null | undefined): number {
 
 function InfoCard({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="rounded-[18px] border border-slate-200 bg-white p-5 shadow-sm">
-      <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#64748b]">{title}</p>
-      <div className="mt-3 text-[14px] leading-7 text-[#334155]">{children}</div>
+    <div className="rounded-[18px] border border-[var(--border)] bg-[var(--surface)] p-5 shadow-sm">
+      <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[var(--text-2)]">{title}</p>
+      <div className="mt-3 text-[14px] leading-7 text-[var(--text-2)]">{children}</div>
     </div>
   );
 }
@@ -55,7 +55,7 @@ function InfoCard({ title, children }: { title: string; children: React.ReactNod
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex flex-col gap-0.5">
-      <span className="text-[10px] font-bold uppercase tracking-wide text-[#94a3b8]">{label}</span>
+      <span className="text-[10px] font-bold uppercase tracking-wide text-[var(--text-3)]">{label}</span>
       {children}
     </div>
   );
@@ -69,7 +69,7 @@ function TextInput({ value, onChange, placeholder }: {
       value={value}
       onChange={(e) => onChange(e.target.value)}
       placeholder={placeholder ?? ""}
-      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[13px] text-[#0f172a] outline-none focus:border-blue-400"
+      className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-[13px] text-[var(--text-1)] outline-none focus:border-[var(--brand-mid)]"
     />
   );
 }
@@ -82,7 +82,7 @@ function SelectInput({ value, onChange, options }: {
     <select
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[13px] text-[#0f172a] outline-none focus:border-blue-400"
+      className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-[13px] text-[var(--text-1)] outline-none focus:border-[var(--brand-mid)]"
     >
       {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
     </select>
@@ -216,7 +216,7 @@ export default function BulkReviewPage() {
   if (!session && !error) {
     return (
       <MobileShell>
-        <div className="flex min-h-screen items-center justify-center text-[14px] text-[#64748b]">
+        <div className="flex min-h-screen items-center justify-center text-[14px] text-[var(--text-2)]">
           Loading session…
         </div>
       </MobileShell>
@@ -232,7 +232,7 @@ export default function BulkReviewPage() {
           <div className="mb-4 flex items-center justify-between gap-3">
             <button
               onClick={handleDiscard}
-              className="inline-flex h-10 w-10 items-center justify-center rounded-full text-[#2563ff] transition hover:bg-[#eef4ff]"
+              className="inline-flex h-10 w-10 items-center justify-center rounded-full text-[var(--brand-mid)] transition hover:bg-[var(--brand-tint)]"
             >
               <span className="material-symbols-outlined">arrow_back</span>
             </button>
@@ -241,7 +241,7 @@ export default function BulkReviewPage() {
               <LanguageSwitcher />
               <button
                 onClick={handleDiscard}
-                className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-[13px] font-semibold text-red-600 transition hover:bg-red-50"
+                className="rounded-xl border border-[var(--border)] bg-[var(--surface)] px-4 py-2 text-[13px] font-semibold text-[var(--danger)] transition hover:bg-[var(--danger-tint)]"
               >
                 Discard
               </button>
@@ -262,19 +262,19 @@ export default function BulkReviewPage() {
             <h1 className="text-[22px] font-extrabold tracking-tight text-[var(--text-1)]">
               {session?.fileName ?? "Bulk Review"}
             </h1>
-            <p className="mt-1 text-[11px] font-bold uppercase tracking-[0.12em] text-[#64748b]">
+            <p className="mt-1 text-[11px] font-bold uppercase tracking-[0.12em] text-[var(--text-2)]">
               Review & Confirm Before Saving
             </p>
           </div>
 
           {error && (
-            <div className="mb-4 rounded-[18px] border border-red-200 bg-red-50 p-4 text-[14px] text-red-700">
+            <div className="mb-4 rounded-[18px] border border-[var(--danger-border)] bg-[var(--danger-tint)] p-4 text-[14px] text-[var(--danger)]">
               {error}
             </div>
           )}
 
           {duplicate?.found && (
-            <div className="mb-4 rounded-[18px] border border-amber-200 bg-amber-50 p-4 text-[13px] text-amber-800">
+            <div className="mb-4 rounded-[18px] border border-[var(--warn-border)] bg-[var(--warn-tint)] p-4 text-[13px] text-[var(--warn)]">
               <span className="font-bold">Duplicate detected</span> — a similar document already exists as{" "}
               <button
                 onClick={() => router.push(`/analysis/${duplicate.existingId}`)}
@@ -286,7 +286,7 @@ export default function BulkReviewPage() {
               <button
                 onClick={() => handleSave(true)}
                 disabled={saving}
-                className="ml-2 rounded-lg bg-amber-600 px-3 py-1 text-[12px] font-bold text-white hover:opacity-90 disabled:opacity-50"
+                className="ml-2 rounded-lg bg-[var(--warn)] px-3 py-1 text-[12px] font-bold text-white hover:opacity-90 disabled:opacity-50"
               >
                 Save Anyway
               </button>
@@ -297,7 +297,7 @@ export default function BulkReviewPage() {
             <div className="grid gap-6 xl:grid-cols-[1.05fr_0.95fr]">
 
               {/* Left — document image */}
-              <div className="rounded-[20px] bg-[#eef2f7] p-3 shadow-sm">
+              <div className="rounded-[20px] bg-[var(--surface-2)] p-3 shadow-sm">
                 <div className="mb-2 flex items-center gap-2">
                   <span
                     className="rounded-lg px-3 py-1 text-[10px] font-bold uppercase tracking-wider"
@@ -316,7 +316,7 @@ export default function BulkReviewPage() {
                     {session?.arithmeticStatus === "matched" ? "99% CONFIDENCE" : "VERIFY TOTALS"}
                   </span>
                 </div>
-                <div className="rounded-[16px] bg-white p-3">
+                <div className="rounded-[16px] bg-[var(--surface)] p-3">
                   <BboxOverlayViewer
                     imageUrl={imageUrl}
                     documentId={`bulk-${sessionId}`}
@@ -331,17 +331,17 @@ export default function BulkReviewPage() {
               <div className="space-y-4">
 
                 {/* Header card */}
-                <div className="rounded-[20px] border border-slate-200 bg-white p-5 shadow-sm">
+                <div className="rounded-[20px] border border-[var(--border)] bg-[var(--surface)] p-5 shadow-sm">
                   <div className="flex items-center justify-between gap-4">
                     <div>
-                      <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#64748b]">Extracted Data</p>
-                      <h2 className="text-[18px] font-extrabold text-[#0f172a]">Document Review</h2>
+                      <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[var(--text-2)]">Extracted Data</p>
+                      <h2 className="text-[18px] font-extrabold text-[var(--text-1)]">Document Review</h2>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="rounded-xl bg-[#eef4ff] px-3 py-2 text-[12px] font-semibold text-[#2563ff]">
+                      <span className="rounded-xl bg-[var(--brand-tint)] px-3 py-2 text-[12px] font-semibold text-[var(--brand-mid)]">
                         {preview.document_type?.toUpperCase() || "UNKNOWN"}
                       </span>
-                      <span className="rounded-xl bg-[#f1f5f9] px-3 py-2 text-[12px] text-[#334155]">
+                      <span className="rounded-xl bg-[var(--surface-2)] px-3 py-2 text-[12px] text-[var(--text-2)]">
                         {preview.currency || "LKR"}
                       </span>
                     </div>
@@ -487,7 +487,7 @@ export default function BulkReviewPage() {
                         />
                       </Field>
                     </div>
-                    <p className="mt-2 text-[11px] text-[#94a3b8]">
+                    <p className="mt-2 text-[11px] text-[var(--text-3)]">
                       Sri Lanka standard VAT: 18%. Enter rate to auto-calculate.
                     </p>
                   </InfoCard>
@@ -500,7 +500,7 @@ export default function BulkReviewPage() {
                       {/* Header row */}
                       <div className="grid grid-cols-[1fr_64px_90px_90px] gap-2">
                         {["Description", "Qty", "Price", "Total"].map((h) => (
-                          <span key={h} className="text-[10px] font-bold uppercase text-[#94a3b8]">{h}</span>
+                          <span key={h} className="text-[10px] font-bold uppercase text-[var(--text-3)]">{h}</span>
                         ))}
                       </div>
                       {preview.items.map((item, idx) => (
@@ -508,27 +508,27 @@ export default function BulkReviewPage() {
                           <input
                             value={String(item.description)}
                             onChange={(e) => updateItem(idx, "description", e.target.value)}
-                            className="rounded-lg border border-slate-200 px-2 py-1.5 text-[12px] text-[#0f172a]"
+                            className="rounded-lg border border-[var(--border)] px-2 py-1.5 text-[12px] text-[var(--text-1)]"
                           />
                           <input
                             value={String(item.quantity)}
                             onChange={(e) => updateItem(idx, "quantity", e.target.value)}
-                            className="rounded-lg border border-slate-200 px-2 py-1.5 text-[12px] text-right text-[#0f172a]"
+                            className="rounded-lg border border-[var(--border)] px-2 py-1.5 text-[12px] text-right text-[var(--text-1)]"
                           />
                           <input
                             value={String(item.unit_price)}
                             onChange={(e) => updateItem(idx, "unit_price", e.target.value)}
-                            className="rounded-lg border border-slate-200 px-2 py-1.5 text-[12px] text-right text-[#0f172a]"
+                            className="rounded-lg border border-[var(--border)] px-2 py-1.5 text-[12px] text-right text-[var(--text-1)]"
                           />
                           <input
                             value={String(item.line_total)}
                             readOnly
-                            className="rounded-lg border border-slate-100 bg-slate-50 px-2 py-1.5 text-[12px] text-right font-semibold text-[#334155]"
+                            className="rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-2 py-1.5 text-[12px] text-right font-semibold text-[var(--text-2)]"
                           />
                         </div>
                       ))}
                       <div className="flex justify-end pt-1">
-                        <span className="text-[12px] font-bold text-[#0f172a]">
+                        <span className="text-[12px] font-bold text-[var(--text-1)]">
                           Items Total:{" "}
                           {preview.currency || "LKR"}{" "}
                           {preview.items.reduce((s, i) => s + parseAmt(i.line_total), 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
@@ -542,7 +542,7 @@ export default function BulkReviewPage() {
                 <div className="flex justify-end gap-2 pb-4">
                   <button
                     onClick={handleDiscard}
-                    className="rounded-xl border border-slate-200 px-5 py-2.5 text-[13px] font-semibold text-red-600 transition hover:bg-red-50"
+                    className="rounded-xl border border-[var(--border)] px-5 py-2.5 text-[13px] font-semibold text-[var(--danger)] transition hover:bg-[var(--danger-tint)]"
                   >
                     Discard
                   </button>

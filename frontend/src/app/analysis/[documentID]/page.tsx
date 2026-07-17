@@ -74,11 +74,11 @@ function InfoCard({
   children: React.ReactNode;
 }) {
   return (
-    <div className="rounded-[18px] border border-slate-200 bg-white p-5 shadow-sm">
-      <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#64748b]">
+    <div className="rounded-[18px] border border-[var(--border)] bg-[var(--surface)] p-5 shadow-sm">
+      <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[var(--text-2)]">
         {title}
       </p>
-      <div className="mt-3 text-[14px] leading-7 text-[#334155]">{children}</div>
+      <div className="mt-3 text-[14px] leading-7 text-[var(--text-2)]">{children}</div>
     </div>
   );
 }
@@ -376,7 +376,7 @@ export default function AnalysisDetailPage() {
           <div className="mb-4 flex items-center justify-between">
             <button
               onClick={() => router.back()}
-              className="inline-flex h-10 w-10 items-center justify-center rounded-full text-[#2563ff] transition hover:bg-[#eef4ff]"
+              className="inline-flex h-10 w-10 items-center justify-center rounded-full text-[var(--brand-mid)] transition hover:bg-[var(--brand-tint)]"
             >
               <span className="material-symbols-outlined">arrow_back</span>
             </button>
@@ -396,7 +396,7 @@ export default function AnalysisDetailPage() {
             setEditMode(true);
           }
         }}
-        className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-[13px] font-semibold text-[#2563ff]"
+        className="rounded-xl border border-[var(--border)] bg-[var(--surface)] px-4 py-2 text-[13px] font-semibold text-[var(--brand-mid)]"
       >
         {editMode ? "Cancel" : "Edit"}
       </button>
@@ -445,7 +445,7 @@ export default function AnalysisDetailPage() {
       <button
         onClick={handleDelete}
         disabled={deleting}
-        className="rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-[13px] font-semibold text-red-600 disabled:opacity-60"
+        className="rounded-xl border border-[var(--danger-border)] bg-[var(--danger-tint)] px-4 py-2 text-[13px] font-semibold text-[var(--danger)] disabled:opacity-60"
       >
         {deleting ? "Deleting..." : "Delete"}
       </button>
@@ -458,36 +458,36 @@ export default function AnalysisDetailPage() {
             <h1 className="text-[24px] font-extrabold tracking-tight text-[var(--text-1)] sm:text-[28px]">
               {loading ? "Loading..." : target?.document_id || "Document"}
             </h1>
-            <p className="mt-1 text-[11px] font-bold uppercase tracking-[0.12em] text-[#64748b]">
+            <p className="mt-1 text-[11px] font-bold uppercase tracking-[0.12em] text-[var(--text-2)]">
               Financial Document Analysis
             </p>
           </div>
 
           {successMessage && (
-            <div className="mb-4 rounded-[18px] border border-green-200 bg-green-50 p-4 text-[14px] text-green-700">
+            <div className="mb-4 rounded-[18px] border border-[var(--success-border)] bg-[var(--success-tint)] p-4 text-[14px] text-[var(--success)]">
               {successMessage}
             </div>
           )}
           {flowChangeMessage && (
-  <div className="mb-4 rounded-[18px] border border-amber-200 bg-amber-50 p-4 text-[14px] text-amber-800">
+  <div className="mb-4 rounded-[18px] border border-[var(--warn-border)] bg-[var(--warn-tint)] p-4 text-[14px] text-[var(--warn)]">
     {flowChangeMessage}
   </div>
 )}
           {loading ? (
-            <div className="rounded-[18px] border border-slate-200 bg-white p-6 text-center text-[14px] text-[#64748b]">
+            <div className="rounded-[18px] border border-[var(--border)] bg-[var(--surface)] p-6 text-center text-[14px] text-[var(--text-2)]">
               Loading document...
             </div>
           ) : error ? (
-            <div className="rounded-[18px] border border-red-200 bg-red-50 p-6 text-center text-[14px] text-red-700">
+            <div className="rounded-[18px] border border-[var(--danger-border)] bg-[var(--danger-tint)] p-6 text-center text-[14px] text-[var(--danger)]">
               {error}
             </div>
           ) : !target ? (
-            <div className="rounded-[18px] border border-slate-200 bg-white p-6 text-center text-[14px] text-[#64748b]">
+            <div className="rounded-[18px] border border-[var(--border)] bg-[var(--surface)] p-6 text-center text-[14px] text-[var(--text-2)]">
               Document not found.
             </div>
           ) : (
             <div className="grid gap-6 xl:grid-cols-[1.05fr_0.95fr]">
-              <div className="rounded-[20px] bg-[#eef2f7] p-3 shadow-sm">
+              <div className="rounded-[20px] bg-[var(--surface-2)] p-3 shadow-sm">
                 {/* Language region tag */}
                 <div className="mb-2 flex items-center gap-2">
                   <span
@@ -499,7 +499,7 @@ export default function AnalysisDetailPage() {
                       : "ENGLISH REGION"}
                   </span>
                 </div>
-                <div className="rounded-[16px] bg-white p-3">
+                <div className="rounded-[16px] bg-[var(--surface)] p-3">
                   {target.image_url ? (
                     <BboxOverlayViewer
                       imageUrl={/^https?:\/\//.test(target.image_url) ? target.image_url : `${BACKEND_URL}${target.image_url}`}
@@ -509,8 +509,8 @@ export default function AnalysisDetailPage() {
                       onChunkSelect={setActiveChunkId}
                     />
                   ) : (
-                    <div className="flex min-h-[420px] items-center justify-center rounded-[16px] bg-[#f3f4f6] sm:min-h-[520px]">
-                      <div className="text-[13px] text-[#94a3b8]">
+                    <div className="flex min-h-[420px] items-center justify-center rounded-[16px] bg-[var(--surface-2)] sm:min-h-[520px]">
+                      <div className="text-[13px] text-[var(--text-3)]">
                         No saved preview image for this document
                       </div>
                     </div>
@@ -519,25 +519,25 @@ export default function AnalysisDetailPage() {
               </div>
 
               <div>
-                <div className="rounded-[20px] border border-slate-200 bg-white p-5 shadow-sm">
+                <div className="rounded-[20px] border border-[var(--border)] bg-[var(--surface)] p-5 shadow-sm">
                   <div className="flex items-center justify-between gap-4">
                     <div>
-                      <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#64748b]">
+                      <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[var(--text-2)]">
                         {lang === "si" ? "උකහා ගත් දත්ත" : "Extracted Data"}
                       </p>
-                      <h2 className="text-[18px] font-extrabold text-[#0f172a] sm:text-[20px]">
+                      <h2 className="text-[18px] font-extrabold text-[var(--text-1)] sm:text-[20px]">
                         Document Detail
                       </h2>
                     </div>
 
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="rounded-xl bg-[#eef4ff] px-3 py-2 text-[12px] font-semibold text-[#2563ff]">
+                      <span className="rounded-xl bg-[var(--brand-tint)] px-3 py-2 text-[12px] font-semibold text-[var(--brand-mid)]">
                         {target.document_type?.toUpperCase() || "UNKNOWN"}
                       </span>
-                      <span className="rounded-xl bg-[#f1f5f9] px-3 py-2 text-[12px] text-[#334155]">
+                      <span className="rounded-xl bg-[var(--surface-2)] px-3 py-2 text-[12px] text-[var(--text-2)]">
                         {target.currency || "NULL"}
                       </span>
-                      <span className="rounded-xl bg-[#dcfce7] px-3 py-2 text-[12px] font-semibold text-[#16a34a]">
+                      <span className="rounded-xl bg-[var(--success-tint)] px-3 py-2 text-[12px] font-semibold text-[var(--success)]">
                         {target.status || "ready"}
                       </span>
                     </div>
@@ -588,9 +588,9 @@ export default function AnalysisDetailPage() {
 
                 <div className="mt-4 space-y-4">
                   <InfoCard title={t.metadataTitle}>
-                    <span className="font-semibold text-[#0f172a]">{t.documentIdLabel}:</span> {target.document_id}
+                    <span className="font-semibold text-[var(--text-1)]">{t.documentIdLabel}:</span> {target.document_id}
                     <br />
-                    <span className="font-semibold text-[#0f172a]">
+                    <span className="font-semibold text-[var(--text-1)]">
                       {target.document_type === "dn" ? (lang === "si" ? "PO යොමු:" : "PO Reference:") :
                        target.document_type === "po" ? (lang === "si" ? "PO අංකය:" : "PO Number:") :
                        `${t.orderIdLabel}:`}
@@ -599,30 +599,30 @@ export default function AnalysisDetailPage() {
                       <input
                         value={target.order_id || ""}
                         onChange={(e) => updateField("order_id", e.target.value)}
-                        className="ml-2 rounded border border-slate-200 px-2 py-1 text-[13px]"
+                        className="ml-2 rounded border border-[var(--border)] px-2 py-1 text-[13px]"
                       />
                     ) : target.order_id || "NULL"}
                     <br />
-                    <span className="font-semibold text-[#0f172a]">{t.dateLabel}:</span>{" "}
+                    <span className="font-semibold text-[var(--text-1)]">{t.dateLabel}:</span>{" "}
                     {editMode ? (
                       <input
                         value={target.date || ""}
                         onChange={(e) => updateField("date", e.target.value)}
-                        className="ml-2 rounded border border-slate-200 px-2 py-1 text-[13px]"
+                        className="ml-2 rounded border border-[var(--border)] px-2 py-1 text-[13px]"
                       />
                     ) : target.date || "NULL"}
                     <br />
-                    <span className="font-semibold text-[#0f172a]">{t.partyLabel}:</span> {formatParty()}
+                    <span className="font-semibold text-[var(--text-1)]">{t.partyLabel}:</span> {formatParty()}
                     <br />
                     {/* Hide Flow Type and Category for DN (no amounts) and PO (always payable) */}
                     {target.document_type !== "dn" && target.document_type !== "po" && (
                       <>
-                        <span className="font-semibold text-[#0f172a]">{t.flowTypeLabel}:</span>{" "}
+                        <span className="font-semibold text-[var(--text-1)]">{t.flowTypeLabel}:</span>{" "}
                         {editMode ? (
                           <select
                             value={target.flow_type || "unknown"}
                             onChange={(e) => updateField("flow_type", e.target.value)}
-                            className="ml-2 rounded border border-slate-200 px-2 py-1 text-[13px]"
+                            className="ml-2 rounded border border-[var(--border)] px-2 py-1 text-[13px]"
                           >
                             <option value="unknown">{lang === "si" ? "නොදනී" : "Unknown"}</option>
                             <option value="payable">{humanizeFlow("payable", lang)}</option>
@@ -632,7 +632,7 @@ export default function AnalysisDetailPage() {
                           </select>
                         ) : (target.flow_type && target.flow_type !== "NULL" ? humanizeFlow(target.flow_type, lang) : "—")}
                         <br />
-                        <span className="font-semibold text-[#0f172a]">{t.categoryLabel}:</span>{" "}
+                        <span className="font-semibold text-[var(--text-1)]">{t.categoryLabel}:</span>{" "}
                         {(() => {
                           const ft = (target.flow_type || "").toLowerCase();
                           const derived = (target.category && target.category !== "NULL")
@@ -642,9 +642,9 @@ export default function AnalysisDetailPage() {
                             : t.categoryUnknown;
                           return (
                             <span className={`ml-1 inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-bold ${
-                              derived === "Revenue"  ? "bg-green-50 text-green-700" :
-                              derived === "Expenses" ? "bg-red-50 text-red-700"    :
-                                                       "bg-slate-50 text-slate-500"
+                              derived === "Revenue"  ? "bg-[var(--success-tint)] text-[var(--success)]" :
+                              derived === "Expenses" ? "bg-[var(--danger-tint)] text-[var(--danger)]"    :
+                                                       "bg-[var(--surface-2)] text-[var(--text-3)]"
                             }`}>{derived}</span>
                           );
                         })()}
@@ -654,14 +654,14 @@ export default function AnalysisDetailPage() {
                   </InfoCard>
 
                   <InfoCard title={t.partiesTitle}>
-                    <span className="font-semibold text-[#0f172a]">
+                    <span className="font-semibold text-[var(--text-1)]">
                       {lang === "si" ? "ඔබගේ සමාගම:" : "Your Company:"}
                     </span>{" "}
                     {editMode ? (
                       <input
                         value={target.company_name || ""}
                         onChange={(e) => updateField("company_name", e.target.value)}
-                        className="ml-2 rounded border border-slate-200 px-2 py-1 text-[13px]"
+                        className="ml-2 rounded border border-[var(--border)] px-2 py-1 text-[13px]"
                       />
                     ) : target.company_name || "NULL"}
                     <br />
@@ -669,19 +669,19 @@ export default function AnalysisDetailPage() {
                     {/* DN: role selector — Delivered By or Delivered To */}
                     {target.document_type === "dn" && (
                       <>
-                        <span className="font-semibold text-[#0f172a]">
+                        <span className="font-semibold text-[var(--text-1)]">
                           {lang === "si" ? "භූමිකාව:" : "Role:"}
                         </span>{" "}
                         <select
                           value={target.flow_type === "income" ? "delivered_to" : "delivered_by"}
                           onChange={(e) => updateField("flow_type", e.target.value === "delivered_to" ? "income" : "expense")}
-                          className="ml-2 rounded border border-slate-200 px-2 py-1 text-[13px]"
+                          className="ml-2 rounded border border-[var(--border)] px-2 py-1 text-[13px]"
                         >
                           <option value="delivered_by">{lang === "si" ? "අපට ලබා දෙනු ලැබිණි (Delivered By)" : "Delivered By (we received goods)"}</option>
                           <option value="delivered_to">{lang === "si" ? "අපි ලබා දුන්නෙමු (Delivered To)" : "Delivered To (we sent goods)"}</option>
                         </select>
                         <br />
-                        <span className="font-semibold text-[#0f172a]">
+                        <span className="font-semibold text-[var(--text-1)]">
                           {target.flow_type === "income"
                             ? (lang === "si" ? "ලබා දුන් ගනුදෙනුකරු:" : "Delivered To (Customer):")
                             : (lang === "si" ? "ලබාදෙන්නා (සැපයුම්කරු):" : "Delivered By (Supplier):")}
@@ -690,7 +690,7 @@ export default function AnalysisDetailPage() {
                           <input
                             value={target.supplier_name || ""}
                             onChange={(e) => updateField("supplier_name", e.target.value)}
-                            className="ml-2 rounded border border-slate-200 px-2 py-1 text-[13px]"
+                            className="ml-2 rounded border border-[var(--border)] px-2 py-1 text-[13px]"
                           />
                         ) : target.supplier_name || "NULL"}
                       </>
@@ -699,7 +699,7 @@ export default function AnalysisDetailPage() {
                     {/* Non-DN: standard supplier label */}
                     {target.document_type !== "dn" && (
                       <>
-                        <span className="font-semibold text-[#0f172a]">
+                        <span className="font-semibold text-[var(--text-1)]">
                           {(() => {
                             const dt = target.document_type || "";
                             const ft = target.flow_type || "";
@@ -721,7 +721,7 @@ export default function AnalysisDetailPage() {
                           <input
                             value={target.supplier_name || ""}
                             onChange={(e) => updateField("supplier_name", e.target.value)}
-                            className="ml-2 rounded border border-slate-200 px-2 py-1 text-[13px]"
+                            className="ml-2 rounded border border-[var(--border)] px-2 py-1 text-[13px]"
                           />
                         ) : target.supplier_name || "NULL"}
                       </>
@@ -741,29 +741,29 @@ export default function AnalysisDetailPage() {
                       return (
                         <>
                           {/* Raw total always shown */}
-                          <span className="font-semibold text-[#0f172a]">{t.rawTotalLabel}:</span>{" "}
+                          <span className="font-semibold text-[var(--text-1)]">{t.rawTotalLabel}:</span>{" "}
                           {editMode ? (
-                            <input value={String(target.raw_total_amount || "")} onChange={(e) => updateField("raw_total_amount", e.target.value)} className="ml-2 rounded border border-slate-200 px-2 py-1 text-[13px]" />
+                            <input value={String(target.raw_total_amount || "")} onChange={(e) => updateField("raw_total_amount", e.target.value)} className="ml-2 rounded border border-[var(--border)] px-2 py-1 text-[13px]" />
                           ) : target.raw_total_amount || "NULL"}
                           <br />
 
                           {/* Final total always shown */}
-                          <span className="font-semibold text-[#0f172a]">{t.finalTotalLabel}:</span>{" "}
+                          <span className="font-semibold text-[var(--text-1)]">{t.finalTotalLabel}:</span>{" "}
                           {editMode ? (
-                            <input value={String(target.final_total_amount || "")} onChange={(e) => updateField("final_total_amount", e.target.value)} className="ml-2 rounded border border-slate-200 px-2 py-1 text-[13px]" />
+                            <input value={String(target.final_total_amount || "")} onChange={(e) => updateField("final_total_amount", e.target.value)} className="ml-2 rounded border border-[var(--border)] px-2 py-1 text-[13px]" />
                           ) : `${cur} ${finalTotal.toFixed(2)}`}
                           <br />
 
                           {/* RECEIVABLE — track partial payments */}
                           {ft === "receivable" && (
                             <>
-                              <span className="font-semibold text-[#0f172a]">{t.cashInflowedLabel}:</span>{" "}
+                              <span className="font-semibold text-[var(--text-1)]">{t.cashInflowedLabel}:</span>{" "}
                               {editMode ? (
-                                <input type="number" min="0" value={String(target.cash_inflowed ?? "")} onChange={(e) => updateField("cash_inflowed", e.target.value)} className="ml-2 rounded border border-slate-200 px-2 py-1 text-[13px] w-32" />
+                                <input type="number" min="0" value={String(target.cash_inflowed ?? "")} onChange={(e) => updateField("cash_inflowed", e.target.value)} className="ml-2 rounded border border-[var(--border)] px-2 py-1 text-[13px] w-32" />
                               ) : `${cur} ${cashInflowed.toFixed(2)}`}
                               <br />
-                              <span className="font-semibold text-[#0f172a]">{t.receivableAmountLabel}:</span>{" "}
-                              <span className={receivableAmt === 0 ? "ml-1 font-bold text-green-600" : "ml-1 font-bold text-[#2252b5]"}>
+                              <span className="font-semibold text-[var(--text-1)]">{t.receivableAmountLabel}:</span>{" "}
+                              <span className={receivableAmt === 0 ? "ml-1 font-bold text-[var(--success)]" : "ml-1 font-bold text-[var(--brand-mid)]"}>
                                 {cur} {receivableAmt.toFixed(2)}{receivableAmt === 0 ? " {t.fullyReceived}" : ""}
                               </span>
                               <br />
@@ -773,8 +773,8 @@ export default function AnalysisDetailPage() {
                           {/* CASH INFLOW — amount is the final total, no tracking needed */}
                           {ft === "cash_inflow" && (
                             <>
-                              <span className="font-semibold text-[#0f172a]">{t.cashInflowedLabel}:</span>{" "}
-                              <span className="ml-1 font-bold text-green-600">{cur} {finalTotal.toFixed(2)} ✓ Received</span>
+                              <span className="font-semibold text-[var(--text-1)]">{t.cashInflowedLabel}:</span>{" "}
+                              <span className="ml-1 font-bold text-[var(--success)]">{cur} {finalTotal.toFixed(2)} ✓ Received</span>
                               <br />
                             </>
                           )}
@@ -782,13 +782,13 @@ export default function AnalysisDetailPage() {
                           {/* PAYABLE — track partial payments */}
                           {ft === "payable" && (
                             <>
-                              <span className="font-semibold text-[#0f172a]">{t.cashOutflowedLabel}:</span>{" "}
+                              <span className="font-semibold text-[var(--text-1)]">{t.cashOutflowedLabel}:</span>{" "}
                               {editMode ? (
-                                <input type="number" min="0" value={String(target.cash_outflowed ?? "")} onChange={(e) => updateField("cash_outflowed", e.target.value)} className="ml-2 rounded border border-slate-200 px-2 py-1 text-[13px] w-32" />
+                                <input type="number" min="0" value={String(target.cash_outflowed ?? "")} onChange={(e) => updateField("cash_outflowed", e.target.value)} className="ml-2 rounded border border-[var(--border)] px-2 py-1 text-[13px] w-32" />
                               ) : `${cur} ${cashOutflowed.toFixed(2)}`}
                               <br />
-                              <span className="font-semibold text-[#0f172a]">{t.payableAmountLabel}:</span>{" "}
-                              <span className={payableAmt === 0 ? "ml-1 font-bold text-green-600" : "ml-1 font-bold text-[#dc2626]"}>
+                              <span className="font-semibold text-[var(--text-1)]">{t.payableAmountLabel}:</span>{" "}
+                              <span className={payableAmt === 0 ? "ml-1 font-bold text-[var(--success)]" : "ml-1 font-bold text-[var(--danger)]"}>
                                 {cur} {payableAmt.toFixed(2)}{payableAmt === 0 ? " {t.fullyPaid}" : ""}
                               </span>
                               <br />
@@ -798,15 +798,15 @@ export default function AnalysisDetailPage() {
                           {/* CASH OUTFLOW — amount is the final total, no tracking needed */}
                           {ft === "cash_outflow" && (
                             <>
-                              <span className="font-semibold text-[#0f172a]">{t.cashOutflowedLabel}:</span>{" "}
-                              <span className="ml-1 font-bold text-green-600">{cur} {finalTotal.toFixed(2)} ✓ Paid</span>
+                              <span className="font-semibold text-[var(--text-1)]">{t.cashOutflowedLabel}:</span>{" "}
+                              <span className="ml-1 font-bold text-[var(--success)]">{cur} {finalTotal.toFixed(2)} ✓ Paid</span>
                               <br />
                             </>
                           )}
 
-                          <span className="font-semibold text-[#0f172a]">{t.currencyLabel}:</span>{" "}
+                          <span className="font-semibold text-[var(--text-1)]">{t.currencyLabel}:</span>{" "}
                           {editMode ? (
-                            <input value={target.currency || ""} onChange={(e) => updateField("currency", e.target.value)} className="ml-2 rounded border border-slate-200 px-2 py-1 text-[13px]" />
+                            <input value={target.currency || ""} onChange={(e) => updateField("currency", e.target.value)} className="ml-2 rounded border border-[var(--border)] px-2 py-1 text-[13px]" />
                           ) : target.currency || "NULL"}
                         </>
                       );
@@ -821,11 +821,11 @@ export default function AnalysisDetailPage() {
                   }>
                     {target.document_type === "dn" ? (
                       <>
-                        <span className="font-semibold text-[#0f172a]">{lang === "si" ? "බෙදාහැරීමේ තත්ත්වය:" : "Delivery Status:"}</span>{" "}
+                        <span className="font-semibold text-[var(--text-1)]">{lang === "si" ? "බෙදාහැරීමේ තත්ත්වය:" : "Delivery Status:"}</span>{" "}
                         {editMode ? (
                           <select value={target.received_status || ""}
                             onChange={(e) => updateField("received_status", e.target.value)}
-                            className="ml-2 rounded border border-slate-200 px-2 py-1 text-[13px]">
+                            className="ml-2 rounded border border-[var(--border)] px-2 py-1 text-[13px]">
                             <option value="">Select…</option>
                             <option value="delivered">{lang === "si" ? "ලබාදෙන ලදී" : "Delivered"}</option>
                             <option value="not_delivered">{lang === "si" ? "ලබා නොදුනේ" : "Not Delivered"}</option>
@@ -833,9 +833,9 @@ export default function AnalysisDetailPage() {
                           </select>
                         ) : (
                           <span className={`ml-1 rounded-full px-2 py-0.5 text-[11px] font-bold ${
-                            target.received_status === "delivered" ? "bg-green-50 text-green-700" :
-                            target.received_status === "not_delivered" ? "bg-red-50 text-red-700" :
-                            "bg-amber-50 text-amber-700"
+                            target.received_status === "delivered" ? "bg-[var(--success-tint)] text-[var(--success)]" :
+                            target.received_status === "not_delivered" ? "bg-[var(--danger-tint)] text-[var(--danger)]" :
+                            "bg-[var(--warn-tint)] text-[var(--warn)]"
                           }`}>
                             {target.received_status === "delivered" ? (lang === "si" ? "ලබාදෙන ලදී" : "Delivered") :
                              target.received_status === "not_delivered" ? (lang === "si" ? "ලබා නොදුනේ" : "Not Delivered") :
@@ -844,16 +844,16 @@ export default function AnalysisDetailPage() {
                           </span>
                         )}
                         <br />
-                        <span className="font-semibold text-[#0f172a]">{t.languageLabel}:</span>{" "}
+                        <span className="font-semibold text-[var(--text-1)]">{t.languageLabel}:</span>{" "}
                         {target.language || "NULL"}
                       </>
                     ) : target.document_type === "po" ? (
                       <>
-                        <span className="font-semibold text-[#0f172a]">{lang === "si" ? "PO තත්ත්වය:" : "PO Status:"}</span>{" "}
+                        <span className="font-semibold text-[var(--text-1)]">{lang === "si" ? "PO තත්ත්වය:" : "PO Status:"}</span>{" "}
                         {editMode ? (
                           <select value={target.paid_status || ""}
                             onChange={(e) => updateField("paid_status", e.target.value)}
-                            className="ml-2 rounded border border-slate-200 px-2 py-1 text-[13px]">
+                            className="ml-2 rounded border border-[var(--border)] px-2 py-1 text-[13px]">
                             <option value="">Select…</option>
                             <option value="not_paid">{lang === "si" ? "අනුමත නොකළ" : "Pending"}</option>
                             <option value="partial">{lang === "si" ? "අනුමත කළ" : "Approved"}</option>
@@ -862,9 +862,9 @@ export default function AnalysisDetailPage() {
                           </select>
                         ) : (
                           <span className={`ml-1 rounded-full px-2 py-0.5 text-[11px] font-bold ${
-                            target.paid_status === "paid" ? "bg-green-50 text-green-700" :
-                            target.paid_status === "not_paid" ? "bg-amber-50 text-amber-700" :
-                            "bg-slate-50 text-slate-500"
+                            target.paid_status === "paid" ? "bg-[var(--success-tint)] text-[var(--success)]" :
+                            target.paid_status === "not_paid" ? "bg-[var(--warn-tint)] text-[var(--warn)]" :
+                            "bg-[var(--surface-2)] text-[var(--text-3)]"
                           }`}>
                             {target.paid_status === "paid" ? "Fulfilled" :
                              target.paid_status === "not_paid" ? "Pending" :
@@ -874,18 +874,18 @@ export default function AnalysisDetailPage() {
                           </span>
                         )}
                         <br />
-                        <span className="font-semibold text-[#0f172a]">{t.languageLabel}:</span>{" "}
+                        <span className="font-semibold text-[var(--text-1)]">{t.languageLabel}:</span>{" "}
                         {target.language || "NULL"}
 
                         {/* IT-27: PO approval workflow */}
-                        <div className="mt-3 border-t border-slate-100 pt-3">
-                          <span className="font-semibold text-[#0f172a]">
+                        <div className="mt-3 border-t border-[var(--border)] pt-3">
+                          <span className="font-semibold text-[var(--text-1)]">
                             {lang === "si" ? "අනුමැතිය:" : "Approval:"}
                           </span>{" "}
                           <span className={`ml-1 rounded-full px-2 py-0.5 text-[11px] font-bold ${
-                            target.po_status === "approved" ? "bg-green-50 text-green-700" :
-                            target.po_status === "rejected" ? "bg-red-50 text-red-700" :
-                            "bg-amber-50 text-amber-700"
+                            target.po_status === "approved" ? "bg-[var(--success-tint)] text-[var(--success)]" :
+                            target.po_status === "rejected" ? "bg-[var(--danger-tint)] text-[var(--danger)]" :
+                            "bg-[var(--warn-tint)] text-[var(--warn)]"
                           }`}>
                             {target.po_status === "approved" ? t.poApproved :
                              target.po_status === "rejected" ? t.poRejected :
@@ -893,7 +893,7 @@ export default function AnalysisDetailPage() {
                           </span>
 
                           {target.approved_by && target.po_status === "approved" && (
-                            <p className="mt-1 text-[12px] text-[#64748b]">
+                            <p className="mt-1 text-[12px] text-[var(--text-2)]">
                               {t.poApprovedBy}: {target.approved_by}
                             </p>
                           )}
@@ -910,7 +910,7 @@ export default function AnalysisDetailPage() {
                               <button
                                 onClick={() => handlePoAction("rejected")}
                                 disabled={poActionLoading || target.po_status === "rejected"}
-                                className="rounded-lg border border-red-300 bg-red-50 px-3 py-1.5 text-[12px] font-bold text-red-600 transition hover:opacity-90 disabled:opacity-40"
+                                className="rounded-lg border border-[var(--danger-border)] bg-[var(--danger-tint)] px-3 py-1.5 text-[12px] font-bold text-[var(--danger)] transition hover:opacity-90 disabled:opacity-40"
                               >
                                 {t.poReject}
                               </button>
@@ -921,9 +921,9 @@ export default function AnalysisDetailPage() {
                     ) : (
                       // Invoice / Receipt — full status
                       <>
-                        <span className="font-semibold text-[#0f172a]">{t.receivedStatusLabel}:</span>{" "}
+                        <span className="font-semibold text-[var(--text-1)]">{t.receivedStatusLabel}:</span>{" "}
                         {editMode ? (
-                          <select value={target.received_status || "NULL"} onChange={(e) => updateField("received_status", e.target.value)} className="ml-2 rounded border border-slate-200 px-2 py-1 text-[13px]">
+                          <select value={target.received_status || "NULL"} onChange={(e) => updateField("received_status", e.target.value)} className="ml-2 rounded border border-[var(--border)] px-2 py-1 text-[13px]">
                             <option value="NULL">NULL</option>
                             <option value="received">received</option>
                             <option value="not_received">not_received</option>
@@ -931,9 +931,9 @@ export default function AnalysisDetailPage() {
                           </select>
                         ) : target.received_status || "NULL"}
                         <br />
-                        <span className="font-semibold text-[#0f172a]">{t.paidStatusLabel}:</span>{" "}
+                        <span className="font-semibold text-[var(--text-1)]">{t.paidStatusLabel}:</span>{" "}
                         {editMode ? (
-                          <select value={target.paid_status || "NULL"} onChange={(e) => updateField("paid_status", e.target.value)} className="ml-2 rounded border border-slate-200 px-2 py-1 text-[13px]">
+                          <select value={target.paid_status || "NULL"} onChange={(e) => updateField("paid_status", e.target.value)} className="ml-2 rounded border border-[var(--border)] px-2 py-1 text-[13px]">
                             <option value="NULL">NULL</option>
                             <option value="paid">paid</option>
                             <option value="not_paid">not_paid</option>
@@ -941,9 +941,9 @@ export default function AnalysisDetailPage() {
                           </select>
                         ) : target.paid_status || "NULL"}
                         <br />
-                        <span className="font-semibold text-[#0f172a]">{t.languageLabel}:</span>{" "}
+                        <span className="font-semibold text-[var(--text-1)]">{t.languageLabel}:</span>{" "}
                         {editMode ? (
-                          <select value={target.language || "en"} onChange={(e) => updateField("language", e.target.value)} className="ml-2 rounded border border-slate-200 px-2 py-1 text-[13px]">
+                          <select value={target.language || "en"} onChange={(e) => updateField("language", e.target.value)} className="ml-2 rounded border border-[var(--border)] px-2 py-1 text-[13px]">
                             <option value="en">en</option>
                             <option value="si">si</option>
                           </select>
@@ -986,35 +986,35 @@ export default function AnalysisDetailPage() {
                         return (
                           <div className="space-y-2">
                             <div className="flex items-center justify-between">
-                              <span className="font-semibold text-[#0f172a]">{lang === "si" ? "උප එකතුව (අයිතම වලින්)" : "Subtotal (from items)"}</span>
-                              <span className="font-bold text-[#64748b]">{cur} {subtotal.toFixed(2)}</span>
+                              <span className="font-semibold text-[var(--text-1)]">{lang === "si" ? "උප එකතුව (අයිතම වලින්)" : "Subtotal (from items)"}</span>
+                              <span className="font-bold text-[var(--text-2)]">{cur} {subtotal.toFixed(2)}</span>
                             </div>
                             <div className="flex items-center justify-between">
-                              <span className="font-semibold text-[#0f172a]">{lang === "si" ? "බදු % (Tax Rate)" : "Tax Rate (%)"}</span>
+                              <span className="font-semibold text-[var(--text-1)]">{lang === "si" ? "බදු % (Tax Rate)" : "Tax Rate (%)"}</span>
                               <input
                                 type="number" min="0" step="0.01"
                                 value={rawRate != null && rawRate !== "NULL" ? String(rawRate) : ""}
                                 onChange={(e) => handleRateChange(e.target.value)}
                                 placeholder="e.g. 15"
-                                className="ml-2 w-28 rounded border border-slate-200 px-2 py-1 text-right text-[13px]"
+                                className="ml-2 w-28 rounded border border-[var(--border)] px-2 py-1 text-right text-[13px]"
                               />
                             </div>
                             <div className="flex items-center justify-between">
-                              <span className="font-semibold text-[#0f172a]">{lang === "si" ? "බදු මුදල (Tax Amount)" : "Tax Amount"}</span>
+                              <span className="font-semibold text-[var(--text-1)]">{lang === "si" ? "බදු මුදල (Tax Amount)" : "Tax Amount"}</span>
                               <input
                                 type="number" min="0" step="0.01"
                                 value={rawTax != null && rawTax !== "NULL" ? String(rawTax) : ""}
                                 onChange={(e) => updateField("tax_amount", e.target.value)}
                                 placeholder="0.00"
-                                className="ml-2 w-28 rounded border border-slate-200 px-2 py-1 text-right text-[13px]"
+                                className="ml-2 w-28 rounded border border-[var(--border)] px-2 py-1 text-right text-[13px]"
                               />
                             </div>
-                            <div className="flex items-center justify-between border-t border-slate-100 pt-2">
-                              <span className="font-semibold text-[#0f172a]">{lang === "si" ? "අපේක්ෂිත එකතුව" : "Expected Total"}</span>
-                              <span className={`font-bold ${mismatch ? "text-red-600" : "text-green-600"}`}>{cur} {expectedTotal.toFixed(2)}</span>
+                            <div className="flex items-center justify-between border-t border-[var(--border)] pt-2">
+                              <span className="font-semibold text-[var(--text-1)]">{lang === "si" ? "අපේක්ෂිත එකතුව" : "Expected Total"}</span>
+                              <span className={`font-bold ${mismatch ? "text-[var(--danger)]" : "text-[var(--success)]"}`}>{cur} {expectedTotal.toFixed(2)}</span>
                             </div>
                             {mismatch && (
-                              <p className="rounded-lg bg-red-50 px-3 py-2 text-[12px] text-red-600">
+                              <p className="rounded-lg bg-[var(--danger-tint)] px-3 py-2 text-[12px] text-[var(--danger)]">
                                 {lang === "si"
                                   ? `නොගැලපේ: උප එකතුව + බදුව (${cur} ${expectedTotal.toFixed(2)}) ≠ මුළු එකතුව (${cur} ${finalTotal.toFixed(2)})`
                                   : `Mismatch: Subtotal + Tax (${cur} ${expectedTotal.toFixed(2)}) ≠ Final Total (${cur} ${finalTotal.toFixed(2)})`}
@@ -1030,11 +1030,11 @@ export default function AnalysisDetailPage() {
                         return (
                           <div className="space-y-1.5">
                             <div className="flex items-center justify-between">
-                              <span className="font-semibold text-[#0f172a]">{label}</span>
-                              <span className="font-bold text-[#2252b5]">{cur} {taxAmt.toFixed(2)}</span>
+                              <span className="font-semibold text-[var(--text-1)]">{label}</span>
+                              <span className="font-bold text-[var(--brand-mid)]">{cur} {taxAmt.toFixed(2)}</span>
                             </div>
                             {mismatch && (
-                              <p className="rounded-lg bg-red-50 px-3 py-2 text-[12px] text-red-600">
+                              <p className="rounded-lg bg-[var(--danger-tint)] px-3 py-2 text-[12px] text-[var(--danger)]">
                                 {lang === "si"
                                   ? `ගණිතමය නොගැලපීම: ${cur} ${expectedTotal.toFixed(2)} ≠ ${cur} ${finalTotal.toFixed(2)}`
                                   : `Arithmetic mismatch: Subtotal + Tax (${cur} ${expectedTotal.toFixed(2)}) doesn't match Final Total (${cur} ${finalTotal.toFixed(2)})`}
@@ -1045,9 +1045,9 @@ export default function AnalysisDetailPage() {
                       }
                       return (
                         <div className="space-y-1.5">
-                          <span className="text-[#94a3b8]">{t.noTaxOnDocument}</span>
+                          <span className="text-[var(--text-3)]">{t.noTaxOnDocument}</span>
                           {mismatch && (
-                            <p className="rounded-lg bg-amber-50 px-3 py-2 text-[12px] text-amber-700">
+                            <p className="rounded-lg bg-[var(--warn-tint)] px-3 py-2 text-[12px] text-[var(--warn)]">
                               {lang === "si"
                                 ? `උප එකතුව (${cur} ${subtotal.toFixed(2)}) මුළු එකතුවට (${cur} ${finalTotal.toFixed(2)}) නොගැලපේ — බදුවක් මග හැරී ඇතිදැයි පරීක්ෂා කරන්න.`
                                 : `Subtotal (${cur} ${subtotal.toFixed(2)}) doesn't match the Final Total (${cur} ${finalTotal.toFixed(2)}) — check if a tax amount was missed during extraction.`}
@@ -1058,8 +1058,8 @@ export default function AnalysisDetailPage() {
                     })()}
                   </InfoCard>}
 
-                  <div className="rounded-[18px] border border-slate-200 bg-white p-5 shadow-sm">
-                    <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#64748b]">
+                  <div className="rounded-[18px] border border-[var(--border)] bg-[var(--surface)] p-5 shadow-sm">
+                    <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[var(--text-2)]">
                       {t.itemsTitle}
                     </p>
 
@@ -1068,37 +1068,37 @@ export default function AnalysisDetailPage() {
                         target.items.map((item, index) => (
                           <div
                             key={index}
-                            className={`grid gap-2 rounded-[12px] border border-slate-200 p-3 ${target.document_type === "dn" ? "sm:grid-cols-2" : "sm:grid-cols-3"}`}
+                            className={`grid gap-2 rounded-[12px] border border-[var(--border)] p-3 ${target.document_type === "dn" ? "sm:grid-cols-2" : "sm:grid-cols-3"}`}
                           >
-                            <div className="text-[14px] text-[#0f172a]">
+                            <div className="text-[14px] text-[var(--text-1)]">
                               <span className="font-semibold">{t.descriptionLabel}:</span>{" "}
                               {editMode ? (
                                 <input
                                   value={String(item.description || "")}
                                   onChange={(e) => updateItemField(index, "description", e.target.value)}
-                                  className="mt-1 w-full rounded border border-slate-200 px-2 py-1 text-[13px]"
+                                  className="mt-1 w-full rounded border border-[var(--border)] px-2 py-1 text-[13px]"
                                 />
                               ) : item.description || "NULL"}
                             </div>
-                            <div className="text-[14px] text-[#0f172a]">
+                            <div className="text-[14px] text-[var(--text-1)]">
                               <span className="font-semibold">{t.quantityLabel}:</span>{" "}
                               {editMode ? (
                                 <input
                                   value={String(item.quantity ?? "")}
                                   onChange={(e) => updateItemField(index, "quantity", e.target.value)}
-                                  className="mt-1 w-full rounded border border-slate-200 px-2 py-1 text-[13px]"
+                                  className="mt-1 w-full rounded border border-[var(--border)] px-2 py-1 text-[13px]"
                                 />
                               ) : item.quantity ?? "NULL"}
                             </div>
                             {/* Unit price hidden for DN — no financial value on delivery notes */}
                             {target.document_type !== "dn" && (
-                              <div className="text-[14px] text-[#0f172a]">
+                              <div className="text-[14px] text-[var(--text-1)]">
                                 <span className="font-semibold">{t.unitPriceLabel}:</span>{" "}
                                 {editMode ? (
                                   <input
                                     value={String(item.unit_price ?? "")}
                                     onChange={(e) => updateItemField(index, "unit_price", e.target.value)}
-                                    className="mt-1 w-full rounded border border-slate-200 px-2 py-1 text-[13px]"
+                                    className="mt-1 w-full rounded border border-[var(--border)] px-2 py-1 text-[13px]"
                                   />
                                 ) : item.unit_price ?? "NULL"}
                               </div>
@@ -1106,7 +1106,7 @@ export default function AnalysisDetailPage() {
                           </div>
                         ))
                       ) : (
-                        <p className="text-[14px] text-[#64748b]">No items available.</p>
+                        <p className="text-[14px] text-[var(--text-2)]">No items available.</p>
                       )}
                     </div>
                   </div>
@@ -1114,8 +1114,8 @@ export default function AnalysisDetailPage() {
 
                 {/* IT-22 — Related Documents (PO→DN→Invoice link) */}
                 {relatedDocs.length > 0 && (
-                  <div className="mt-4 rounded-[18px] border border-slate-200 bg-white p-5 shadow-sm">
-                    <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-[#64748b]">
+                  <div className="mt-4 rounded-[18px] border border-[var(--border)] bg-[var(--surface)] p-5 shadow-sm">
+                    <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-[var(--text-2)]">
                       {lang === "si" ? "සම්බන්ධිත ලේඛන" : "Related Documents"}
                     </p>
                     <div className="mt-3 space-y-2">
@@ -1123,21 +1123,21 @@ export default function AnalysisDetailPage() {
                         <button
                           key={rd.document_id}
                           onClick={() => router.push(`/analysis/${rd.document_id}`)}
-                          className="flex w-full items-center justify-between rounded-[12px] border border-slate-100 bg-[#f8fafc] px-4 py-3 text-left transition hover:border-[#2252b5] hover:bg-[#eff6ff]"
+                          className="flex w-full items-center justify-between rounded-[12px] border border-[var(--border)] bg-[var(--surface-2)] px-4 py-3 text-left transition hover:border-[var(--brand-mid)] hover:bg-[var(--brand-tint)]"
                         >
                           <div>
                             <span className="text-[11px] font-bold uppercase" style={{ color: rd.document_type === "po" ? "#7c3aed" : rd.document_type === "dn" ? "#ea6c0a" : "#2252b5" }}>
                               {rd.document_type?.toUpperCase()}
                             </span>
-                            <p className="text-[14px] font-semibold text-[#0f172a]">{rd.document_id}</p>
-                            <p className="text-[11px] text-[#64748b]">{rd.supplier_name} · {rd.date}</p>
-                            <p className="text-[10px] text-[#94a3b8]">{rd.link_reason}</p>
+                            <p className="text-[14px] font-semibold text-[var(--text-1)]">{rd.document_id}</p>
+                            <p className="text-[11px] text-[var(--text-2)]">{rd.supplier_name} · {rd.date}</p>
+                            <p className="text-[10px] text-[var(--text-3)]">{rd.link_reason}</p>
                           </div>
                           <div className="text-right">
                             {rd.final_total_amount && String(rd.final_total_amount) !== "NULL" && (
-                              <p className="text-[13px] font-bold text-[#0f172a]">{rd.currency || "LKR"} {rd.final_total_amount}</p>
+                              <p className="text-[13px] font-bold text-[var(--text-1)]">{rd.currency || "LKR"} {rd.final_total_amount}</p>
                             )}
-                            <span className="material-symbols-outlined text-[16px] text-[#94a3b8]">chevron_right</span>
+                            <span className="material-symbols-outlined text-[16px] text-[var(--text-3)]">chevron_right</span>
                           </div>
                         </button>
                       ))}
@@ -1146,20 +1146,20 @@ export default function AnalysisDetailPage() {
                 )}
 
                 {/* Provenance Panel — Iteration 7 */}
-                <div className="mt-4 rounded-[18px] border border-slate-200 bg-white shadow-sm">
+                <div className="mt-4 rounded-[18px] border border-[var(--border)] bg-[var(--surface)] shadow-sm">
                   <button
                     onClick={() => setShowProvenance((prev) => !prev)}
                     className="flex w-full items-center justify-between px-5 py-4 text-left"
                   >
-                    <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#64748b]">
+                    <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-[var(--text-2)]">
                       {t.fieldProvenance ?? "Field Provenance"}
                     </span>
-                    <span className="material-symbols-outlined text-[#64748b]">
+                    <span className="material-symbols-outlined text-[var(--text-2)]">
                       {showProvenance ? "expand_less" : "expand_more"}
                     </span>
                   </button>
                   {showProvenance && (
-                    <div className="border-t border-slate-100 px-4 py-4">
+                    <div className="border-t border-[var(--border)] px-4 py-4">
                       <ProvenancePanel
                         doc={target as Record<string, unknown>}
                         arithmeticJson={target.arithmetic_json}
@@ -1179,14 +1179,14 @@ export default function AnalysisDetailPage() {
                   <button
                     onClick={handleSave}
                     disabled={saving}
-                    className="mt-5 w-full rounded-[18px] bg-[#2563ff] py-4 text-[15px] font-bold text-white shadow-[0_10px_24px_rgba(37,99,255,0.22)] disabled:opacity-60"
+                    className="mt-5 w-full rounded-[18px] bg-[var(--brand)] py-4 text-[15px] font-bold text-white shadow-[0_10px_24px_rgba(37,99,255,0.22)] disabled:opacity-60"
                   >
                     {saving ? "Saving..." : "Save Changes"}
                   </button>
                 ) : (
                   <button
                     onClick={() => router.push("/repository")}
-                    className="mt-5 w-full rounded-[18px] bg-[#2563ff] py-4 text-[15px] font-bold text-white shadow-[0_10px_24px_rgba(37,99,255,0.22)]"
+                    className="mt-5 w-full rounded-[18px] bg-[var(--brand)] py-4 text-[15px] font-bold text-white shadow-[0_10px_24px_rgba(37,99,255,0.22)]"
                   >
                     {t.backToDashboard ?? "Back to Repository"}
                   </button>

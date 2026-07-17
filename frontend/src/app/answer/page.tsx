@@ -197,24 +197,24 @@ export default function AnswerPage() {
   if (!result) {
     return (
       <MobileShell>
-        <div className="min-h-screen bg-[#f6f7fb] pb-24">
+        <div className="min-h-screen bg-[var(--bg)] pb-24">
           <main className="mx-auto w-full max-w-[980px] px-4 py-6 sm:px-6 lg:px-8">
             <div className="flex items-center gap-3">
               <button
                 onClick={() => router.push("/query")}
-                className="text-[14px] font-medium text-[#2563ff]"
+                className="text-[14px] font-medium text-[var(--brand-mid)]"
               >
                 ← Back
               </button>
               <button
                 onClick={handleStartNewChat}
-                className="rounded-xl bg-[#2563ff] px-4 py-2 text-[13px] font-bold text-white"
+                className="rounded-xl bg-[var(--brand)] px-4 py-2 text-[13px] font-bold text-white"
               >
                 {t.startNewChat}
               </button>
             </div>
 
-            <div className="mt-8 rounded-[18px] border border-slate-200 bg-white p-6 text-center text-[14px] text-[#64748b] shadow-sm">
+            <div className="mt-8 rounded-[18px] border border-[var(--border)] bg-[var(--surface)] p-6 text-center text-[14px] text-[var(--text-2)] shadow-sm">
               {t.noQueryResult}
             </div>
           </main>
@@ -226,12 +226,12 @@ export default function AnswerPage() {
 
   return (
     <MobileShell>
-      <div className="min-h-screen bg-[#f6f7fb] pb-24">
+      <div className="min-h-screen bg-[var(--bg)] pb-24">
         <main className="mx-auto w-full max-w-[980px] px-4 py-6 sm:px-6 lg:px-8">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <button
               onClick={handleBack}
-              className="text-[14px] font-medium text-[#2563ff]"
+              className="text-[14px] font-medium text-[var(--brand-mid)]"
             >
               ← Back
             </button>
@@ -240,7 +240,7 @@ export default function AnswerPage() {
               <LanguageSwitcher />
               <button
                 onClick={handleStartNewChat}
-                className="rounded-xl bg-[#2563ff] px-4 py-2 text-[13px] font-bold text-white"
+                className="rounded-xl bg-[var(--brand)] px-4 py-2 text-[13px] font-bold text-white"
               >
                 {t.startNewChat}
               </button>
@@ -249,10 +249,10 @@ export default function AnswerPage() {
 
           <div className="flex items-center justify-between gap-3">
             <div>
-              <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#64748b]">
+              <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[var(--text-2)]">
                 {t.insightsAnalysis}
               </p>
-              <h1 className="text-[24px] font-extrabold text-[#0f172a]">
+              <h1 className="text-[24px] font-extrabold text-[var(--text-1)]">
                 {t.businessInsight}
               </h1>
             </div>
@@ -265,17 +265,17 @@ export default function AnswerPage() {
           </div>
 
           {result.history_saved === false && (
-            <div className="mt-4 rounded-[16px] border border-amber-200 bg-amber-50 px-4 py-3 text-[14px] text-amber-700">
+            <div className="mt-4 rounded-[16px] border border-[var(--warn-border)] bg-[var(--warn-tint)] px-4 py-3 text-[14px] text-[var(--warn)]">
               Query answered, but history was not saved to DB.
               {result.history_error ? ` (${result.history_error})` : ""}
             </div>
           )}
 
-          <div className="mt-6 rounded-[18px] border border-slate-200 bg-white p-5 shadow-sm">
-            <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#64748b]">
+          <div className="mt-6 rounded-[18px] border border-[var(--border)] bg-[var(--surface)] p-5 shadow-sm">
+            <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[var(--text-2)]">
               {t.companyContextLabel}
             </p>
-            <p className="mt-3 text-[14px] font-semibold text-[#0f172a]">
+            <p className="mt-3 text-[14px] font-semibold text-[var(--text-1)]">
               {result.company_name}
             </p>
           </div>
@@ -283,17 +283,17 @@ export default function AnswerPage() {
           {/* Conversation thread — earlier turns so the initial query stays visible */}
           {thread.length > 1 && (
             <div className="mt-6">
-              <p className="mb-2 text-[11px] font-bold uppercase tracking-[0.12em] text-[#64748b]">
+              <p className="mb-2 text-[11px] font-bold uppercase tracking-[0.12em] text-[var(--text-2)]">
                 {t.conversationLabel}
               </p>
               <div className="space-y-3">
                 {thread.slice(0, -1).map((turn, i) => (
-                  <div key={i} className="rounded-[18px] border border-slate-200 bg-white p-4 shadow-sm">
-                    <p className="flex items-start gap-1.5 text-[13px] font-semibold text-[#0f172a]">
-                      <span className="material-symbols-outlined text-[16px] text-[#2563ff]">person</span>
+                  <div key={i} className="rounded-[18px] border border-[var(--border)] bg-[var(--surface)] p-4 shadow-sm">
+                    <p className="flex items-start gap-1.5 text-[13px] font-semibold text-[var(--text-1)]">
+                      <span className="material-symbols-outlined text-[16px] text-[var(--brand-mid)]">person</span>
                       <span>{turn.question}</span>
                     </p>
-                    <p className="mt-1.5 whitespace-pre-line pl-[22px] text-[13px] leading-6 text-[#475569]">
+                    <p className="mt-1.5 whitespace-pre-line pl-[22px] text-[13px] leading-6 text-[var(--text-2)]">
                       {turn.answer}
                     </p>
                   </div>
@@ -302,18 +302,18 @@ export default function AnswerPage() {
             </div>
           )}
 
-          <div className="mt-6 rounded-[18px] border border-slate-200 bg-white p-5 shadow-sm">
-            <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#64748b]">
+          <div className="mt-6 rounded-[18px] border border-[var(--border)] bg-[var(--surface)] p-5 shadow-sm">
+            <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[var(--text-2)]">
               {t.questionLabel}
             </p>
-            <p className="mt-2 text-[14px] text-[#0f172a]">{result.question}</p>
+            <p className="mt-2 text-[14px] text-[var(--text-1)]">{result.question}</p>
           </div>
 
-          <div className="mt-6 rounded-[18px] border border-[#c8d7ff] bg-[#eef4ff] p-5">
-            <p className="text-[12px] font-bold uppercase tracking-[0.08em] text-[#2563ff]">
+          <div className="mt-6 rounded-[18px] border border-[var(--border)] bg-[var(--brand-tint)] p-5">
+            <p className="text-[12px] font-bold uppercase tracking-[0.08em] text-[var(--brand-mid)]">
               {t.answerLabel}
             </p>
-            <p className="mt-3 whitespace-pre-line text-[16px] font-semibold leading-7 text-[#0f172a]">
+            <p className="mt-3 whitespace-pre-line text-[16px] font-semibold leading-7 text-[var(--text-1)]">
   {result.answer}
 </p>
           </div>
@@ -395,23 +395,23 @@ export default function AnswerPage() {
 
           {/* GAP-19B: Price discrepancy card (Iter 19 — SRS UI-D6 use case) */}
           {result.discrepancies && result.discrepancies.length > 0 && (
-            <div className="mt-4 rounded-[18px] border border-amber-200 bg-amber-50 p-5">
+            <div className="mt-4 rounded-[18px] border border-[var(--warn-border)] bg-[var(--warn-tint)] p-5">
               <div className="flex items-center gap-2">
-                <span className="material-symbols-outlined text-[18px] text-amber-600">warning</span>
-                <p className="text-[13px] font-bold text-amber-800 uppercase tracking-wide">
+                <span className="material-symbols-outlined text-[18px] text-[var(--warn)]">warning</span>
+                <p className="text-[13px] font-bold text-[var(--warn)] uppercase tracking-wide">
                   {t.priceDiscrepancyFound}
                 </p>
               </div>
               <div className="mt-3 space-y-3">
                 {result.discrepancies.filter(d => d.is_discrepancy).map((d, i) => (
-                  <div key={i} className="rounded-[12px] border border-amber-200 bg-white px-4 py-3">
-                    <p className="text-[13px] font-semibold text-[#0f172a]">{d.description}</p>
+                  <div key={i} className="rounded-[12px] border border-[var(--warn-border)] bg-[var(--surface)] px-4 py-3">
+                    <p className="text-[13px] font-semibold text-[var(--text-1)]">{d.description}</p>
                     <div className="mt-2 flex flex-wrap items-center gap-4 text-[12px]">
-                      <span className="text-[#334155]">
+                      <span className="text-[var(--text-2)]">
                         Invoice: <span className="font-bold text-red-600">{d.invoice_price.toLocaleString()}</span>
                       </span>
-                      <span className="text-[#334155]">
-                        PO: <span className="font-bold text-[#16a34a]">{d.po_price.toLocaleString()}</span>
+                      <span className="text-[var(--text-2)]">
+                        PO: <span className="font-bold text-[var(--success)]">{d.po_price.toLocaleString()}</span>
                       </span>
                       <span
                         className="rounded-lg px-2 py-0.5 text-[11px] font-bold"
@@ -429,45 +429,45 @@ export default function AnswerPage() {
             </div>
           )}
 
-          <div className="mt-6 rounded-[18px] border border-slate-200 bg-white shadow-sm">
+          <div className="mt-6 rounded-[18px] border border-[var(--border)] bg-[var(--surface)] shadow-sm">
             <button
               onClick={() => setShowExplanation((prev) => !prev)}
               className="flex w-full items-center justify-between px-5 py-4 text-left"
             >
-              <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#64748b]">
+              <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-[var(--text-2)]">
                 {t.explanationLabel}
               </span>
-              <span className="material-symbols-outlined text-[#64748b]">
+              <span className="material-symbols-outlined text-[var(--text-2)]">
                 {showExplanation ? "expand_less" : "expand_more"}
               </span>
             </button>
 
             {showExplanation && (
-  <div className="border-t border-slate-100 px-5 py-4 text-[14px] leading-7 text-[#334155]">
+  <div className="border-t border-[var(--border)] px-5 py-4 text-[14px] leading-7 text-[var(--text-2)]">
     <p>{result.explanation}</p>
 
-    <div className="mt-4 rounded-[12px] bg-[#f8fafc] px-4 py-3">
-      <p className="text-[12px] font-semibold text-[#475569]">
+    <div className="mt-4 rounded-[12px] bg-[var(--surface-2)] px-4 py-3">
+      <p className="text-[12px] font-semibold text-[var(--text-2)]">
         Source used: <span className="font-bold">{result.source_file}</span>
       </p>
     </div>
 
     <div className="mt-4">
-      <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#64748b]">
+      <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[var(--text-2)]">
         {t.metricsLabel}
       </p>
 
       <div className="mt-3 grid gap-3 sm:grid-cols-2">
         {filteredMetrics.length === 0 ? (
-          <div className="text-[14px] text-[#64748b]">No metrics available.</div>
+          <div className="text-[14px] text-[var(--text-2)]">No metrics available.</div>
         ) : (
           filteredMetrics.map(([key, value]) => (
             <div
               key={key}
-              className="rounded-[14px] border border-slate-200 px-4 py-3"
+              className="rounded-[14px] border border-[var(--border)] px-4 py-3"
             >
-              <p className="text-[11px] text-[#94a3b8]">{metricLabel(key, lang)}</p>
-              <p className="mt-1 text-[15px] font-semibold text-[#0f172a]">
+              <p className="text-[11px] text-[var(--text-3)]">{metricLabel(key, lang)}</p>
+              <p className="mt-1 text-[15px] font-semibold text-[var(--text-1)]">
                 {metricValue(key, value, lang)}
               </p>
             </div>
@@ -479,39 +479,39 @@ export default function AnswerPage() {
 )}
           </div>
 
-          <div className="mt-6 rounded-[18px] border border-slate-200 bg-white shadow-sm">
+          <div className="mt-6 rounded-[18px] border border-[var(--border)] bg-[var(--surface)] shadow-sm">
             <button
               onClick={() => setShowEvidence((prev) => !prev)}
               className="flex w-full items-center justify-between px-5 py-4 text-left"
             >
-              <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#64748b]">
+              <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-[var(--text-2)]">
                 {t.evidenceLabel}
               </span>
-              <span className="material-symbols-outlined text-[#64748b]">
+              <span className="material-symbols-outlined text-[var(--text-2)]">
                 {showEvidence ? "expand_less" : "expand_more"}
               </span>
             </button>
 
             {showEvidence && (
-              <div className="border-t border-slate-100 px-5 py-4">
+              <div className="border-t border-[var(--border)] px-5 py-4">
                 <div className="space-y-4">
                   {result.evidence && result.evidence.length > 0 ? (
                     result.evidence.map((item, index) => (
                       <div
                         key={`${item.document_id}-${index}`}
-                        className="rounded-[14px] border border-slate-200 p-4"
+                        className="rounded-[14px] border border-[var(--border)] p-4"
                       >
                         <div className="flex flex-wrap items-center justify-between gap-3">
                           <div className="min-w-0">
-                            <p className="truncate text-[15px] font-bold text-[#0f172a]">
+                            <p className="truncate text-[15px] font-bold text-[var(--text-1)]">
                               {otherPartyName(item) || item.document_id}
                             </p>
-                            <p className="mt-0.5 text-[11px] font-semibold text-slate-400">
+                            <p className="mt-0.5 text-[11px] font-semibold text-[var(--text-3)]">
                               {item.document_id}
                             </p>
                           </div>
                           <div className="flex items-center gap-2">
-                            <span className="rounded-xl bg-[#eef4ff] px-3 py-1.5 text-[11px] font-semibold text-[#2563ff]">
+                            <span className="rounded-xl bg-[var(--brand-tint)] px-3 py-1.5 text-[11px] font-semibold text-[var(--brand-mid)]">
                               {item.document_type?.toUpperCase()}
                             </span>
                             {(item.flow_direction === "income" || (!item.flow_direction && ["receivable","cash_inflow"].includes(item.flow_type))) && (
@@ -527,7 +527,7 @@ export default function AnswerPage() {
                             {item.document_type === "po" && (
                               <button
                                 onClick={() => router.push(`/analysis/${item.document_id}`)}
-                                className="rounded-xl border border-[#2252b5] px-3 py-1 text-[11px] font-bold text-[#2252b5] hover:bg-[#eef4ff] transition"
+                                className="rounded-xl border border-[var(--brand-mid)] px-3 py-1 text-[11px] font-bold text-[var(--brand-mid)] hover:bg-[var(--brand-tint)] transition"
                               >
                                 GO TO PO →
                               </button>
@@ -536,29 +536,29 @@ export default function AnswerPage() {
                         </div>
 
                         <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                          <p className="text-[13px] text-[#334155]"><span className="font-semibold">Date:</span> {item.date}</p>
-                          <p className="text-[13px] text-[#334155]"><span className="font-semibold">Order ID:</span> {item.order_id}</p>
-                          <p className="text-[13px] text-[#334155]"><span className="font-semibold">Company:</span> {item.company_name}</p>
-                          <p className="text-[13px] text-[#334155]"><span className="font-semibold">Supplier:</span> {item.supplier_name}</p>
-                          <p className="text-[13px] text-[#334155]"><span className="font-semibold">{t.flowTypeLabel}:</span> {humanizeFlow(item.flow_type, lang)}</p>
-                          <p className="text-[13px] text-[#334155]"><span className="font-semibold">Currency:</span> {formatValue(item.currency)}</p>
-                          <p className="text-[13px] text-[#334155]"><span className="font-semibold">Final Total:</span> {formatMoney(item.final_total_amount, item.currency) || "—"}</p>
-                          <p className="text-[13px] text-[#334155]">
+                          <p className="text-[13px] text-[var(--text-2)]"><span className="font-semibold">Date:</span> {item.date}</p>
+                          <p className="text-[13px] text-[var(--text-2)]"><span className="font-semibold">Order ID:</span> {item.order_id}</p>
+                          <p className="text-[13px] text-[var(--text-2)]"><span className="font-semibold">Company:</span> {item.company_name}</p>
+                          <p className="text-[13px] text-[var(--text-2)]"><span className="font-semibold">Supplier:</span> {item.supplier_name}</p>
+                          <p className="text-[13px] text-[var(--text-2)]"><span className="font-semibold">{t.flowTypeLabel}:</span> {humanizeFlow(item.flow_type, lang)}</p>
+                          <p className="text-[13px] text-[var(--text-2)]"><span className="font-semibold">Currency:</span> {formatValue(item.currency)}</p>
+                          <p className="text-[13px] text-[var(--text-2)]"><span className="font-semibold">Final Total:</span> {formatMoney(item.final_total_amount, item.currency) || "—"}</p>
+                          <p className="text-[13px] text-[var(--text-2)]">
                             <span className="font-semibold">
                               {(item.flow_direction === "income" || ["receivable","cash_inflow"].includes(item.flow_type))
                                 ? "Receivable Amount:" : "Payable Amount:"}
                             </span>{" "}
                             {formatMoney(item.payable_amount, item.currency) || "—"}
                           </p>
-                          <p className="text-[13px] text-[#334155]">
+                          <p className="text-[13px] text-[var(--text-2)]">
                             <span className="font-semibold">Amount Used:</span>{" "}
                             {formatMoney(item.amount_used ?? item.final_total_amount, item.currency) || "—"}
                           </p>
-                          <p className="text-[13px] text-[#334155]"><span className="font-semibold">Received Status:</span> {item.received_status}</p>
-                          <p className="text-[13px] text-[#334155]"><span className="font-semibold">Paid Status:</span> {item.paid_status}</p>
-                          {item.due_date && <p className="text-[13px] text-[#334155]"><span className="font-semibold">Due Date:</span> {item.due_date}</p>}
-                          {item.delivery_date && <p className="text-[13px] text-[#334155]"><span className="font-semibold">Delivery Date:</span> {item.delivery_date}</p>}
-                          {item.approved_by && <p className="text-[13px] text-[#334155]"><span className="font-semibold">Approved By:</span> {item.approved_by}</p>}
+                          <p className="text-[13px] text-[var(--text-2)]"><span className="font-semibold">Received Status:</span> {item.received_status}</p>
+                          <p className="text-[13px] text-[var(--text-2)]"><span className="font-semibold">Paid Status:</span> {item.paid_status}</p>
+                          {item.due_date && <p className="text-[13px] text-[var(--text-2)]"><span className="font-semibold">Due Date:</span> {item.due_date}</p>}
+                          {item.delivery_date && <p className="text-[13px] text-[var(--text-2)]"><span className="font-semibold">Delivery Date:</span> {item.delivery_date}</p>}
+                          {item.approved_by && <p className="text-[13px] text-[var(--text-2)]"><span className="font-semibold">Approved By:</span> {item.approved_by}</p>}
                         </div>
                         {/* Iteration 10: workflow status badges */}
                         {(item.po_status || item.dn_status || item.invoice_status) && (
@@ -610,12 +610,12 @@ export default function AnswerPage() {
                           </div>
                         )}
 
-                        <div className="mt-3 rounded-[12px] bg-[#f8fafc] px-3 py-3 text-[12px] text-[#475569]">
+                        <div className="mt-3 rounded-[12px] bg-[var(--surface-2)] px-3 py-3 text-[12px] text-[var(--text-2)]">
                           <span className="font-semibold">Reason used:</span> {item.reason_used}
                         </div>
                         {item.items && item.items.length > 0 && (
-  <div className="mt-3 rounded-[12px] border border-slate-100 bg-white px-3 py-3">
-    <p className="text-[12px] font-bold uppercase tracking-[0.08em] text-[#64748b]">
+  <div className="mt-3 rounded-[12px] border border-[var(--border)] bg-[var(--surface)] px-3 py-3">
+    <p className="text-[12px] font-bold uppercase tracking-[0.08em] text-[var(--text-2)]">
       Items
     </p>
 
@@ -623,11 +623,11 @@ export default function AnswerPage() {
       {item.items.map((it, idx) => (
         <div
           key={idx}
-          className="rounded-[10px] bg-[#f8fafc] px-3 py-2 text-[12px] text-[#334155]"
+          className="rounded-[10px] bg-[var(--surface-2)] px-3 py-2 text-[12px] text-[var(--text-2)]"
         >
           <div className="flex items-center justify-between gap-2">
             <p className="font-semibold">{formatValue(it.description)}</p>
-            <span className="shrink-0 rounded-md bg-slate-200 px-1.5 py-0.5 text-[10px] font-bold text-slate-600">
+            <span className="shrink-0 rounded-md bg-[var(--surface-2)] px-1.5 py-0.5 text-[10px] font-bold text-[var(--text-2)]">
               ROW {idx + 1}
             </span>
           </div>
@@ -642,7 +642,7 @@ export default function AnswerPage() {
                       </div>
                     ))
                   ) : (
-                    <div className="text-[14px] text-[#64748b]">No evidence documents available.</div>
+                    <div className="text-[14px] text-[var(--text-2)]">No evidence documents available.</div>
                   )}
                 </div>
               </div>
@@ -650,20 +650,20 @@ export default function AnswerPage() {
           </div>
 
           {/* Derivation Trace — Iteration 7 */}
-          <div className="mt-6 rounded-[18px] border border-slate-200 bg-white shadow-sm">
+          <div className="mt-6 rounded-[18px] border border-[var(--border)] bg-[var(--surface)] shadow-sm">
             <button
               onClick={() => setShowTrace((prev) => !prev)}
               className="flex w-full items-center justify-between px-5 py-4 text-left"
             >
-              <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#64748b]">
+              <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-[var(--text-2)]">
                 {t.derivationTrace ?? "Derivation Trace"}
               </span>
-              <span className="material-symbols-outlined text-[#64748b]">
+              <span className="material-symbols-outlined text-[var(--text-2)]">
                 {showTrace ? "expand_less" : "expand_more"}
               </span>
             </button>
             {showTrace && (
-              <div className="border-t border-slate-100 px-5 py-4">
+              <div className="border-t border-[var(--border)] px-5 py-4">
                 <DerivationTrace
                   evidence={result.evidence || []}
                   metrics={result.metrics || {}}
@@ -677,8 +677,8 @@ export default function AnswerPage() {
             )}
           </div>
 
-          <div className="mt-6 rounded-[18px] border border-slate-200 bg-white p-5 shadow-sm">
-            <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#64748b]">
+          <div className="mt-6 rounded-[18px] border border-[var(--border)] bg-[var(--surface)] p-5 shadow-sm">
+            <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[var(--text-2)]">
               {t.askFollowUpTitle}
             </p>
 
@@ -687,11 +687,11 @@ export default function AnswerPage() {
               onChange={(e) => setFollowUpQuestion(e.target.value)}
               placeholder="Ask another question from the same company context..."
               rows={4}
-              className="mt-4 w-full rounded-[14px] border border-slate-200 px-4 py-3 text-[15px] text-[#0f172a] outline-none focus:border-[#2563ff]"
+              className="mt-4 w-full rounded-[14px] border border-[var(--border)] px-4 py-3 text-[15px] text-[var(--text-1)] outline-none focus:border-[var(--brand-mid)]"
             />
 
             {followUpError && (
-              <div className="mt-4 rounded-[14px] border border-red-200 bg-red-50 px-4 py-3 text-[13px] text-red-700">
+              <div className="mt-4 rounded-[14px] border border-[var(--danger-border)] bg-[var(--danger-tint)] px-4 py-3 text-[13px] text-[var(--danger)]">
                 {followUpError}
               </div>
             )}
@@ -700,14 +700,14 @@ export default function AnswerPage() {
               <button
                 onClick={handleFollowUp}
                 disabled={asking}
-                className="rounded-xl bg-[#2563ff] px-4 py-2 text-[13px] font-bold text-white disabled:opacity-60"
+                className="rounded-xl bg-[var(--brand)] px-4 py-2 text-[13px] font-bold text-white disabled:opacity-60"
               >
                 {asking ? t.analyzing : t.askFollowUpBtn}
               </button>
 
               <button
                 onClick={handleStartNewChat}
-                className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-[13px] font-bold text-[#64748b]"
+                className="rounded-xl border border-[var(--border)] bg-[var(--surface)] px-4 py-2 text-[13px] font-bold text-[var(--text-2)]"
               >
                 {t.startNewChat}
               </button>
