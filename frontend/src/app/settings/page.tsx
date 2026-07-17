@@ -10,6 +10,7 @@ import PageShell from "@/components/layout/PageShell";
 import { getSession, logoutUser, SessionUser, getStoredToken } from "@/lib/auth";
 import { AppLanguage, getStoredLanguage, ui, setStoredLanguage } from "@/lib/i18n";
 import { useTheme } from "@/lib/theme";
+import { noticeDialog } from "@/lib/confirm";
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://127.0.0.1:8000";
 
@@ -297,7 +298,14 @@ export default function SettingsPage() {
     const token = getToken();
     const body: Record<string,string> = { period };
     if (period === "custom") {
-      if (!customFrom || !customTo) { alert("Please select both From and To dates."); setDownloading(false); return; }
+      if (!customFrom || !customTo) {
+        await noticeDialog({
+          title: lang === "si" ? "දින දෙකම තෝරන්න" : "Select both dates",
+          message: lang === "si" ? "කරුණාකර 'සිට' සහ 'දක්වා' දින දෙකම තෝරන්න." : "Please select both From and To dates.",
+        });
+        setDownloading(false);
+        return;
+      }
       body.date_from = customFrom;
       body.date_to   = customTo;
     }
@@ -307,7 +315,13 @@ export default function SettingsPage() {
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify(body),
       });
-      if (!res.ok) { alert("Export failed — please try again."); return; }
+      if (!res.ok) {
+        await noticeDialog({
+          title: lang === "si" ? "නිර්යාතය අසාර්ථකයි" : "Export failed",
+          message: lang === "si" ? "කරුණාකර නැවත උත්සාහ කරන්න." : "Please try again.",
+        });
+        return;
+      }
       const blob = await res.blob();
       const url  = URL.createObjectURL(blob);
       const a    = document.createElement("a");
@@ -315,7 +329,12 @@ export default function SettingsPage() {
       a.download = `sme_gpt_export_${period}.zip`;
       a.click();
       URL.revokeObjectURL(url);
-    } catch { alert("Export failed — make sure the backend is running."); }
+    } catch {
+      await noticeDialog({
+        title: lang === "si" ? "නිර්යාතය අසාර්ථකයි" : "Export failed",
+        message: lang === "si" ? "බැක්එන්ඩ් ක්‍රියාත්මක වන බව සහතික කරගන්න." : "Make sure the backend is running.",
+      });
+    }
     finally { setDownloading(false); }
   };
 

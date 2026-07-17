@@ -8,6 +8,7 @@ import LanguageSwitcher from "@/components/layout/LanguageSwitcher";
 import ThemeToggle from "@/components/layout/ThemeToggle";
 import { getSession } from "@/lib/auth";
 import { AppLanguage, getStoredLanguage, ui } from "@/lib/i18n";
+import { confirmDialog } from "@/lib/confirm";
 
 type TrustedDevice = {
   id: string;
@@ -190,8 +191,8 @@ export default function SessionManagementPage() {
 
             <button
               type="button"
-              onClick={() => {
-                if (!confirm(t.smConfirmOthers)) return;
+              onClick={async () => {
+                if (!(await confirmDialog({ title: t.smConfirmOthers, confirmLabel: t.remove, variant: "danger" }))) return;
                 handleRemoveOthers();
               }}
               disabled={actionLoading}
@@ -317,8 +318,8 @@ export default function SessionManagementPage() {
                         <button
                           type="button"
                           disabled={actionLoading}
-                          onClick={() => {
-                            if (!confirm(t.smConfirmRemove)) return;
+                          onClick={async () => {
+                            if (!(await confirmDialog({ title: t.smConfirmRemove, confirmLabel: t.remove, variant: "danger" }))) return;
                             handleRemoveDevice(device.id);
                           }}
                           className="rounded-xl border border-red-300 px-4 py-2 text-[12px] font-bold text-red-600"

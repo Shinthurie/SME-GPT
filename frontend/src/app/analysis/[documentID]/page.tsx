@@ -9,6 +9,7 @@ import ProvenancePanel, { type ArithmeticJson } from "@/components/ui/Provenance
 import BboxOverlayViewer from "@/components/ui/BboxOverlayViewer";
 import { AppLanguage, getStoredLanguage, ui } from "@/lib/i18n";
 import { addNotification } from "@/lib/notifications";
+import { confirmDialog, noticeDialog } from "@/lib/confirm";
 import { humanizeFlow } from "@/lib/humanize";
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://127.0.0.1:8000";
@@ -324,11 +325,14 @@ export default function AnalysisDetailPage() {
     const handleDelete = async () => {
     if (!documentId) return;
 
-    const confirmed = window.confirm(
-      lang === "si"
-        ? "ඔබට මෙම ලේඛනය මකා දැමීමට අවශ්‍යද?"
-        : "Are you sure you want to delete this document?"
-    );
+    const confirmed = await confirmDialog({
+      title: lang === "si" ? "ලේඛනය මකන්නද?" : "Delete this document?",
+      message: lang === "si"
+        ? "ඔබට මෙම ලේඛනය මකා දැමීමට අවශ්‍යද? මෙය අවලංගු කළ නොහැක."
+        : "Are you sure you want to delete this document? This can't be undone.",
+      confirmLabel: lang === "si" ? "මකන්න" : "Delete",
+      variant: "danger",
+    });
 
     if (!confirmed) return;
 
@@ -422,7 +426,12 @@ export default function AnalysisDetailPage() {
           if (data.token) {
             const link = `${window.location.origin}/shared/${data.token}`;
             await navigator.clipboard.writeText(link).catch(() => {});
-            alert(`Share link copied!\n${link}\n\nExpires in 7 days.`);
+            await noticeDialog({
+              title: lang === "si" ? "බෙදාගැනීමේ සබැඳිය පිටපත් කරන ලදී" : "Share link copied",
+              message: lang === "si"
+                ? `${link}\n\nදින 7කින් කල් ඉකුත් වේ.`
+                : `${link}\n\nExpires in 7 days.`,
+            });
           }
         }}
         className="flex items-center gap-1.5 rounded-xl border px-4 py-2 text-[13px] font-semibold transition hover:opacity-80"

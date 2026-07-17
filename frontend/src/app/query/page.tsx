@@ -13,6 +13,7 @@ import ThemeToggle from "@/components/layout/ThemeToggle";
 import LanguageSwitcher from "@/components/layout/LanguageSwitcher";
 import { AppLanguage, getStoredLanguage, ui } from "@/lib/i18n";
 import { getSession } from "@/lib/auth";
+import { confirmDialog } from "@/lib/confirm";
 import { formatMoney, otherPartyName } from "@/lib/format";
 import { humanizeFlow } from "@/lib/humanize";
 
@@ -283,7 +284,12 @@ export default function AiAssistantChatPage() {
   };
 
   const handleDeleteThread = async (id: string) => {
-    if (typeof window !== "undefined" && !window.confirm(t.aiAssistantDeleteConfirm)) return;
+    const confirmed = await confirmDialog({
+      title: t.aiAssistantDeleteConfirm,
+      confirmLabel: t.delete,
+      variant: "danger",
+    });
+    if (!confirmed) return;
     try {
       const res = await fetch(`${BACKEND_URL}/chat/threads/${encodeURIComponent(id)}`, {
         method: "DELETE", headers: authHeaders(),
