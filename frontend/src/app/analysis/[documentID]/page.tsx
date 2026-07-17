@@ -432,6 +432,16 @@ export default function AnalysisDetailPage() {
         {lang === "si" ? "බෙදාගන්න" : "Share"}
       </button>
 
+      {/* Stage C: open a document-scoped AI Assistant conversation */}
+      <button
+        onClick={() => router.push(`/query?doc=${encodeURIComponent(documentId)}`)}
+        className="flex items-center gap-1.5 rounded-xl px-4 py-2 text-[13px] font-bold text-white transition hover:opacity-90"
+        style={{ background: "var(--brand)" }}
+      >
+        <span className="material-symbols-outlined text-[15px]">forum</span>
+        {t.aiAssistantAskAboutDoc ?? "Ask about this document"}
+      </button>
+
       <button
         onClick={handleDelete}
         disabled={deleting}

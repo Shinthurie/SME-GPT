@@ -55,7 +55,19 @@ type ThreadSummary = {
   title: string;
   last_message_preview: string;
   updated_at: string;
+  document_id?: string | null;
 };
+
+type DocScope = {
+  document_id: string;
+  document_type?: string;
+  image_url?: string | null;
+};
+
+function resolveImageUrl(url?: string | null): string | null {
+  if (!url) return null;
+  return /^https?:\/\//.test(url) ? url : `${BACKEND_URL}${url}`;
+}
 
 function getAuthToken() {
   if (typeof window === "undefined") return "";
@@ -107,6 +119,8 @@ export default function AiAssistantChatPage() {
   const [expandedEvidence, setExpandedEvidence] = useState<Set<string>>(new Set());
   const [expandedTrace, setExpandedTrace] = useState<Set<string>>(new Set());
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [docScope, setDocScope] = useState<DocScope | null>(null);
+  const [docImageExpanded, setDocImageExpanded] = useState(false);
 
   const t = ui[lang];
 
@@ -128,13 +142,44 @@ export default function AiAssistantChatPage() {
     }
   }, [authHeaders]);
 
+  // Load one document's meta (image + type) to scope a conversation to it (Stage C).
+  const fetchDocScope = useCallback(async (documentId: string) => {
+    setDocScope({ document_id: documentId }); // show the banner immediately; enrich when loaded
+    const token = getAuthToken();
+    if (!token) return;
+    try {
+      const res = await fetch(`${BACKEND_URL}/documents/${encodeURIComponent(documentId)}`, { headers: authHeaders() });
+      if (!res.ok) return;
+      const data = await res.json();
+      const doc = data.document || {};
+      setDocScope({
+        document_id: documentId,
+        document_type: doc.document_type,
+        image_url: doc.image_url ?? null,
+      });
+    } catch {
+      // banner still shows the id; image just won't render
+    }
+  }, [authHeaders]);
+
   useEffect(() => {
     setLang(getStoredLanguage());
     getSession().then((s) => {
       if (s?.companyName) setCompanyName(s.companyName);
     });
     loadThreads();
-  }, [loadThreads]);
+
+    // Opened from "Ask about this document" (/query?doc=IN11): start a fresh,
+    // document-scoped conversation.
+    if (typeof window !== "undefined") {
+      const docId = new URLSearchParams(window.location.search).get("doc");
+      if (docId) {
+        setMessages([]);
+        setThreadId(null);
+        fetchDocScope(docId);
+      }
+    }
+  }, [loadThreads, fetchDocScope]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -178,12 +223,23 @@ export default function AiAssistantChatPage() {
     setThreadId(null);
     setError("");
     setSidebarOpen(false);
+    setDocScope(null);
+    setDocImageExpanded(false);
+    // Drop ?doc= from the URL so a refresh doesn't re-scope.
+    if (typeof window !== "undefined" && window.location.search) {
+      window.history.replaceState(null, "", "/query");
+    }
   };
 
   const handleSelectThread = async (id: string) => {
     setSidebarOpen(false);
     if (id === threadId) return;
     setError("");
+    // Restore this thread's document scope from the sidebar list (already loaded).
+    const selected = threads.find((th) => th.thread_id === id);
+    setDocImageExpanded(false);
+    if (selected?.document_id) fetchDocScope(selected.document_id);
+    else setDocScope(null);
     setThreadLoading(true);
     try {
       const res = await fetch(`${BACKEND_URL}/chat/threads/${encodeURIComponent(id)}`, { headers: authHeaders() });
@@ -266,7 +322,12 @@ export default function AiAssistantChatPage() {
       const res = await fetch(`${BACKEND_URL}/chat`, {
         method: "POST",
         headers: authHeaders(),
-        body: JSON.stringify({ company_name: companyName.trim(), question, thread_id: threadId ?? undefined }),
+        body: JSON.stringify({
+          company_name: companyName.trim(),
+          question,
+          thread_id: threadId ?? undefined,
+          document_id: docScope?.document_id ?? undefined,
+        }),
       });
 
       if (res.status === 401) {
@@ -448,13 +509,52 @@ export default function AiAssistantChatPage() {
             </div>
           </div>
 
+          {/* Document context banner (Stage C — "Ask about this document") */}
+          {docScope && (
+            <div className="shrink-0 border-b px-4 py-2 sm:px-6"
+              style={{ background: "var(--surface-2)", borderColor: "var(--border)" }}>
+              <div className="mx-auto flex w-full max-w-[900px] items-center gap-2">
+                <span className="material-symbols-outlined text-[18px]" style={{ color: "var(--brand-mid)" }}>
+                  description
+                </span>
+                <p className="min-w-0 flex-1 truncate text-[12px] font-semibold text-[var(--text-1)]">
+                  {t.aiAssistantViewingDoc}: {docScope.document_id}
+                  {docScope.document_type ? ` · ${docScope.document_type.toUpperCase()}` : ""}
+                </p>
+                {docScope.image_url && (
+                  <button onClick={() => setDocImageExpanded((v) => !v)}
+                    className="shrink-0 text-[11px] font-semibold transition hover:opacity-75"
+                    style={{ color: "var(--brand-mid)" }}>
+                    {docImageExpanded ? t.aiAssistantHideImage : t.aiAssistantShowImage}
+                  </button>
+                )}
+                <button onClick={() => router.push(`/analysis/${docScope.document_id}`)}
+                  title={t.aiAssistantOpenDoc}
+                  className="shrink-0 transition hover:opacity-75" style={{ color: "var(--text-3)" }}>
+                  <span className="material-symbols-outlined text-[16px]">open_in_new</span>
+                </button>
+              </div>
+              {docImageExpanded && docScope.image_url && (
+                <div className="mx-auto mt-2 flex w-full max-w-[900px] justify-center">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={resolveImageUrl(docScope.image_url) ?? ""}
+                    alt={docScope.document_id}
+                    className="max-h-[320px] w-auto rounded-xl border"
+                    style={{ borderColor: "var(--border)" }}
+                  />
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Messages */}
           <div className="flex-1 overflow-y-auto px-4 py-5 sm:px-6" style={{ paddingBottom: "160px" }}>
             <div className="mx-auto w-full max-w-[900px] space-y-4">
               {messages.length === 0 && !threadLoading && (
                 <div className="rounded-2xl px-5 py-4 text-[14px] leading-6"
                   style={{ background: "var(--surface)", border: "1px solid var(--border)", color: "var(--text-2)" }}>
-                  {t.aiAssistantGreeting}
+                  {docScope ? t.aiAssistantDocGreeting : t.aiAssistantGreeting}
                 </div>
               )}
 

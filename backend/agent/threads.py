@@ -39,23 +39,27 @@ def record_turn(
     answer: str,
     evidence: list | None = None,
     trace: list | None = None,
+    document_id: str | None = None,
 ) -> None:
     """Upsert the thread row (create with auto-title on first turn) and append
-    the user + assistant messages for this turn. Best-effort: a DB failure
-    must never fail the chat request itself."""
+    the user + assistant messages for this turn. document_id tags a doc-scoped
+    thread (Stage C) and is set once at creation -- COALESCE keeps the original
+    so a later turn can't null it. Best-effort: a DB failure must never fail the
+    chat request itself."""
     try:
         with get_conn() as conn:
             cur = conn.cursor()
             cur.execute(
                 """
-                INSERT INTO chat_thread (id, user_id, company_name, title, last_message_preview)
-                VALUES (%s, %s, %s, %s, %s)
+                INSERT INTO chat_thread (id, user_id, company_name, title, last_message_preview, document_id)
+                VALUES (%s, %s, %s, %s, %s, %s)
                 ON CONFLICT (id) DO UPDATE
                     SET last_message_preview = EXCLUDED.last_message_preview,
+                        document_id = COALESCE(chat_thread.document_id, EXCLUDED.document_id),
                         updated_at = now()
                 """,
                 (thread_id, str(user_id), company_name,
-                 _shorten(question, _TITLE_MAX), _shorten(answer, _PREVIEW_MAX)),
+                 _shorten(question, _TITLE_MAX), _shorten(answer, _PREVIEW_MAX), document_id),
             )
             cur.execute(
                 """
