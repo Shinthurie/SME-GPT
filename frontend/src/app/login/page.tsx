@@ -38,13 +38,50 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  // Gate the form on the session check. The httpOnly cookie is the source of
+  // truth for whether you're already logged in, but confirming it needs an
+  // async round-trip to /api/auth/me. Rendering the form first and redirecting
+  // after made an already-logged-in user watch the login page flash by before
+  // landing on the dashboard. Start in "checking" and show a neutral splash
+  // until we know: redirect if there's a session, show the form if not.
+  const [checkingSession, setCheckingSession] = useState(true);
 
   useEffect(() => {
     setLang(getStoredLanguage());
-    getSession().then((s) => { if (s) router.push("/dashboard"); });
+    let active = true;
+    getSession()
+      .then((s) => {
+        if (!active) return;
+        if (s) router.replace("/dashboard");
+        else setCheckingSession(false);
+      })
+      .catch(() => { if (active) setCheckingSession(false); });
+    return () => { active = false; };
   }, [router]);
 
   const t = ui[lang];
+
+  if (checkingSession) {
+    return (
+      <div
+        className="flex min-h-screen flex-col items-center justify-center gap-4"
+        style={{ background: "var(--bg)" }}
+      >
+        <div
+          className="flex h-14 w-14 items-center justify-center rounded-2xl text-[22px] font-black text-white"
+          style={{ background: "var(--brand)" }}
+        >
+          S
+        </div>
+        <div
+          className="h-6 w-6 animate-spin rounded-full border-2 border-t-transparent"
+          style={{ borderColor: "var(--border)", borderTopColor: "transparent" }}
+          role="status"
+          aria-label="Loading"
+        />
+      </div>
+    );
+  }
 
   const handleLogin = async (e: FormEvent) => {
     e.preventDefault();
