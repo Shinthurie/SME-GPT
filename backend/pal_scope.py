@@ -113,6 +113,18 @@ def _status_or_null(value) -> str:
     return dt.normalize_text(value)
 
 
+def retrieve_rag_chunks(question: str, user_id: str, k: int = 8, document_id: str | None = None) -> list[dict]:
+    """Top matching SpatialChunks for a question (hybrid dense+lexical retrieval),
+    each with its page/bbox/chunk_type provenance. Used to surface chunk-level
+    evidence ("matched on this line") alongside the document-level scope.
+    Degrades to [] when embeddings/pgvector are unavailable."""
+    try:
+        from vector_index import retrieve_top_k
+        return retrieve_top_k(question, tenant_id=user_id, k=k, document_id=document_id) or []
+    except Exception:
+        return []
+
+
 def build_row_records(documents_df: pd.DataFrame) -> list[dict]:
     """One row per LineItem, joined with its parent document's canonical
     fields. Documents without a line-item breakdown get one synthetic row

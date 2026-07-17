@@ -22,7 +22,7 @@ from langchain_core.tools import tool
 
 import data_tools as dt
 from pal_executor import execute_plan
-from pal_scope import build_row_records, resolve_scope_with_c4, resolve_scope_with_rag
+from pal_scope import build_row_records, resolve_scope_with_c4, resolve_scope_with_rag, retrieve_rag_chunks
 from pal_validator import validate_plan
 
 _AGG_TO_TASK = {"sum": "aggregate_sum", "avg": "aggregate_avg", "count": "aggregate_count"}
@@ -177,7 +177,25 @@ def build_tools(user_id: str, company_name: str) -> tuple[list, list[dict]]:
             }
             for e in ev
         ]
-        return {"documents": summary, "count": len(summary), "total_matches": int(len(df))}
+
+        # Chunk-level provenance (FR-17): which exact spatial chunks matched, with
+        # page/bbox, so the answer can cite "matched on this line" not just the doc.
+        matched_ids = {e["document_id"] for e in ev}
+        snippets = [
+            {
+                "document_id": c.get("document_id"),
+                "chunk_type": c.get("chunk_type"),
+                "page": c.get("page"),
+                "bbox": c.get("bbox"),
+                "text": (c.get("text") or "")[:160],
+            }
+            for c in retrieve_rag_chunks(query, user_id, k=6)
+            if c.get("document_id") in matched_ids
+        ]
+        result = {"documents": summary, "count": len(summary), "total_matches": int(len(df))}
+        if snippets:
+            result["matched_snippets"] = snippets
+        return result
 
     @tool
     def get_document_status(document_id: str) -> dict:
