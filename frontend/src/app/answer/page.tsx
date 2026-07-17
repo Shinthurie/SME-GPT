@@ -204,7 +204,7 @@ export default function AnswerPage() {
                 onClick={() => router.push("/query")}
                 className="text-[14px] font-medium text-[var(--brand-mid)]"
               >
-                ← Back
+                ← {t.back}
               </button>
               <button
                 onClick={handleStartNewChat}
@@ -233,7 +233,7 @@ export default function AnswerPage() {
               onClick={handleBack}
               className="text-[14px] font-medium text-[var(--brand-mid)]"
             >
-              ← Back
+              ← {t.back}
             </button>
 
             <div className="flex items-center gap-2">
@@ -685,7 +685,7 @@ export default function AnswerPage() {
             <textarea
               value={followUpQuestion}
               onChange={(e) => setFollowUpQuestion(e.target.value)}
-              placeholder="Ask another question from the same company context..."
+              placeholder={t.answerFollowUpPlaceholder}
               rows={4}
               className="mt-4 w-full rounded-[14px] border border-[var(--border)] px-4 py-3 text-[15px] text-[var(--text-1)] outline-none focus:border-[var(--brand-mid)]"
             />
