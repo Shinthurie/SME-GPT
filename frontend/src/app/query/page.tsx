@@ -484,13 +484,7 @@ export default function AiAssistantChatPage() {
                   <span className="material-symbols-outlined text-[22px]">menu</span>
                 </button>
                 <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <h1 className="truncate text-[16px] font-extrabold text-[var(--text-1)]">{t.aiAssistant}</h1>
-                    <span className="rounded-md px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider"
-                      style={{ background: "var(--brand-tint)", color: "var(--brand-mid)" }}>
-                      {t.aiAssistantBeta}
-                    </span>
-                  </div>
+                  <h1 className="truncate text-[16px] font-extrabold text-[var(--text-1)]">{t.aiAssistant}</h1>
                   <p className="truncate text-[11px] text-[var(--text-3)]">{companyName || "…"}</p>
                 </div>
               </div>
