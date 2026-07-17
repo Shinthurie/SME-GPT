@@ -113,7 +113,7 @@ live app unchanged until C1+C2 are ready to be wired into `document_pipeline.py`
 - `build_quality_report()` emits the CER/NAR scaffolding. NAR is 1.0 by construction; CER is
   `null` until a ground-truth transcript exists for a sample doc (tracked as a follow-up —
   `backend/tests/fixtures/` per `docs/TESTING.md`).
-- **Not yet wired into `document_pipeline.py`** — this iteration ships the box-level module,
-  the `OCRService` contract, and the mock fixture as standalone, tested code. Wiring it into the
-  live `/process-document` path is deferred until C2 (layout) is ready to consume boxes too,
-  since extraction currently expects a single page text blob.
+- **Wired live (Iter 9).** `document_pipeline.py` runs the box-level safe correction and writes
+  `final_safe_boxes.json`, which feeds C2 spatial serialization and the embedding/vector index on
+  confirm-save. (The whole-text extraction flow still runs in parallel for the structured-field
+  JSON; the box path powers RAG.)

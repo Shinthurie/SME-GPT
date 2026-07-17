@@ -20,15 +20,15 @@ Update this file as iterations land. Status: ❌ none · 🟡 partial · ✅ don
 | FR-11 | Extract line-item tables (rows/cols) | 🟡 | extractor (live); C2 `line_item_row`/`line_item_block` templates built standalone (Iter 3) |
 | FR-12 | Multi-page extraction | 🟡 | pipeline handles pages; `build_spatial_chunks` iterates pages (Iter 3); multi-table-per-page clustering is a follow-up |
 | FR-13 | Store page + bbox per extracted field | 🟡 | C2 provenance (`page`, `bbox`, `token_bboxes`) built in `spatial_chunks.json` (Iter 3); not yet persisted to DB |
-| FR-14 | Convert extracted content to embeddings | 🟡 | `backend/embedding_service.py` (`EmbeddingService`, real default `intfloat/multilingual-e5-small`, Iter 4); not yet wired to the live pipeline (no SpatialChunks to embed until C1/C2 are wired in) |
-| FR-15 | Store embeddings in a vector DB | 🟡 | `ChunkEmbedding` table (pgvector, `docs/design/iter-4-schema.md`, migration applied to Supabase, Iter 4); `backend/vector_index.py::upsert_chunk_embeddings` |
-| FR-16 | Semantic retrieval for queries | 🟡 | `backend/vector_index.py::retrieve_top_k` (pgvector cosine distance, tenant-filtered, Iter 4); not yet exposed via a FastAPI endpoint or wired into C3 |
-| FR-17 | Return provenance metadata with results | 🟡 | `retrieve_top_k` returns `page`/`bbox`/`chunk_type` per result (Iter 4) |
-| FR-18 | Natural-language questions (si/en) | ✅ | `/ask-query` → `pal_qa.py` (Iter 5, live); language auto-detected (Sinhala/English) for the answer generator |
-| FR-19 | RAG pipeline to retrieve context before answering | 🟡 | PAL's scope resolver (`pal_scope.py`) retrieves from live `FinancialDocument`+`LineItem` (Iter 5, live); vector retrieval (Iter 4) built but not yet swapped in — needs C1/C2 wired in first |
+| FR-14 | Convert extracted content to embeddings | ✅ | Live (Iter 9): `app.py::_post_save_enrich` embeds each C2 SpatialChunk via `embedding_service.py` (`intfloat/multilingual-e5-small`, 384-d) on confirm-save. Verified: 254 chunks embedded across 13 docs |
+| FR-15 | Store embeddings in a vector DB | ✅ | `ChunkEmbedding` (pgvector + **HNSW** cosine index, `docs/design/iter-4-schema.md`); `vector_index.upsert_chunk_embeddings`. Live-populated |
+| FR-16 | Semantic retrieval for queries | ✅ | `vector_index.retrieve_top_k` — **hybrid dense (pgvector HNSW) + lexical (Postgres FTS) via RRF**, optional cross-encoder rerank, tenant-filtered; feeds the query engine via `pal_scope.resolve_scope_with_rag`. Verified live |
+| FR-17 | Return provenance metadata with results | ✅ | `retrieve_top_k` returns `page`/`bbox`/`chunk_type` per chunk; agent `search_documents` surfaces `matched_snippets`. (UI bbox-highlight / click-to-source is the remaining FR-24/26 polish) |
+| FR-18 | Natural-language questions (si/en) | ✅ | `/ask-query` → `pal_qa.py` + `/chat` agent; language auto-detected (Sinhala/English) for the answer generator |
+| FR-19 | RAG pipeline to retrieve context before answering | ✅ | `pal_scope.resolve_scope_with_rag` (Iter 15, live): hybrid vector retrieval ∪ company SQL scope ∪ C4 graph expansion → scoped docs → C3 PAL. Used by `/ask-query` and the agent |
 | FR-20 | Calculator/deterministic arithmetic | ✅ | `pal_executor.py` (Iter 5, live) — pandas only, no `exec`/`eval`; `arithmetic_validator.py` still serves its own, different purpose (ingestion-time total-vs-line-items check in `document_pipeline.py`, unrelated to query-time PAL) |
 | FR-21 | Multi-document reasoning (sum across invoices) | ✅ | `pal_executor.py` aggregate/group-by tasks over all of a company's scoped documents (Iter 5, live); C4 cross-document linking (Iter 6) will widen scope further |
-| FR-22 | Only answer when provenance available | 🟡 | PAL's evidence is built only from the documents actually used by the executed plan (Iter 5); full bbox-level provenance still pending C1/C2 wiring |
+| FR-22 | Only answer when provenance available | ✅ | PAL/agent evidence is built only from the documents actually used by the executed plan; the answer grounding guard refuses any figure no tool produced. Chunk-level bbox provenance now flows via `retrieve_top_k`/`matched_snippets` (UI highlight is FR-24/26 polish) |
 | FR-23 | Store full provenance (bbox, page, raw text, model version) | ❌ | Iter 1 (schema) + Iter 2–3 |
 | FR-24 | Highlight exact source text in UI | ❌ | Iter 7 |
 | FR-25 | Show derivation steps for aggregated answers | 🟡 | `audit` block (`plan`, `validation`, `attempts`) in `pal_qa.py`'s response (Iter 5, not yet surfaced in the UI — Iter 7) |
