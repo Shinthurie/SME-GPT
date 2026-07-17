@@ -104,7 +104,10 @@ export default function BboxOverlayViewer({
   const hasOverlay = chunks.length > 0 && imgSize;
 
   return (
-    <div className="relative flex min-h-[420px] items-center justify-center rounded-[16px] bg-[#f3f4f6] sm:min-h-[520px]">
+    <div
+      className="relative flex min-h-[420px] items-center justify-center rounded-[16px] sm:min-h-[520px]"
+      style={{ background: "var(--surface-2)" }}
+    >
       {/* Document image */}
       <img
         ref={imgRef}
@@ -160,21 +163,28 @@ export default function BboxOverlayViewer({
 
       {/* Controls */}
       {chunks.length > 0 && (
-        <div className="absolute right-2 top-2 flex flex-col gap-1">
+        <div className="absolute right-2 top-2 flex flex-col gap-1.5">
           <button
             onClick={() => setShowOverlay((p) => !p)}
-            title={showOverlay ? "Hide bboxes" : "Show bboxes"}
-            className="flex h-7 w-7 items-center justify-center rounded-full bg-white/90 shadow text-[11px] font-bold text-[#2563ff] hover:bg-white"
+            title={showOverlay ? "Hide bounding boxes" : "Show bounding boxes"}
+            aria-label={showOverlay ? "Hide bounding boxes" : "Show bounding boxes"}
+            aria-pressed={showOverlay}
+            className="flex h-9 w-9 items-center justify-center rounded-full shadow transition hover:opacity-90"
+            style={{ background: "var(--surface)", color: showOverlay ? "var(--brand-mid)" : "var(--text-3)" }}
           >
-            {showOverlay ? "◉" : "○"}
+            <span className="material-symbols-outlined text-[20px]" aria-hidden="true">
+              {showOverlay ? "visibility" : "visibility_off"}
+            </span>
           </button>
           {showOverlay && activeChunkId && (
             <button
               onClick={() => onChunkSelect?.(null)}
               title="Clear selection"
-              className="flex h-7 w-7 items-center justify-center rounded-full bg-white/90 shadow text-[11px] font-bold text-[#64748b] hover:bg-white"
+              aria-label="Clear selection"
+              className="flex h-9 w-9 items-center justify-center rounded-full shadow transition hover:opacity-90"
+              style={{ background: "var(--surface)", color: "var(--text-2)" }}
             >
-              ✕
+              <span className="material-symbols-outlined text-[20px]" aria-hidden="true">close</span>
             </button>
           )}
         </div>
@@ -191,8 +201,8 @@ export default function BboxOverlayViewer({
           }).map(([type, label]) => (
             <span
               key={type}
-              className="flex items-center gap-1 rounded-full bg-white/90 px-2 py-0.5 text-[10px] font-semibold shadow"
-              style={{ color: chunkColor(type) }}
+              className="flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold shadow"
+              style={{ background: "var(--surface)", color: chunkColor(type) }}
             >
               <span
                 className="inline-block h-2 w-2 rounded-sm border"
@@ -206,7 +216,7 @@ export default function BboxOverlayViewer({
 
       {/* Fallback: no image */}
       {!imageUrl && (
-        <div className="text-[13px] text-[#94a3b8]">
+        <div className="text-[13px] text-[var(--text-3)]">
           No saved preview image for this document
         </div>
       )}
