@@ -512,52 +512,81 @@ export default function AiAssistantChatPage() {
             </div>
           </div>
 
-          {/* Document context banner (Stage C — "Ask about this document") */}
-          {docScope && (
-            <div className="shrink-0 border-b px-4 py-2 sm:px-6"
-              style={{ background: "var(--surface-2)", borderColor: "var(--border)" }}>
-              <div className="mx-auto flex w-full max-w-[900px] items-center gap-2">
-                <span className="material-symbols-outlined text-[18px]" style={{ color: "var(--brand-mid)" }}>
-                  description
-                </span>
-                <p className="min-w-0 flex-1 truncate text-[12px] font-semibold text-[var(--text-1)]">
-                  {t.aiAssistantViewingDoc}: {docScope.document_id}
-                  {docScope.document_type ? ` · ${docScope.document_type.toUpperCase()}` : ""}
-                </p>
-                {docScope.image_url && (
-                  <button onClick={() => setDocImageExpanded((v) => !v)}
-                    className="shrink-0 text-[11px] font-semibold transition hover:opacity-75"
-                    style={{ color: "var(--brand-mid)" }}>
-                    {docImageExpanded ? t.aiAssistantHideImage : t.aiAssistantShowImage}
-                  </button>
-                )}
-                <button onClick={() => router.push(`/analysis/${docScope.document_id}`)}
-                  title={t.aiAssistantOpenDoc}
-                  className="shrink-0 transition hover:opacity-75" style={{ color: "var(--text-3)" }}>
-                  <span className="material-symbols-outlined text-[16px]">open_in_new</span>
-                </button>
-              </div>
-              {docImageExpanded && docScope.image_url && (
-                <div className="mx-auto mt-2 flex w-full max-w-[900px] justify-center">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={resolveImageUrl(docScope.image_url) ?? ""}
-                    alt={docScope.document_id}
-                    className="max-h-[320px] w-auto rounded-xl border"
-                    style={{ borderColor: "var(--border)" }}
-                  />
-                </div>
-              )}
-            </div>
-          )}
-
           {/* Messages */}
           <div className="flex-1 overflow-y-auto px-4 py-5 sm:px-6" style={{ paddingBottom: "160px" }}>
             <div className="mx-auto w-full max-w-[900px] space-y-4">
-              {messages.length === 0 && !threadLoading && (
+              {/* Document context card (Stage C) — the assistant "shows" the document
+                  it has open so the user knows it's in this chat's memory. */}
+              {docScope && !threadLoading && (
+                <div className="flex justify-start">
+                  <div className="w-full rounded-2xl px-4 py-3"
+                    style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
+                    <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.1em] text-[var(--text-3)]">
+                      {t.aiAssistantViewingDoc}
+                    </p>
+                    <div className="flex items-start gap-3">
+                      <button
+                        onClick={() => docScope.image_url && setDocImageExpanded((v) => !v)}
+                        className="relative shrink-0 overflow-hidden rounded-xl border transition hover:opacity-90"
+                        style={{ borderColor: "var(--border)", cursor: docScope.image_url ? "zoom-in" : "default" }}
+                        title={docScope.image_url ? (docImageExpanded ? t.aiAssistantHideImage : t.aiAssistantShowImage) : undefined}
+                      >
+                        {docScope.image_url ? (
+                          <>
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                              src={resolveImageUrl(docScope.image_url) ?? ""}
+                              alt={docScope.document_id}
+                              className="h-16 w-16 object-cover"
+                            />
+                            <span className="material-symbols-outlined absolute bottom-0.5 right-0.5 rounded bg-black/50 text-[13px] text-white">
+                              zoom_in
+                            </span>
+                          </>
+                        ) : (
+                          <span className="material-symbols-outlined flex h-16 w-16 items-center justify-center text-[26px]"
+                            style={{ background: "var(--surface-2)", color: "var(--text-3)" }}>
+                            description
+                          </span>
+                        )}
+                      </button>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-[14px] font-bold text-[var(--text-1)]">
+                          {docScope.document_type ? `${docScope.document_type.toUpperCase()} · ` : ""}
+                          {docScope.document_id}
+                        </p>
+                        <p className="mt-1 text-[13px] leading-5 text-[var(--text-2)]">
+                          {t.aiAssistantDocGreeting}
+                        </p>
+                        <button
+                          onClick={() => router.push(`/analysis/${docScope.document_id}`)}
+                          className="mt-1.5 inline-flex items-center gap-0.5 text-[12px] font-semibold transition hover:opacity-75"
+                          style={{ color: "var(--brand-mid)" }}
+                        >
+                          {t.aiAssistantOpenDoc}
+                          <span className="material-symbols-outlined text-[14px]">open_in_new</span>
+                        </button>
+                      </div>
+                    </div>
+                    {docImageExpanded && docScope.image_url && (
+                      <div className="mt-3 flex justify-center">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={resolveImageUrl(docScope.image_url) ?? ""}
+                          alt={docScope.document_id}
+                          className="max-h-[360px] w-auto rounded-xl border"
+                          style={{ borderColor: "var(--border)" }}
+                        />
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {messages.length === 0 && !threadLoading && !docScope && (
                 <div className="rounded-2xl px-5 py-4 text-[14px] leading-6"
                   style={{ background: "var(--surface)", border: "1px solid var(--border)", color: "var(--text-2)" }}>
-                  {docScope ? t.aiAssistantDocGreeting : t.aiAssistantGreeting}
+                  {t.aiAssistantGreeting}
                 </div>
               )}
 
