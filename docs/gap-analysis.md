@@ -15,9 +15,9 @@ Update this file as iterations land. Status: ❌ none · 🟡 partial · ✅ don
 | FR-06 | Bounding boxes for every text segment | 🟡 | canonical box schema + safeguard in `ocr_correction.py` (Iter 2); not yet wired into live pipeline/DB |
 | FR-07 | Store OCR confidence levels | 🟡 | carried in canonical box schema (Iter 2); not yet persisted to DB |
 | FR-08 | Pluggable OCR engines | 🟡 | `OCRService` interface + `MockSuryaOCRService` (Iter 2, `backend/ocr_service.py`); real Surya v2 engine blocked on vllm/llama.cpp backend; v1 colab/local still serves live app |
-| FR-09 | Detect document structure (tables/headers/blocks) | 🟡 | `backend/spatial_serialization.py` row clustering + header detection (Iter 3); not yet wired into live pipeline |
+| FR-09 | Detect document structure (tables/headers/blocks) | ✅ | `backend/spatial_serialization.py` row clustering + header detection + geometric table reconstruction; wired live via `app.py::_post_save_enrich` (Iter 9) |
 | FR-10 | Extract key fields (vendor, invoice no, dates, totals) | 🟡 | `ocr_to_json_extractor.py` (live); C2 KeyValue chunks + canonical-field mapping built standalone (Iter 3), align/replace in Iter 5 |
-| FR-11 | Extract line-item tables (rows/cols) | 🟡 | extractor (live); C2 `line_item_row`/`line_item_block` templates built standalone (Iter 3) |
+| FR-11 | Extract line-item tables (rows/cols) | ✅ | extractor (live); C2 `line_item_row`/`line_item_block` chunks live on Surya v1 geometry — a detected header anchors the columns and rows below bind to it, with summary-row/vertical-gap/misalignment stop conditions (`_geometric_table_ends`), no table-detection model needed. Verified live on R17 |
 | FR-12 | Multi-page extraction | 🟡 | pipeline handles pages; `build_spatial_chunks` iterates pages (Iter 3); multi-table-per-page clustering is a follow-up |
 | FR-13 | Store page + bbox per extracted field | 🟡 | C2 provenance (`page`, `bbox`, `token_bboxes`) built in `spatial_chunks.json` (Iter 3); not yet persisted to DB |
 | FR-14 | Convert extracted content to embeddings | ✅ | Live (Iter 9): `app.py::_post_save_enrich` embeds each C2 SpatialChunk via `embedding_service.py` (`intfloat/multilingual-e5-small`, 384-d) on confirm-save. Verified: 254 chunks embedded across 13 docs |

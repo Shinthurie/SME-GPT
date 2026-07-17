@@ -14,6 +14,14 @@ Algorithm (component-2.md §"Algorithm"):
 3. Header -> row binding (x-axis nearest-center).
 4. Template serialization (LineItem / KeyValue / Header / section_text).
 
+Tables are reconstructed from raw OCR geometry — no table-detection model is
+involved. When the boxes carry `table_id/row_index/col_index` (Surya v2) that
+grouping is trusted directly. When they do not (Surya v1, which emits no table
+structure at all), a detected header row anchors the columns and the rows
+beneath it are bound geometrically, with conservative stop conditions
+(summary/totals row, large vertical gap, column misalignment) marking the end
+of the table. See `_geometric_table_ends`.
+
 Rule: never drop tokens — every input box ends up in exactly one chunk.
 """
 from __future__ import annotations
@@ -48,6 +56,29 @@ HEADER_KEYWORDS: dict[str, str] = {
 }
 
 _KEY_VALUE_RE = re.compile(r"^\s*([^:]{1,40}):\s*(.+?)\s*$")
+
+# Labels that mark the summary block below a table (geometric mode stop
+# condition). Deliberately overlaps HEADER_KEYWORDS — "Total" is both a column
+# and a summary label — which is why `is_summary_row` also requires the row to
+# be narrower than the header.
+SUMMARY_KEYWORDS: tuple[str, ...] = (
+    # English
+    "total", "subtotal", "sub total", "grand total", "balance", "amount due",
+    "due", "vat", "tax", "discount", "shipping", "net", "gross", "paid",
+    # Sinhala
+    "මුළු", "එකතුව", "බදු", "වට්ටම", "ශුද්ධ",
+)
+
+# A row starting further than `median_text_height * _GEOMETRIC_GAP_ALPHA` below
+# the previous bound row is treated as detached from the table.
+_GEOMETRIC_GAP_ALPHA = 2.5
+
+# Column tolerance as a fraction of the typical header-to-header spacing.
+_COLUMN_TOLERANCE_ALPHA = 0.6
+
+# Fraction of a row's cells that must land on a header column for the row to
+# count as part of the table.
+_ROW_ALIGNMENT_RATIO = 0.5
 
 
 def _y_center(box: dict) -> float:
@@ -155,6 +186,108 @@ def bind_row_to_headers(row: list[dict], header_cells: list[dict]) -> dict[str, 
                 unknown_count += 1
         fields[key] = box
     return fields
+
+
+# ---------------------------------------------------------------------------
+# Geometric table reconstruction (Surya v1 — no table_id/row_index/col_index)
+# ---------------------------------------------------------------------------
+
+def _median(values: list[float]) -> float:
+    ordered = sorted(values)
+    return ordered[len(ordered) // 2]
+
+
+def _row_top(row: list[dict]) -> float:
+    return min(b["bbox"][1] for b in row)
+
+
+def _row_bottom(row: list[dict]) -> float:
+    return max(b["bbox"][3] for b in row)
+
+
+def _x_overlap(a: dict, b: dict) -> float:
+    return min(a["bbox"][2], b["bbox"][2]) - max(a["bbox"][0], b["bbox"][0])
+
+
+def is_table_header(header_cells: list[dict]) -> bool:
+    """Whether a detected header is strong enough to anchor a geometric table.
+
+    Requires at least two columns resolving to two *distinct* canonical fields,
+    so a lone `Total: 1250.00` line — which `detect_header_row` scores 1.0 on
+    the "total" keyword — can't be mistaken for a table header and swallow the
+    rest of the page.
+    """
+    if len(header_cells) < 2:
+        return False
+    fields = {c["canonical_field"] for c in header_cells if c.get("canonical_field")}
+    return len(fields) >= 2
+
+
+def column_tolerance(header_cells: list[dict]) -> float:
+    """How far a cell's x-center may sit from a column's before it stops
+    counting as that column. Derived from the typical spacing between adjacent
+    headers, so it scales with the document's own column width."""
+    centers = sorted(_x_center(h) for h in header_cells)
+    if len(centers) < 2:
+        return 0.0
+    gaps = [b - a for a, b in zip(centers, centers[1:])]
+    return _median(gaps) * _COLUMN_TOLERANCE_ALPHA
+
+
+def row_aligns_to_headers(row: list[dict], header_cells: list[dict], tolerance: float) -> bool:
+    """Whether enough of `row`'s cells sit under a header column. A cell counts
+    if it horizontally overlaps a header box (the common case — a wide
+    description under a narrow "Description") or its center is within
+    `tolerance` of a header's center (narrow numerics under a wide header)."""
+    if len(row) < 2 or not header_cells:
+        return False
+    aligned = 0
+    for box in row:
+        for header in header_cells:
+            if _x_overlap(box, header) > 0 or abs(_x_center(header) - _x_center(box)) <= tolerance:
+                aligned += 1
+                break
+    return aligned / len(row) >= _ROW_ALIGNMENT_RATIO
+
+
+def _matches_summary_keyword(text: str) -> bool:
+    normalized = (text or "").strip().lower()
+    for keyword in SUMMARY_KEYWORDS:
+        if re.search(r"(?<!\w)" + re.escape(keyword) + r"(?!\w)", normalized):
+            return True
+    return False
+
+
+def is_summary_row(row: list[dict], header_cells: list[dict]) -> bool:
+    """Whether `row` looks like the totals/summary block under a table.
+
+    Two conditions must hold: the row is narrower than the header (a summary
+    line is a label plus a figure, not a full record), and one of its first two
+    cells carries a summary label. The conjunction is what keeps a genuine line
+    item like `Total station tripod | 2 | 45000` — which matches "total" on the
+    keyword alone — inside the table.
+    """
+    if len(row) >= len(header_cells):
+        return False
+    return any(_matches_summary_keyword(box["text"]) for box in row[:2])
+
+
+def _geometric_table_ends(
+    row: list[dict],
+    prev_row: list[dict],
+    header_cells: list[dict],
+    tolerance: float,
+    gap_limit: float,
+) -> bool:
+    """Conservative stop conditions for geometric table reconstruction: the
+    totals block, a large vertical gap, or a row that doesn't line up with the
+    columns all mean the table is over. Erring toward stopping early costs a
+    `section_text` chunk; erring the other way invents line items."""
+    if is_summary_row(row, header_cells):
+        return True
+    if _row_top(row) - _row_bottom(prev_row) > gap_limit:
+        return True
+    return not row_aligns_to_headers(row, header_cells, tolerance)
 
 
 def classify_key_value(row: list[dict]) -> dict | None:
@@ -384,6 +517,16 @@ def build_spatial_chunks(
             ids = {b.get("table_id") for b in rows[header_index]} - {None}
             header_table_id = next(iter(ids), None)
 
+        # Surya v1 emits no table structure, so a header with no table_id means
+        # the table exists on the page but only geometrically. Rebuild it from
+        # the header's column positions instead of falling through to
+        # section_text.
+        geometric_mode = header_index is not None and header_table_id is None and is_table_header(header_cells)
+        geometric_tolerance = column_tolerance(header_cells) if geometric_mode else 0.0
+        geometric_gap_limit = _median([_text_height(b) for b in boxes]) * _GEOMETRIC_GAP_ALPHA if boxes else 0.0
+        geometric_open = geometric_mode
+        geometric_prev_row = rows[header_index] if geometric_mode else None
+
         chunks: list[dict] = []
         table_counter = 0
         line_item_row_ids: list[str] = []
@@ -423,6 +566,18 @@ def build_spatial_chunks(
                 line_item_row_ids.append(row_id)
                 line_item_fields.append(fields)
                 continue
+
+            if geometric_open and not row_table_ids and row_index > header_index:
+                if _geometric_table_ends(
+                    row, geometric_prev_row, header_cells, geometric_tolerance, geometric_gap_limit,
+                ):
+                    geometric_open = False
+                else:
+                    fields = bind_row_to_headers(row, header_cells)
+                    line_item_row_ids.append(f"row_{row_index:03d}")
+                    line_item_fields.append(fields)
+                    geometric_prev_row = row
+                    continue
 
             # Boundary of the table (or no header at all): flush any buffered
             # line-item rows before handling this row as KeyValue/section_text.
