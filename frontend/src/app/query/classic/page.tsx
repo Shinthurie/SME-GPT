@@ -143,15 +143,7 @@ export default function ClassicQueryPage() {
               forum
             </span>
             <div className="min-w-0 flex-1">
-              <p className="flex items-center gap-2 text-[14px] font-bold text-[var(--text-1)]">
-                {t.aiAssistant}
-                <span
-                  className="rounded-md px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider"
-                  style={{ background: "var(--brand-mid)", color: "#fff" }}
-                >
-                  {t.aiAssistantBeta}
-                </span>
-              </p>
+              <p className="text-[14px] font-bold text-[var(--text-1)]">{t.aiAssistant}</p>
               <p className="mt-0.5 truncate text-[12px] text-[var(--text-3)]">{t.aiAssistantSubtitle}</p>
             </div>
             <span className="material-symbols-outlined text-[18px]" style={{ color: "var(--text-3)" }}>

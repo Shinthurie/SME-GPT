@@ -23,7 +23,7 @@ export default function BottomNav() {
   const items = [
     { label: t.overview,                                icon: "dashboard",          href: "/dashboard" },
     { label: t.files,                                   icon: "folder",             href: "/repository" },
-    { label: t.query,                                   icon: "query_stats",        href: "/query" },
+    { label: t.query,                                   icon: "forum",              href: "/query" },
     { label: lang === "si" ? "සැකසීම්" : "Settings",  icon: "settings",           href: "/settings" },
     ...(isAdmin ? [{ label: "Admin",                    icon: "admin_panel_settings", href: "/admin" }] : []),
   ];

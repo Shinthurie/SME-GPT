@@ -240,6 +240,8 @@ export default function AiAssistantChatPage() {
     setDocImageExpanded(false);
     if (selected?.document_id) fetchDocScope(selected.document_id);
     else setDocScope(null);
+    setMessages([]);       // clear stale turns so the area shows only the loader
+    setThreadId(id);       // highlight the selected thread immediately
     setThreadLoading(true);
     try {
       const res = await fetch(`${BACKEND_URL}/chat/threads/${encodeURIComponent(id)}`, { headers: authHeaders() });
@@ -351,10 +353,16 @@ export default function AiAssistantChatPage() {
         evidence: data.evidence || [], trace: data.trace || [],
       }]);
       if (data.thread_id) setThreadId(data.thread_id);
-      // Refresh the sidebar so a new thread appears / preview updates.
-      if (isNewThread) loadThreads();
-      else setThreads((prev) => prev.map((th) =>
-        th.thread_id === data.thread_id ? { ...th, last_message_preview: data.answer } : th));
+      // Refresh the sidebar so a new thread appears / preview updates. On a new
+      // thread the LLM title is generated in the background, so refetch once more
+      // shortly after to pick it up.
+      if (isNewThread) {
+        loadThreads();
+        window.setTimeout(loadThreads, 4000);
+      } else {
+        setThreads((prev) => prev.map((th) =>
+          th.thread_id === data.thread_id ? { ...th, last_message_preview: data.answer } : th));
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : t.aiAssistantSendError;
       setMessages((prev) => [...prev, { id: newId(), role: "assistant", content: msg, isError: true }]);
@@ -405,10 +413,11 @@ export default function AiAssistantChatPage() {
             {threads.map((th) => (
               <div
                 key={th.thread_id}
-                className="group flex items-center gap-1 rounded-lg px-2 py-2 transition"
-                style={th.thread_id === threadId
-                  ? { background: "var(--brand-tint)" }
-                  : undefined}
+                className={`group flex cursor-pointer items-center gap-1 rounded-lg px-2 py-2 transition ${
+                  th.thread_id === threadId
+                    ? "bg-[var(--brand-tint)]"
+                    : "hover:bg-[var(--surface-2)]"
+                }`}
               >
                 <button
                   onClick={() => handleSelectThread(th.thread_id)}
@@ -484,13 +493,7 @@ export default function AiAssistantChatPage() {
                   <span className="material-symbols-outlined text-[22px]">menu</span>
                 </button>
                 <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <h1 className="truncate text-[16px] font-extrabold text-[var(--text-1)]">{t.aiAssistant}</h1>
-                    <span className="rounded-md px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider"
-                      style={{ background: "var(--brand-tint)", color: "var(--brand-mid)" }}>
-                      {t.aiAssistantBeta}
-                    </span>
-                  </div>
+                  <h1 className="truncate text-[16px] font-extrabold text-[var(--text-1)]">{t.aiAssistant}</h1>
                   <p className="truncate text-[11px] text-[var(--text-3)]">{companyName || "…"}</p>
                 </div>
               </div>
@@ -616,6 +619,11 @@ export default function AiAssistantChatPage() {
                             </p>
                             {describeArgs(s.args) && (
                               <p className="mt-0.5 break-words text-[var(--text-3)]">{describeArgs(s.args)}</p>
+                            )}
+                            {s.result && (
+                              <p className="mt-0.5 break-words font-mono text-[11px] text-[var(--text-2)]">
+                                → {s.result}
+                              </p>
                             )}
                           </div>
                         ))}

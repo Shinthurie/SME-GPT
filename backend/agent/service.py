@@ -22,14 +22,38 @@ without touching it -- see app.py's AGENT_QUERY_ENGINE_ENABLED flag.
 from __future__ import annotations
 
 import json
+import threading
 import uuid
 
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
 from agent.graph import build_agent_graph
 from agent.memory import get_checkpointer
-from agent.threads import record_turn
+from agent.threads import record_turn, rename_thread
 from agent.tools import build_tools
+
+_TITLE_SYSTEM = (
+    "You write a very short conversation title (3-6 words, no quotes, no trailing "
+    "punctuation) summarizing what the user is asking about. Reply with the title only."
+)
+
+
+def generate_thread_title(question: str, answer: str) -> str | None:
+    """A concise LLM-generated title for a new conversation's sidebar entry.
+
+    Best-effort: returns None on any failure so the caller falls back to the
+    truncated first question. Routed through the query LLM (Gemini/DeepSeek).
+    """
+    try:
+        from llm_client import call_llm
+        raw = call_llm(
+            f"User question: {question}\nAssistant answer: {answer[:400]}\n\nTitle:",
+            system=_TITLE_SYSTEM,
+        )
+        title = " ".join(str(raw).strip().strip('"').split())
+        return title[:60] or None
+    except Exception:
+        return None
 
 # Keep per-tool-call result snapshots in the trace bounded -- the full evidence
 # already travels separately; the trace is a readable derivation summary.
@@ -89,6 +113,7 @@ def chat(question: str, user_id: str, company_name: str, thread_id: str | None =
     configured (there is no local fallback -- see llm_client.py's PRIVACY
     TRADE-OFF note).
     """
+    is_new_thread = thread_id is None
     thread_id = thread_id or f"{user_id}:{uuid.uuid4().hex}"
 
     tools, evidence = build_tools(user_id=user_id, company_name=company_name)
@@ -108,6 +133,16 @@ def chat(question: str, user_id: str, company_name: str, thread_id: str | None =
         question=question, answer=answer_text, evidence=evidence, trace=trace,
         document_id=document_id,
     )
+
+    # On a brand-new thread, upgrade the auto-title (truncated question) to a
+    # concise LLM-generated one. Done in the background so it never adds latency
+    # to the user's answer; the sidebar picks it up on its next refresh.
+    if is_new_thread:
+        def _title_worker():
+            title = generate_thread_title(question, answer_text)
+            if title:
+                rename_thread(thread_id, user_id, title)
+        threading.Thread(target=_title_worker, daemon=True).start()
 
     return {
         "success": True,

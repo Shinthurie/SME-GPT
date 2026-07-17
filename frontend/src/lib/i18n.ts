@@ -42,7 +42,7 @@ export const ui = {
     // ── Navigation ────────────────────────────────────────────────────────────
     overview: "Overview",
     files: "Files",
-    query: "Query",
+    query: "Assistant",
     settings: "Settings",
     backToDashboard: "Dashboard",
 
@@ -518,7 +518,7 @@ export const ui = {
     // ── Navigation ────────────────────────────────────────────────────────────
     overview: "සාරාංශය",
     files: "ගොනු",
-    query: "විමසුම",
+    query: "සහායක",
     settings: "සැකසුම්",
     backToDashboard: "පාලක පුවරුව",
 

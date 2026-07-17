@@ -100,6 +100,22 @@ def test_record_turn_swallows_db_failure(monkeypatch):
     threads_mod.record_turn("u1:t1", "u1", "AIESEC", "q", "a")
 
 
+def test_generate_thread_title_cleans_llm_output(monkeypatch):
+    import agent.service as agent_service
+    import llm_client
+    monkeypatch.setattr(llm_client, "call_llm", lambda *a, **k: '  "Outstanding payables check"  \n')
+    title = agent_service.generate_thread_title("how much do we owe?", "LKR 700 outstanding.")
+    assert title == "Outstanding payables check"
+
+
+def test_generate_thread_title_returns_none_on_failure(monkeypatch):
+    import agent.service as agent_service
+    import llm_client
+    monkeypatch.setattr(llm_client, "call_llm",
+                        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("no provider")))
+    assert agent_service.generate_thread_title("q", "a") is None
+
+
 def test_record_turn_title_is_shortened(monkeypatch):
     cur = FakeCursor()
     monkeypatch.setattr(threads_mod, "get_conn", _fake_get_conn(cur))
@@ -309,6 +325,7 @@ def test_chat_returns_trace_and_records_turn(monkeypatch):
 
     monkeypatch.setattr(agent_graph, "get_chat_model", lambda temperature=0.0: model)
     monkeypatch.setattr(agent_service, "get_checkpointer", lambda: MemorySaver())
+    monkeypatch.setattr(agent_service, "generate_thread_title", lambda q, a: None)
 
     recorded: dict = {}
 
