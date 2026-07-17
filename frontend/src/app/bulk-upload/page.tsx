@@ -540,17 +540,17 @@ export default function BulkUploadPage() {
                             <div key={idx} className="grid grid-cols-[1fr_70px_90px_90px] gap-2">
                               <input value={String(it.description)}
                                 onChange={(e) => updatePreviewItem(item.id, idx, "description", e.target.value)}
-                                placeholder="Description"
+                                placeholder={t.description}
                                 className="rounded-lg border px-2 py-1.5 text-[12px]"
                                 style={{ background: "var(--surface)", borderColor: "var(--border)", color: "var(--text-1)" }} />
                               <input value={String(it.quantity)}
                                 onChange={(e) => updatePreviewItem(item.id, idx, "quantity", e.target.value)}
-                                placeholder="Qty"
+                                placeholder={t.quantity}
                                 className="rounded-lg border px-2 py-1.5 text-[12px] text-right"
                                 style={{ background: "var(--surface)", borderColor: "var(--border)", color: "var(--text-1)" }} />
                               <input value={String(it.unit_price)}
                                 onChange={(e) => updatePreviewItem(item.id, idx, "unit_price", e.target.value)}
-                                placeholder="Price"
+                                placeholder={t.unitPrice}
                                 className="rounded-lg border px-2 py-1.5 text-[12px] text-right"
                                 style={{ background: "var(--surface)", borderColor: "var(--border)", color: "var(--text-1)" }} />
                               <input value={String(it.line_total)} readOnly

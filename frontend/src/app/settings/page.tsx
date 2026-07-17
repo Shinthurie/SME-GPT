@@ -387,7 +387,7 @@ export default function SettingsPage() {
                       </div>
                       <div>
                         {isEditing
-                          ? <input value={form.fullName} onChange={e => update("fullName",e.target.value)} placeholder="Full name" className="field-input h-9 rounded-xl border px-3 text-[15px] font-bold" />
+                          ? <input value={form.fullName} onChange={e => update("fullName",e.target.value)} placeholder={t.fullName} className="field-input h-9 rounded-xl border px-3 text-[15px] font-bold" />
                           : <p className="text-[16px] font-bold text-[var(--text-1)]">{form.fullName || session.fullName}</p>}
                         <p className="text-[13px] text-[var(--text-2)]">{session.email}</p>
                       </div>
