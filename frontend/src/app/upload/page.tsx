@@ -35,7 +35,19 @@ type StreamEvent = {
   session_id?: string;
 };
 
+/** An extracted-but-not-yet-saved document, parked so a reload can't lose it. */
+type UploadDraft = {
+  sessionId: string;
+  preview: PreviewData;
+  finalTotalEdited?: boolean;
+};
+
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://127.0.0.1:8000";
+
+// sessionStorage (not localStorage): the backend session this points at expires
+// in ~2h, so the draft should die with the tab rather than resurface tomorrow
+// pointing at a session that no longer exists.
+const DRAFT_KEY = "sme_gpt_upload_draft";
 
 function getAuthToken() {
   if (typeof window === "undefined") return "";
@@ -194,10 +206,71 @@ export default function UploadPage() {
   const [showAmountMismatch, setShowAmountMismatch] = useState(false);
   const [showCamera, setShowCamera] = useState(false);
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
+  // True when the preview below was recovered from a reload rather than just
+  // extracted, so we can explain where it came from.
+  const [draftRestored, setDraftRestored] = useState(false);
 
   useEffect(() => { setLang(getStoredLanguage()); }, []);
 
+  // ── Surviving a reload ───────────────────────────────────────────────────
+  // Extraction is expensive (remote OCR + LLM) and the result lives only in
+  // this component's state, so a stray refresh used to throw it away and force
+  // a full re-upload. The backend keeps the session for SESSION_TTL_SECS (2h
+  // by default), and /confirm-save only needs {session_id, edited_preview} —
+  // both of which survive in sessionStorage. So we can restore the whole
+  // review step after a reload without re-running the pipeline. The picked
+  // File itself can't be serialized, but nothing past extraction needs it.
+  useEffect(() => {
+    let raw: string | null = null;
+    try { raw = sessionStorage.getItem(DRAFT_KEY); } catch { return; }
+    if (!raw) return;
+    try {
+      const draft = JSON.parse(raw) as UploadDraft;
+      if (!draft?.sessionId || !draft?.preview) throw new Error("incomplete draft");
+      setSessionId(draft.sessionId);
+      setPreview(draft.preview);
+      setFinalTotalEdited(Boolean(draft.finalTotalEdited));
+      setDraftRestored(true);
+    } catch {
+      try { sessionStorage.removeItem(DRAFT_KEY); } catch { /* private mode */ }
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!preview || !sessionId) return;
+    try {
+      sessionStorage.setItem(DRAFT_KEY, JSON.stringify({ sessionId, preview, finalTotalEdited }));
+    } catch { /* quota / private mode — reload recovery is best-effort */ }
+  }, [preview, sessionId, finalTotalEdited]);
+
+  // Extraction in flight can't be recovered at all (the SSE stream dies with
+  // the page), and an un-saved preview would at least cost the user a re-review
+  // — so warn before either is lost. Browsers show their own wording here.
+  const hasUnsavedWork = isProcessing || (preview !== null && !savedDoc);
+  useEffect(() => {
+    if (!hasUnsavedWork) return;
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [hasUnsavedWork]);
+
   const t = ui[lang];
+
+  // Bring the freshly-extracted preview into view by itself. This is what the
+  // old "Extraction Done" button was wired to do on click, except the user had
+  // to press it and it was usually already on screen. A restored draft is
+  // skipped — the banner above it explains itself, and yanking the viewport on
+  // load is worse than leaving the page where it opened.
+  const autoScrolledToPreview = useRef(false);
+  useEffect(() => {
+    if (!preview) { autoScrolledToPreview.current = false; return; }
+    if (autoScrolledToPreview.current || draftRestored) return;
+    autoScrolledToPreview.current = true;
+    previewRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [preview, draftRestored]);
 
   const parseAmt = (v: string | number) => {
     const n = Number(String(v ?? "").replace(/,/g, "").replace(/Rs\.?/gi, "").trim());
@@ -216,11 +289,17 @@ export default function UploadPage() {
     return { ...p, items, final_total_amount: total, payable_amount: total };
   };
 
+  const clearDraft = () => {
+    try { sessionStorage.removeItem(DRAFT_KEY); } catch { /* private mode */ }
+    setDraftRestored(false);
+  };
+
   const resetForm = () => {
     setPreview(null); setSelectedFile(null); setSessionId("");
     setShowDuplicateWarning(false); setDuplicateMessage(""); setExistingDocumentId("");
     setShowAmountMismatch(false); setError(""); setActiveStep(0);
     setFinalTotalEdited(false);
+    clearDraft();
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
@@ -259,7 +338,7 @@ export default function UploadPage() {
       if (!blob) return;
       const file = new File([blob], `photo_${Date.now()}.jpg`, { type: "image/jpeg" });
       setSelectedFile(file);
-      setPreview(null); setError(""); setSessionId("");
+      setPreview(null); setError(""); setSessionId(""); clearDraft();
       closeCamera();
     }, "image/jpeg", 0.92);
   };
@@ -269,7 +348,7 @@ export default function UploadPage() {
     const token = getAuthToken();
     if (!token) { router.push("/login"); return; }
 
-    setIsProcessing(true); setError(""); setPreview(null);
+    setIsProcessing(true); setError(""); setPreview(null); clearDraft();
     setActiveStep(1);
 
     addNotification({
@@ -361,6 +440,16 @@ export default function UploadPage() {
         signal: controller.signal,
       });
       if (res.status === 401) { localStorage.removeItem("token"); router.push("/login"); return; }
+      // The backend evicts sessions after SESSION_TTL_SECS. A draft restored
+      // from a reload can outlive that, so say plainly that it's gone rather
+      // than leaving a Save button that will never work.
+      if (res.status === 404) {
+        // resetForm() clears `error`, so tear down the dead draft first and
+        // only then say why it's gone.
+        resetForm();
+        setError(t.draftExpired);
+        return;
+      }
       const data = await res.json();
 
       if (data.duplicate_found && !data.success) {
@@ -487,7 +576,7 @@ export default function UploadPage() {
               const f = e.target.files?.[0] || null;
               setSelectedFile(f); setPreview(null); setError("");
               setSavedDoc(null); setSessionId(""); setShowDuplicateWarning(false);
-              setShowAmountMismatch(false);
+              setShowAmountMismatch(false); clearDraft();
             }}
           />
 
@@ -657,13 +746,16 @@ export default function UploadPage() {
               </p>
 
               <div className="mt-5 flex flex-col gap-2.5 sm:flex-row sm:justify-center">
+                {/* Scope the chat to the document just saved (same contract as
+                    the repository's "Ask about this document"), so it opens with
+                    the thumbnail and context instead of a blank thread. */}
                 <button
-                  onClick={() => router.push("/query")}
+                  onClick={() => router.push(`/query?doc=${encodeURIComponent(savedDoc.id)}`)}
                   className="flex items-center justify-center gap-2 rounded-2xl px-5 py-3 text-[14px] font-bold text-white transition hover:opacity-90"
                   style={{ background: "var(--brand)" }}
                 >
-                  <span className="material-symbols-outlined text-[18px]">chat</span>
-                  {lang === "si" ? "ප්‍රශ්නයක් අසන්න" : "Ask a question"}
+                  <span className="material-symbols-outlined text-[18px]" aria-hidden="true">chat</span>
+                  {lang === "si" ? "මෙම ලේඛනය ගැන අසන්න" : "Ask about this document"}
                 </button>
                 <button
                   onClick={() => router.push(`/analysis/${savedDoc.id}`)}
@@ -693,23 +785,58 @@ export default function UploadPage() {
             </div>
           )}
 
-          {!savedDoc && (
+          {/* Before extraction this is the primary action. Once a preview
+              exists the only thing left to do is Confirm & Save at the foot of
+              that preview, so this becomes a plain status chip — as a button it
+              just scrolled to a preview already on screen, which read as
+              broken, and it competed with the real green CTA below. */}
+          {!savedDoc && !preview && (
             <button
-              onClick={
-                preview
-                  ? () => previewRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
-                  : handleProcess
-              }
+              onClick={handleProcess}
               disabled={!selectedFile || isProcessing}
               className="mt-6 w-full rounded-2xl py-4 text-[15px] font-bold text-white transition hover:opacity-90 disabled:opacity-50"
-              style={{ background: preview ? "#16a34a" : "var(--brand)" }}
+              style={{ background: "var(--brand)" }}
             >
-              {isProcessing
-                ? friendlyProgress
-                : preview
-                ? t.extractionDone
-                : t.beginExtraction}
+              {isProcessing ? friendlyProgress : t.beginExtraction}
             </button>
+          )}
+
+          {!savedDoc && preview && !draftRestored && (
+            <div
+              role="status"
+              className="mt-6 flex items-center justify-center gap-2 rounded-2xl py-3.5 text-[14px] font-bold"
+              style={{ background: "rgba(22,163,74,0.12)", color: "#16a34a" }}
+            >
+              <span className="material-symbols-outlined text-[18px]" aria-hidden="true">check_circle</span>
+              {t.extractionDone}
+            </div>
+          )}
+
+          {/* A restored draft needs explaining, not congratulating — the user
+              reloaded and would otherwise wonder why a filled-in form is here. */}
+          {!savedDoc && preview && draftRestored && (
+            <div
+              role="status"
+              className="mt-6 rounded-2xl p-4"
+              style={{ background: "var(--brand-tint)", border: "1px solid var(--border)" }}
+            >
+              <div className="flex items-start gap-3">
+                <span className="material-symbols-outlined text-[20px] text-[var(--brand-mid)]" aria-hidden="true">
+                  restore
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-[14px] font-bold text-[var(--text-1)]">{t.draftRestoredTitle}</p>
+                  <p className="mt-1 text-[13px] leading-5 text-[var(--text-2)]">{t.draftRestoredBody}</p>
+                </div>
+                <button
+                  onClick={resetForm}
+                  className="shrink-0 rounded-xl px-3 py-1.5 text-[12px] font-semibold transition hover:opacity-80"
+                  style={{ border: "1px solid var(--border)", color: "var(--text-2)" }}
+                >
+                  {t.draftDiscard}
+                </button>
+              </div>
+            </div>
           )}
 
           {/* Preview */}
