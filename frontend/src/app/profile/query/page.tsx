@@ -102,12 +102,12 @@ export default function QueryPage() {
 
   return (
     <MobileShell>
-      <div className="min-h-screen bg-[#f6f7fb] pb-24">
+      <div className="min-h-screen pb-24" style={{ background: "var(--bg)" }}>
         <main className="mx-auto w-full max-w-[980px] px-4 py-6 sm:px-6 lg:px-8">
           <div className="mb-4 flex items-center justify-between">
             <button
               onClick={() => router.push("/")}
-              className="text-[14px] font-medium text-[#2563ff]"
+              className="text-[14px] font-medium text-[var(--brand-mid)]"
             >
               ← Back
             </button>
@@ -116,46 +116,58 @@ export default function QueryPage() {
             </div>
           </div>
 
-          <h1 className="text-[24px] font-extrabold tracking-tight text-[#0f172a] sm:text-[28px]">
+          <h1 className="text-[24px] font-extrabold tracking-tight text-[var(--text-1)] sm:text-[28px]">
             {t.askQuestion}
           </h1>
 
-          <p className="mt-4 max-w-4xl text-[14px] leading-8 text-[#64748b]">
+          <p className="mt-4 max-w-4xl text-[14px] leading-8 text-[var(--text-2)]">
             Ask questions using only data from your saved financial documents.
           </p>
 
-          <div className="mt-6 rounded-[20px] border border-slate-200 bg-white p-5 shadow-sm">
-            <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#64748b]">
+          <div
+            className="mt-6 rounded-[20px] p-5 shadow-sm"
+            style={{ background: "var(--surface)", border: "1px solid var(--border)" }}
+          >
+            <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[var(--text-2)]">
               Company Context
             </p>
             <input
               value={companyName}
               onChange={(e) => setCompanyName(e.target.value)}
               placeholder="Enter your company name (example: AIESEC)"
-              className="mt-3 w-full rounded-[14px] border border-slate-200 px-4 py-3 text-[15px] text-[#0f172a] outline-none focus:border-[#2563ff]"
+              className="field-input mt-3 w-full rounded-[14px] border px-4 py-3 text-[15px] outline-none"
             />
-            <p className="mt-2 text-[12px] text-[#94a3b8]">
+            <p className="mt-2 text-[12px] text-[var(--text-3)]">
               This company name will be used as the main context before answering your question.
             </p>
           </div>
 
-          <div className="mt-6 rounded-[20px] border border-slate-200 bg-white shadow-sm">
+          <div
+            className="mt-6 rounded-[20px] shadow-sm"
+            style={{ background: "var(--surface)", border: "1px solid var(--border)" }}
+          >
             <textarea
               ref={textareaRef}
               value={question}
               onChange={(e) => setQuestion(e.target.value)}
               placeholder="Example: What is the receivable amount we have?"
               rows={1}
-              className="min-h-[120px] w-full resize-none overflow-y-auto rounded-t-[20px] border-0 bg-transparent px-5 py-5 text-[18px] text-[#0f172a] outline-none"
+              className="min-h-[120px] w-full resize-none overflow-y-auto rounded-t-[20px] border-0 bg-transparent px-5 py-5 text-[18px] text-[var(--text-1)] outline-none placeholder:text-[var(--text-3)]"
             />
-            <div className="flex items-center justify-between rounded-b-[20px] border-t border-slate-100 px-5 py-3 text-[#94a3b8]">
+            <div
+              className="flex items-center justify-between rounded-b-[20px] px-5 py-3 text-[var(--text-3)]"
+              style={{ borderTop: "1px solid var(--border)" }}
+            >
               <div className="text-[12px]">Source: your saved documents only</div>
               <span className="text-[12px]">Explainable answer enabled</span>
             </div>
           </div>
 
           {error && (
-            <div className="mt-4 rounded-[16px] border border-red-200 bg-red-50 px-4 py-3 text-[14px] text-red-700">
+            <div
+              className="mt-4 rounded-[16px] px-4 py-3 text-[14px]"
+              style={{ background: "var(--danger-tint)", border: "1px solid var(--danger-border)", color: "var(--danger)" }}
+            >
               {error}
             </div>
           )}
@@ -164,7 +176,8 @@ export default function QueryPage() {
             <button
               onClick={handleAsk}
               disabled={loading}
-              className="w-full rounded-[18px] bg-[#2563ff] py-4 text-[15px] font-bold text-white shadow-[0_10px_24px_rgba(37,99,255,0.22)] disabled:opacity-60"
+              className="w-full rounded-[18px] py-4 text-[15px] font-bold text-white shadow-[0_10px_24px_var(--brand-ring)] disabled:opacity-60"
+              style={{ background: "var(--brand-mid)" }}
             >
               {loading ? "Analyzing..." : "Ask Question"}
             </button>

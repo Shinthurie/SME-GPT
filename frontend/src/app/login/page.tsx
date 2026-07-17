@@ -245,8 +245,8 @@ export default function LoginPage() {
               </div>
 
               {error && (
-                <p className="rounded-lg px-3 py-2 text-[13px] font-medium text-red-600"
-                   style={{ background: "rgba(220,38,38,0.08)" }}>
+                <p className="rounded-lg px-3 py-2 text-[13px] font-medium"
+                   style={{ background: "var(--danger-tint)", border: "1px solid var(--danger-border)", color: "var(--danger)" }}>
                   {error}
                 </p>
               )}

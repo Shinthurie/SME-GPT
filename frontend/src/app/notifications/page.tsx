@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import MobileShell from "@/components/layout/MobileShell";
 import BottomNav from "@/components/layout/BottomNav";
 import LanguageSwitcher from "@/components/layout/LanguageSwitcher";
-import { getStoredLanguage } from "@/lib/i18n";
+import { getStoredLanguage, ui, AppLanguage } from "@/lib/i18n";
 import {
   getNotifications,
   clearNotifications,
@@ -20,35 +20,27 @@ function formatTime(value: string) {
   return date.toLocaleString();
 }
 
+/** Maps a notification type onto the semantic tokens in globals.css, so the
+ *  cards follow the light/dark theme instead of being pinned to Tailwind's
+ *  light-only palette. */
 function getTypeStyles(type: AppNotification["type"]) {
   switch (type) {
     case "success":
-      return {
-        card: "bg-green-50 border-green-200 text-green-700",
-        icon: "check_circle",
-      };
+      return { token: "success", icon: "check_circle" };
     case "warning":
-      return {
-        card: "bg-amber-50 border-amber-200 text-amber-700",
-        icon: "warning",
-      };
+      return { token: "warn", icon: "warning" };
     case "error":
-      return {
-        card: "bg-red-50 border-red-200 text-red-700",
-        icon: "error",
-      };
+      return { token: "danger", icon: "error" };
     default:
-      return {
-        card: "bg-blue-50 border-blue-200 text-blue-700",
-        icon: "notifications",
-      };
+      return { token: "info", icon: "notifications" };
   }
 }
 
 export default function NotificationsPage() {
   const router = useRouter();
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
-  const [lang, setLang] = useState("en");
+  const [lang, setLang] = useState<AppLanguage>("en");
+  const t = ui[lang];
 
   useEffect(() => { setLang(getStoredLanguage()); }, []);
 
@@ -68,14 +60,14 @@ export default function NotificationsPage() {
 
   return (
     <MobileShell>
-      <div className="min-h-screen bg-[#f6f7fb] pb-24">
+      <div className="min-h-screen pb-24" style={{ background: "var(--bg)" }}>
         <main className="mx-auto w-full max-w-[980px] px-4 py-6 sm:px-6 lg:px-8">
           <div className="mb-5 flex items-center justify-between">
             <button
               onClick={() => router.back()}
-              className="text-[14px] font-medium text-[#2563ff]"
+              className="text-[14px] font-medium text-[var(--brand-mid)]"
             >
-              ← Back
+              ← {t.back}
             </button>
 
             <div className="flex items-center gap-2">
@@ -83,22 +75,26 @@ export default function NotificationsPage() {
 
               <button
                 onClick={handleClearAll}
-                className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-[12px] font-semibold text-[#64748b]"
+                className="rounded-xl px-4 py-2 text-[12px] font-semibold text-[var(--text-2)]"
+                style={{ background: "var(--surface)", border: "1px solid var(--border)" }}
               >
-                {lang === "si" ? "සියල්ල ඉවත් කරන්න" : "Clear All"}
+                {t.clearAll}
               </button>
             </div>
           </div>
 
-          <h1 className="text-[24px] font-extrabold text-[#0f172a]">
+          <h1 className="text-[24px] font-extrabold text-[var(--text-1)]">
             {lang === "si" ? "දැනුම්දීම්" : "Notifications"}
           </h1>
 
-          <p className="mt-2 text-[14px] text-[#64748b]">
+          <p className="mt-2 text-[14px] text-[var(--text-2)]">
             {lang === "si" ? "මෑත පද්ධති යාවත්කාලීන සහ ක්‍රියාකාරකම් ඇඟවීම්." : "Recent system updates and activity alerts."}
           </p>
 
-          <p className="mt-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-600">
+          <p
+            className="mt-2 rounded-xl px-3 py-2 text-[12px]"
+            style={{ background: "var(--warn-tint)", border: "1px solid var(--warn-border)", color: "var(--warn)" }}
+          >
             {lang === "si"
               ? "දැනුම්දීම් මෙම උපාංගයේ පමණක් ගබඩා වේ. බ්‍රවුසර් දත්ත ඉවත් කළහොත් ඒවා ද ඉවත් වේ."
               : "Notifications are stored on this device only and will be cleared if you clear browser data."}
@@ -106,7 +102,10 @@ export default function NotificationsPage() {
 
           <div className="mt-6 space-y-4">
             {notifications.length === 0 ? (
-              <div className="rounded-[18px] border border-slate-200 bg-white p-5 text-[14px] text-[#64748b] shadow-sm">
+              <div
+                className="rounded-[18px] p-5 text-[14px] text-[var(--text-2)] shadow-sm"
+                style={{ background: "var(--surface)", border: "1px solid var(--border)" }}
+              >
                 {lang === "si" ? "දැනුම්දීම් නොමැත." : "No notifications available."}
               </div>
             ) : (
@@ -116,11 +115,19 @@ export default function NotificationsPage() {
                 return (
                   <div
                     key={item.id}
-                    className={`rounded-[18px] border p-5 shadow-sm ${styles.card}`}
+                    className="rounded-[18px] p-5 shadow-sm"
+                    style={{
+                      background: `var(--${styles.token}-tint)`,
+                      border: `1px solid var(--${styles.token}-border)`,
+                      color: `var(--${styles.token})`,
+                    }}
                   >
                     <div className="flex items-start gap-4">
-                      <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/70">
-                        <span className="material-symbols-outlined text-[20px]">
+                      <div
+                        className="flex h-11 w-11 items-center justify-center rounded-xl"
+                        style={{ background: "var(--surface)" }}
+                      >
+                        <span className="material-symbols-outlined text-[20px]" aria-hidden="true">
                           {styles.icon}
                         </span>
                       </div>
@@ -133,7 +140,10 @@ export default function NotificationsPage() {
                             </h2>
 
                             {!item.read && (
-                              <span className="rounded-full bg-red-500 px-2 py-0.5 text-[10px] font-bold text-white">
+                              <span
+                                className="rounded-full px-2 py-0.5 text-[10px] font-bold"
+                                style={{ background: "var(--danger)", color: "var(--surface)" }}
+                              >
                                 NEW
                               </span>
                             )}

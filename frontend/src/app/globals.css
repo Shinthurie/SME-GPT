@@ -19,6 +19,23 @@
   --brand-ring:   rgba(26, 53, 96, 0.15);
   --input-bg:     #ffffff;
   --input-bg-ro:  #f4f7fb;
+
+  /* Semantic status colours. Each family has three roles, matching how they're
+     actually used: `-tint` fills a card, `-border` outlines it, and the base is
+     the text/icon on top of that tint. Light values are the Tailwind shades the
+     UI already hardcoded (green-700/50/200 etc.), so light mode is unchanged. */
+  --success:        #15803d;
+  --success-tint:   #f0fdf4;
+  --success-border: #bbf7d0;
+  --warn:           #b45309;
+  --warn-tint:      #fffbeb;
+  --warn-border:    #fde68a;
+  --danger:         #b91c1c;
+  --danger-tint:    #fef2f2;
+  --danger-border:  #fecaca;
+  --info:           #1d4ed8;
+  --info-tint:      #eff6ff;
+  --info-border:    #bfdbfe;
 }
 
 [data-theme="dark"] {
@@ -38,6 +55,23 @@
   --brand-ring:   rgba(121, 162, 236, 0.22);
   --input-bg:     #242932;
   --input-bg-ro:  #1c2027;
+
+  /* Dark inverts the relationship: the tint becomes a deep, desaturated wash
+     that sits just above --surface, and the base colour lightens so it stays
+     legible on top of it. The light shades can't simply be reused — green-700
+     on green-50 is readable, but green-700 on charcoal is not. */
+  --success:        #4ade80;
+  --success-tint:   #14251a;
+  --success-border: #1f4030;
+  --warn:           #fbbf24;
+  --warn-tint:      #2a2113;
+  --warn-border:    #4a3a1a;
+  --danger:         #f87171;
+  --danger-tint:    #2a1717;
+  --danger-border:  #4d2626;
+  --info:           #79a2ec;
+  --info-tint:      #1e2531;
+  --info-border:    #2d3d55;
 }
 
 /* ─── Base ───────────────────────────────────────────────────── */
