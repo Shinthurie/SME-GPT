@@ -8,8 +8,9 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from "recharts";
 import * as XLSX from "xlsx";
+import { resolveBackendUrl } from "@/lib/backendUrl";
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://127.0.0.1:8000";
+const BACKEND_URL = resolveBackendUrl();
 
 type PnlMonth = { month: string; revenue: number; expenses: number; net: number; doc_count: number };
 

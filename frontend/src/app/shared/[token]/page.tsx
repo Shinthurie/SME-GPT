@@ -3,8 +3,9 @@
 
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
+import { resolveBackendUrl } from "@/lib/backendUrl";
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://127.0.0.1:8000";
+const BACKEND_URL = resolveBackendUrl();
 
 type SharedDoc = {
   document_id: string; document_type: string; date: string;

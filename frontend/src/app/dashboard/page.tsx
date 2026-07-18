@@ -16,8 +16,9 @@ import {
 } from "recharts";
 import HealthScoreCard from "@/components/ui/HealthScoreCard";
 import WhoOwesWho     from "@/components/ui/WhoOwesWho";
+import { resolveBackendUrl } from "@/lib/backendUrl";
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://127.0.0.1:8000";
+const BACKEND_URL = resolveBackendUrl();
 
 type MismatchAlert = {
   document_id: string;

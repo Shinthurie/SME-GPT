@@ -14,8 +14,9 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import PageShell from "@/components/layout/PageShell";
 import { getStoredLanguage, AppLanguage } from "@/lib/i18n";
+import { resolveBackendUrl } from "@/lib/backendUrl";
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://127.0.0.1:8000";
+const BACKEND_URL = resolveBackendUrl();
 
 type PayableRow = {
   document_id: string; document_type: string; supplier_name: string;

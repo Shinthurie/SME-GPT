@@ -16,8 +16,9 @@ import { getSession } from "@/lib/auth";
 import { confirmDialog } from "@/lib/confirm";
 import { formatMoney, otherPartyName } from "@/lib/format";
 import { humanizeFlow } from "@/lib/humanize";
+import { resolveBackendUrl } from "@/lib/backendUrl";
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://127.0.0.1:8000";
+const BACKEND_URL = resolveBackendUrl();
 
 type EvidenceItem = {
   document_id: string;

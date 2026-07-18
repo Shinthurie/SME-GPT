@@ -5,8 +5,9 @@ import { useRouter } from "next/navigation";
 import PageShell from "@/components/layout/PageShell";
 import { AppLanguage, getStoredLanguage, ui } from "@/lib/i18n";
 import { addNotification } from "@/lib/notifications";
+import { resolveBackendUrl } from "@/lib/backendUrl";
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://127.0.0.1:8000";
+const BACKEND_URL = resolveBackendUrl();
 
 // OCR runs automatically for every file; saving is always a manual step the
 // user confirms per document, after reviewing the extracted preview.

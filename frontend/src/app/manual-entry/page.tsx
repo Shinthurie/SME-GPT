@@ -6,8 +6,9 @@ import PageShell from "@/components/layout/PageShell";
 import { AppLanguage, getStoredLanguage, ui } from "@/lib/i18n";
 import { addNotification } from "@/lib/notifications";
 import { getSession } from "@/lib/auth";
+import { resolveBackendUrl } from "@/lib/backendUrl";
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://127.0.0.1:8000";
+const BACKEND_URL = resolveBackendUrl();
 
 type DocType = "receipt" | "invoice" | "po" | "dn";
 type Item = { description: string; quantity: string; unit_price: string; line_total: string };
