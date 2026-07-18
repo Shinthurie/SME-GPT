@@ -24,7 +24,9 @@ ENV HOME=/home/appuser \
 WORKDIR /home/appuser/app
 
 COPY --chown=appuser:appuser requirements.txt .
-RUN pip install --no-cache-dir --user -r requirements.txt
+# Generous timeout/retries so a slow network doesn't fail the build midway
+# through a large wheel (PyTorch is ~800 MB).
+RUN pip install --no-cache-dir --user --timeout 300 --retries 10 -r requirements.txt
 
 # Bake the embedding model into the image so the first request doesn't stall on
 # a ~470 MB download, and so it doesn't depend on ephemeral runtime storage.
