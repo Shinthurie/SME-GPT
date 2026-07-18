@@ -10,6 +10,7 @@ import { AppLanguage, getStoredLanguage, ui } from "@/lib/i18n";
 import { addNotification } from "@/lib/notifications";
 import { getSession } from "@/lib/auth";
 import { otherPartyName } from "@/lib/format";
+import { resolveBackendUrl } from "@/lib/backendUrl";
 
 type PreviewItem = {
   description: string;
@@ -42,7 +43,7 @@ type UploadDraft = {
   finalTotalEdited?: boolean;
 };
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://127.0.0.1:8000";
+const BACKEND_URL = resolveBackendUrl();
 
 // sessionStorage (not localStorage): the backend session this points at expires
 // in ~2h, so the draft should die with the tab rather than resurface tomorrow

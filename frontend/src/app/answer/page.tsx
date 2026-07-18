@@ -9,8 +9,9 @@ import DerivationTrace from "@/components/ui/DerivationTrace";
 import { AppLanguage, getStoredLanguage, ui } from "@/lib/i18n";
 import { isHiddenMetric, metricLabel, metricValue, humanizeFlow } from "@/lib/humanize";
 import { formatMoney, otherPartyName } from "@/lib/format";
+import { resolveBackendUrl } from "@/lib/backendUrl";
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://127.0.0.1:8000";
+const BACKEND_URL = resolveBackendUrl();
 
 type EvidenceItem = {
   document_id: string;
