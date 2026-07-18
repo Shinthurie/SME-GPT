@@ -11,9 +11,9 @@ export const metadata: Metadata = {
   title: "SME-GPT",
   description: "Enterprise Document Intelligence",
   manifest: "/manifest.json",
-  icons: {
-    apple: "/icons/icon-192.png",
-  },
+  // No `icons` here on purpose: app/favicon.ico, app/icon.png and
+  // app/apple-icon.png are Next's file conventions and are injected into <head>
+  // automatically. Declaring them again would emit duplicate <link> tags.
   appleWebApp: {
     capable: true,
     title: "SME-GPT",

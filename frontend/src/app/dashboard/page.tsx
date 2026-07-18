@@ -7,6 +7,7 @@ import LanguageSwitcher from "@/components/layout/LanguageSwitcher";
 import BottomNav from "@/components/layout/BottomNav";
 import ThemeToggle from "@/components/layout/ThemeToggle";
 import { getSession, logoutUser, SessionUser, getStoredToken } from "@/lib/auth";
+import Image from "next/image";
 import { AppLanguage, getStoredLanguage, ui } from "@/lib/i18n";
 import { hasUnreadNotifications } from "@/lib/notifications";
 import { syncOverdueAlerts } from "@/lib/overdueAlerts";
@@ -236,12 +237,16 @@ export default function DashboardPage() {
         <header style={{ background: "var(--surface)", borderBottom: "1px solid var(--border)" }}>
           <div className="mx-auto flex w-full max-w-[960px] flex-col gap-3 px-4 py-4 sm:px-6 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex items-center gap-3">
-              <div
-                className="flex h-10 w-10 items-center justify-center rounded-xl shadow-sm"
-                style={{ background: "var(--brand)" }}
-              >
-                <span className="material-symbols-outlined text-[18px] text-white">receipt_long</span>
-              </div>
+              {/* Decorative: the "SME-GPT" heading beside it already names the
+                  app, so an alt text here would just be read out twice. */}
+              <Image
+                src="/logo.png"
+                alt=""
+                width={40}
+                height={40}
+                priority
+                className="h-10 w-10 shrink-0 rounded-xl object-contain shadow-sm"
+              />
               <div>
                 <h1 className="text-[19px] font-extrabold tracking-tight text-[var(--text-1)]">
                   SME-GPT
