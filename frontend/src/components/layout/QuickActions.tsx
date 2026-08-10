@@ -182,7 +182,10 @@ function ScannerSheet({ onClose }: { onClose: () => void }) {
                 {lang === "si" ? "ලේඛනය ස්වයංක‍ීයව ගෙනෙනු ඇත" : "Auto-scales to 1600px for OCR"}
               </p>
             </button>
-            <input ref={fileRef} type="file" accept="image/*" capture="environment"
+            {/* No `capture` attribute: it would force the camera and contradict
+                the "or choose image" label. Without it, mobile shows the native
+                sheet (camera + photo library), honouring both options. */}
+            <input ref={fileRef} type="file" accept="image/*"
               className="hidden" onChange={handleCapture} />
           </>
         ) : (
@@ -204,7 +207,10 @@ function ScannerSheet({ onClose }: { onClose: () => void }) {
                 {lang === "si" ? "OCR කරන්න" : "Scan & Process"}
               </button>
             </div>
-            <input ref={fileRef} type="file" accept="image/*" capture="environment"
+            {/* No `capture` attribute: it would force the camera and contradict
+                the "or choose image" label. Without it, mobile shows the native
+                sheet (camera + photo library), honouring both options. */}
+            <input ref={fileRef} type="file" accept="image/*"
               className="hidden" onChange={handleCapture} />
           </>
         )}
