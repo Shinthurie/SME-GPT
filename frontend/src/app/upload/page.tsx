@@ -172,6 +172,7 @@ function getItemFields(docType: string): ("description" | "quantity" | "unit_pri
 export default function UploadPage() {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const pdfInputRef = useRef<HTMLInputElement | null>(null);
   const previewRef  = useRef<HTMLDivElement | null>(null);
   const videoRef    = useRef<HTMLVideoElement | null>(null);
   const canvasRef   = useRef<HTMLCanvasElement | null>(null);
@@ -288,6 +289,16 @@ export default function UploadPage() {
     if (finalTotalEdited) return { ...p, items };
     const total = +(items.reduce((s, i) => s + parseAmt(i.line_total), 0)).toFixed(2);
     return { ...p, items, final_total_amount: total, payable_amount: total };
+  };
+
+  // Shared by the image and PDF inputs — both do the same reset-and-select.
+  const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0] || null;
+    setSelectedFile(f); setPreview(null); setError("");
+    setSavedDoc(null); setSessionId(""); setShowDuplicateWarning(false);
+    setShowAmountMismatch(false); clearDraft();
+    // Reset the input's value so picking the same file again still fires onChange.
+    e.target.value = "";
   };
 
   const clearDraft = () => {
@@ -569,16 +580,21 @@ export default function UploadPage() {
           </h1>
           <p className="mt-1.5 text-[13px] leading-6 text-[var(--text-2)]">{t.uploadSubtitle}</p>
 
+          {/* Two inputs rather than one, each scoped to a single kind: on mobile a
+              mixed image+PDF picker is confusing and often jumps straight to the
+              camera. Separate accepts give the OS an unambiguous target — the
+              gallery for images, the document browser for PDFs. */}
           <input
             ref={fileInputRef} type="file"
-            accept=".pdf,.png,.jpg,.jpeg,.webp"
+            accept="image/png,image/jpeg,image/webp"
             className="hidden"
-            onChange={(e) => {
-              const f = e.target.files?.[0] || null;
-              setSelectedFile(f); setPreview(null); setError("");
-              setSavedDoc(null); setSessionId(""); setShowDuplicateWarning(false);
-              setShowAmountMismatch(false); clearDraft();
-            }}
+            onChange={handleFileInputChange}
+          />
+          <input
+            ref={pdfInputRef} type="file"
+            accept="application/pdf"
+            className="hidden"
+            onChange={handleFileInputChange}
           />
 
           {/* Drop zone */}
@@ -611,10 +627,19 @@ export default function UploadPage() {
             <div className="mt-5 flex flex-wrap items-center justify-center gap-3">
               <button
                 onClick={() => fileInputRef.current?.click()}
-                className="rounded-xl px-5 py-2.5 text-[13px] font-semibold transition hover:opacity-80"
+                className="flex items-center gap-2 rounded-xl px-5 py-2.5 text-[13px] font-semibold transition hover:opacity-80"
                 style={{ background: "var(--brand-tint)", color: "var(--brand-mid)" }}
               >
-                {selectedFile ? t.chooseAnother : t.selectDevice}
+                <span className="material-symbols-outlined text-[17px]">image</span>
+                {t.chooseImage}
+              </button>
+              <button
+                onClick={() => pdfInputRef.current?.click()}
+                className="flex items-center gap-2 rounded-xl px-5 py-2.5 text-[13px] font-semibold transition hover:opacity-80"
+                style={{ background: "var(--surface)", border: "1px solid var(--border)", color: "var(--text-2)" }}
+              >
+                <span className="material-symbols-outlined text-[17px]">picture_as_pdf</span>
+                {t.choosePdf}
               </button>
               <button
                 onClick={openCamera}
@@ -622,7 +647,7 @@ export default function UploadPage() {
                 style={{ background: "var(--surface)", border: "1px solid var(--border)", color: "var(--text-2)" }}
               >
                 <span className="material-symbols-outlined text-[17px]">photo_camera</span>
-                {t.takePhoto}
+                {t.useCamera}
               </button>
             </div>
           </div>
