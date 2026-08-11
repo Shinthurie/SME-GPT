@@ -687,3 +687,53 @@ def test_pal_scope_prefers_effective_flow_type():
     assert rows[0]["flow_type"] == "cash_inflow", (
         f"Expected effective flow 'cash_inflow', got '{rows[0]['flow_type']}'"
     )
+
+
+# ── Total-reconciliation guards (dataset_manager) ───────────────────────────────
+# Regression tests for the IN13 bug: OCR read line totals that disagreed with
+# quantity * unit_price, and the arithmetic validator's item-sum recommendation
+# left payable_amount disagreeing with final_total_amount.
+
+def test_guard_line_total_recomputed_from_qty_times_unit():
+    import dataset_manager as dm
+    items = [
+        {"description": "Keyboard", "quantity": 25, "unit_price": 89, "line_total": 800},   # wrong
+        {"description": "Monitor", "quantity": 10, "unit_price": 420, "line_total": 3360},   # wrong
+        {"description": "Mouse", "quantity": 1, "unit_price": 32, "line_total": 32},         # already right
+    ]
+    norm = dm.normalize_items(items)
+    assert norm[0]["line_total"] == 2225.0   # 25 * 89, not the stored 800
+    assert norm[1]["line_total"] == 4200.0   # 10 * 420, not the stored 3360
+    assert norm[2]["line_total"] == 32.0
+
+
+def test_guard_line_total_preserved_when_no_qty_or_unit():
+    # A lump-sum charge with no quantity/unit price keeps its extracted total.
+    import dataset_manager as dm
+    norm = dm.normalize_items([
+        {"description": "Service fee", "quantity": None, "unit_price": None, "line_total": 500},
+    ])
+    assert norm[0]["line_total"] == 500.0
+
+
+def test_guard_payable_synced_to_final_for_invoice():
+    import dataset_manager as dm
+    rec = dm.normalize_record(
+        {"document_type": "invoice", "flow_type": "receivable",
+         "final_total_amount": 7641.34, "payable_amount": 9307.0, "raw_total_amount": 7641.34,
+         "items": []},
+        user_id="t-guard", force_generate_document_id=False,
+    )
+    assert rec["final_total_amount"] == 7641.34
+    assert rec["payable_amount"] == 7641.34   # not the 9307 item-sum recommendation
+
+
+def test_guard_payable_sync_skips_delivery_notes():
+    # DN carries no amounts, so the sync must not invent one.
+    import dataset_manager as dm
+    rec = dm.normalize_record(
+        {"document_type": "dn", "flow_type": "expense",
+         "final_total_amount": None, "payable_amount": None, "items": []},
+        user_id="t-guard", force_generate_document_id=False,
+    )
+    assert rec["payable_amount"] == "NULL"
