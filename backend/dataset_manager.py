@@ -202,11 +202,22 @@ def normalize_items(items):
     for item in items:
         if not isinstance(item, dict):
             continue
+        quantity = safe_to_float_or_null(item.get("quantity"))
+        unit_price = safe_to_float_or_null(item.get("unit_price"))
+        line_total = safe_to_float_or_null(item.get("line_total"))
+        # Guard: a stored line total that isn't quantity * unit_price is an
+        # extraction or edit error — the two silently disagree (e.g. qty 25,
+        # unit 89, but line_total 800). When both operands are real positive
+        # numbers, recompute the line total so a row can never persist a
+        # contradictory value. Rows missing a qty or unit keep the extracted
+        # line total (e.g. a lump-sum charge with no unit price).
+        if isinstance(quantity, float) and isinstance(unit_price, float) and quantity > 0 and unit_price > 0:
+            line_total = round(quantity * unit_price, 2)
         result.append({
             "description": str(item.get("description", "")).strip(),
-            "quantity": safe_to_float_or_null(item.get("quantity")),
-            "unit_price": safe_to_float_or_null(item.get("unit_price")),
-            "line_total": safe_to_float_or_null(item.get("line_total")),
+            "quantity": quantity,
+            "unit_price": unit_price,
+            "line_total": line_total,
         })
     return result
 
@@ -254,6 +265,14 @@ def normalize_record(data: dict, user_id: str, force_generate_document_id: bool 
     final_total = safe_to_float_or_null(data.get("final_total_amount", None))
     payable_amount = safe_to_float_or_null(data.get("payable_amount", None))
     cash_return = safe_to_float_or_null(data.get("cash_return", None))
+
+    # Guard: for documents whose payable/receivable IS the document total
+    # (invoice, receipt, po), keep payable_amount equal to the final total.
+    # Without this the arithmetic validator's item-sum recommendation could
+    # leave payable_amount disagreeing with final_total_amount — e.g. payable
+    # 9307 (sum of qty*unit) while final total says 7641 (the printed total).
+    if document_type in ("invoice", "receipt", "po") and isinstance(final_total, float):
+        payable_amount = final_total
 
     if raw_total == "NULL" or final_total == "NULL":
         total_status = "NULL"

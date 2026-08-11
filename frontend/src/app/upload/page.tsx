@@ -437,8 +437,16 @@ export default function UploadPage() {
     const token = getAuthToken();
     if (!token) { router.push("/login"); return; }
 
-    if (!force && !finalTotalEdited && parseAmt(preview.raw_total_amount) !== parseAmt(preview.final_total_amount)) {
-      setShowAmountMismatch(true); return;
+    // Block the save (with a confirmation) when the numbers don't reconcile —
+    // either the raw OCR total differs from the final, or the line items don't
+    // add up to the final total. The user can still save anyway (e.g. when tax
+    // or a discount explains the gap), but not by accident.
+    if (!force) {
+      const subtotal = (preview.items || []).reduce((s, i) => s + parseAmt(i.line_total), 0);
+      const finalT = parseAmt(preview.final_total_amount);
+      const itemsDiffer = (preview.items?.length ?? 0) > 0 && Math.abs(subtotal - finalT) > 0.01;
+      const rawDiffers = !finalTotalEdited && parseAmt(preview.raw_total_amount) !== finalT;
+      if (itemsDiffer || rawDiffers) { setShowAmountMismatch(true); return; }
     }
 
     setIsSaving(true); setError("");
@@ -953,23 +961,31 @@ export default function UploadPage() {
                 </div>
               )}
 
-              {/* Amount mismatch warning */}
-              {showAmountMismatch && (
-                <div className="mt-6 rounded-xl p-4 text-[13px]"
-                  style={{ background: "rgba(217,119,6,0.08)", border: "1px solid rgba(217,119,6,0.3)", color: "#92400e" }}>
-                  <p className="font-semibold">Raw and final totals differ.</p>
-                  <p className="mt-1">Save using the recalculated final amount?</p>
-                  <div className="mt-3 flex gap-3">
-                    <button onClick={() => { setShowAmountMismatch(false); handleSave(true); }}
-                      disabled={isSaving}
-                      className="rounded-xl px-4 py-2 text-[13px] font-bold text-white"
-                      style={{ background: "#d97706" }}>{t.saveAnyway}</button>
-                    <button onClick={() => setShowAmountMismatch(false)}
-                      className="rounded-xl px-4 py-2 text-[13px] font-semibold"
-                      style={{ border: "1px solid rgba(217,119,6,0.4)", color: "#92400e" }}>{t.cancel}</button>
+              {/* Totals-don't-reconcile warning */}
+              {showAmountMismatch && (() => {
+                const cur = preview.currency && preview.currency !== "NULL" ? `${preview.currency} ` : "";
+                const subtotal = (preview.items || []).reduce((s, i) => s + parseAmt(i.line_total), 0);
+                const finalT = parseAmt(preview.final_total_amount);
+                return (
+                  <div className="mt-6 rounded-xl p-4 text-[13px]"
+                    style={{ background: "var(--warn-tint)", border: "1px solid var(--warn-border)", color: "var(--warn)" }}>
+                    <p className="font-semibold">{t.totalsMismatchTitle}</p>
+                    <p className="mt-1">
+                      {t.totalsMismatchItems}: <b>{cur}{subtotal.toFixed(2)}</b> · {t.totalsMismatchFinal}: <b>{cur}{finalT.toFixed(2)}</b>
+                    </p>
+                    <p className="mt-1">{t.totalsMismatchHint}</p>
+                    <div className="mt-3 flex gap-3">
+                      <button onClick={() => { setShowAmountMismatch(false); handleSave(true); }}
+                        disabled={isSaving}
+                        className="rounded-xl px-4 py-2 text-[13px] font-bold text-white transition hover:opacity-90"
+                        style={{ background: "var(--warn)" }}>{t.saveAnyway}</button>
+                      <button onClick={() => setShowAmountMismatch(false)}
+                        className="rounded-xl px-4 py-2 text-[13px] font-semibold transition hover:opacity-80"
+                        style={{ border: "1px solid var(--warn-border)", color: "var(--warn)" }}>{t.cancel}</button>
+                    </div>
                   </div>
-                </div>
-              )}
+                );
+              })()}
 
               {/* Duplicate warning */}
               {showDuplicateWarning && (
