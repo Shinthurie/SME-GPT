@@ -195,6 +195,10 @@ export default function UploadPage() {
   // shown before the user starts extraction. Revoked when the file changes.
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const isPdf = selectedFile?.type.includes("pdf") ?? false;
+  // Full-screen file preview so the user can actually zoom/scroll the picked
+  // document before extracting (the inline thumbnail is a small, static glance).
+  const [showFilePreview, setShowFilePreview] = useState(false);
+  const [previewZoom, setPreviewZoom] = useState(1);
   useEffect(() => {
     if (!selectedFile) { setPreviewUrl(null); return; }
     const url = URL.createObjectURL(selectedFile);
@@ -664,9 +668,21 @@ export default function UploadPage() {
             <div className="mt-4 rounded-2xl p-4" style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
               {/* Visual thumbnail — see the document before extracting */}
               <div
-                className="mb-3 flex items-center justify-center overflow-hidden rounded-xl"
+                className="relative mb-3 flex items-center justify-center overflow-hidden rounded-xl"
                 style={{ background: "var(--bg)", border: "1px solid var(--border)" }}
               >
+                {previewUrl && (
+                  <button
+                    onClick={() => { setPreviewZoom(1); setShowFilePreview(true); }}
+                    title={t.viewFull}
+                    aria-label={t.viewFull}
+                    className="absolute right-2 top-2 z-10 flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[12px] font-semibold shadow transition hover:opacity-90"
+                    style={{ background: "var(--surface)", color: "var(--brand-mid)" }}
+                  >
+                    <span className="material-symbols-outlined text-[16px]" aria-hidden="true">fullscreen</span>
+                    {t.viewFull}
+                  </button>
+                )}
                 {previewUrl && !isPdf ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
@@ -1021,6 +1037,55 @@ export default function UploadPage() {
 
         {/* Hidden canvas for photo capture */}
         <canvas ref={canvasRef} className="hidden" />
+
+        {/* Full-screen file preview (zoom/scroll before extracting) */}
+        {showFilePreview && previewUrl && (
+          <div className="fixed inset-0 z-[60] flex flex-col" style={{ background: "rgba(0,0,0,0.9)" }}>
+            <div className="flex items-center justify-between gap-3 p-3">
+              <span className="truncate text-[13px] font-semibold text-white/90">{selectedFile?.name}</span>
+              <div className="flex items-center gap-2">
+                {!isPdf && (
+                  <>
+                    <button
+                      onClick={() => setPreviewZoom((z) => Math.max(+(z - 0.5).toFixed(2), 1))}
+                      disabled={previewZoom <= 1}
+                      aria-label="Zoom out"
+                      className="flex h-9 w-9 items-center justify-center rounded-full bg-white/15 text-white transition hover:bg-white/25 disabled:opacity-40"
+                    >
+                      <span className="material-symbols-outlined text-[20px]">zoom_out</span>
+                    </button>
+                    <button
+                      onClick={() => setPreviewZoom((z) => Math.min(+(z + 0.5).toFixed(2), 5))}
+                      disabled={previewZoom >= 5}
+                      aria-label="Zoom in"
+                      className="flex h-9 w-9 items-center justify-center rounded-full bg-white/15 text-white transition hover:bg-white/25 disabled:opacity-40"
+                    >
+                      <span className="material-symbols-outlined text-[20px]">zoom_in</span>
+                    </button>
+                  </>
+                )}
+                <button
+                  onClick={() => setShowFilePreview(false)}
+                  aria-label={t.cancel}
+                  className="flex h-9 w-9 items-center justify-center rounded-full bg-white/15 text-white transition hover:bg-white/25"
+                >
+                  <span className="material-symbols-outlined text-[20px]">close</span>
+                </button>
+              </div>
+            </div>
+            {isPdf ? (
+              // Native PDF viewer — its own toolbar gives zoom, scroll and page nav.
+              <iframe src={previewUrl} title={selectedFile?.name || "PDF"} className="min-h-0 flex-1 bg-white" />
+            ) : (
+              <div className="min-h-0 flex-1 overflow-auto p-2">
+                <div style={{ width: `${previewZoom * 100}%`, margin: "0 auto" }}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={previewUrl} alt={selectedFile?.name || ""} className="block w-full select-none" draggable={false} />
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Camera modal */}
         {showCamera && (
