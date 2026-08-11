@@ -74,6 +74,11 @@ export default function BboxOverlayViewer({
   const [imgSize, setImgSize] = useState<{ w: number; h: number } | null>(null);
   const [showOverlay, setShowOverlay] = useState(true);
   const [chunks, setChunks] = useState<SpatialChunk[]>([]);
+  // Zoom for small/tall documents (e.g. an A4 PDF page shrinks to unreadable at
+  // fit-width). 1 = fit width; higher enlarges and the viewport scrolls to pan.
+  const [zoom, setZoom] = useState(1);
+  const ZOOM_MIN = 1, ZOOM_MAX = 5, ZOOM_STEP = 0.5;
+  useEffect(() => { setZoom(1); }, [imageUrl]);
 
   // Parse spatial chunks once
   useEffect(() => {
@@ -105,26 +110,32 @@ export default function BboxOverlayViewer({
 
   return (
     <div
-      className="relative flex min-h-[420px] items-center justify-center rounded-[16px] sm:min-h-[520px]"
+      className="relative overflow-hidden rounded-[16px]"
       style={{ background: "var(--surface-2)" }}
     >
-      {/* Document image */}
-      <img
-        ref={imgRef}
-        src={imageUrl}
-        alt={documentId}
-        onLoad={handleImgLoad}
-        className="max-h-[520px] w-full rounded-[12px] object-contain"
-      />
+      {/* Scroll/pan viewport. The inner wrapper is sized to zoom * 100% of the
+          viewport width; at zoom 1 a tall page overflows vertically (so it
+          scrolls) and zooming in overflows both axes (so you can pan). */}
+      <div className="relative h-[420px] overflow-auto rounded-[12px] sm:h-[520px]">
+        <div className="relative" style={{ width: `${zoom * 100}%` }}>
+          {/* Document image */}
+          <img
+            ref={imgRef}
+            src={imageUrl}
+            alt={documentId}
+            onLoad={handleImgLoad}
+            draggable={false}
+            className="block w-full select-none rounded-[12px]"
+          />
 
-      {/* SVG overlay — same aspect-ratio behaviour as object-fit:contain */}
-      {hasOverlay && showOverlay && imgSize && (
-        <svg
-          viewBox={`0 0 ${imgSize.w} ${imgSize.h}`}
-          preserveAspectRatio="xMidYMid meet"
-          className="pointer-events-none absolute inset-0 h-full w-full rounded-[12px]"
-          style={{ pointerEvents: onChunkSelect ? "auto" : "none" }}
-        >
+          {/* SVG overlay — sits exactly over the image (same box, same aspect) */}
+          {hasOverlay && showOverlay && imgSize && (
+            <svg
+              viewBox={`0 0 ${imgSize.w} ${imgSize.h}`}
+              preserveAspectRatio="xMidYMid meet"
+              className="absolute inset-0 h-full w-full"
+              style={{ pointerEvents: onChunkSelect ? "auto" : "none" }}
+            >
           {chunks.map((chunk) => {
             const [x1, y1, x2, y2] = chunk.provenance.bbox;
             const isActive = chunk.chunk_id === activeChunkId;
@@ -158,12 +169,40 @@ export default function BboxOverlayViewer({
               </g>
             );
           })}
-        </svg>
+            </svg>
+          )}
+        </div>
+      </div>
+
+      {/* Zoom controls */}
+      {imageUrl && (
+      <div className="absolute right-2 top-2 flex flex-col gap-1.5">
+        <button
+          onClick={() => setZoom((z) => Math.min(+(z + ZOOM_STEP).toFixed(2), ZOOM_MAX))}
+          disabled={zoom >= ZOOM_MAX}
+          title="Zoom in"
+          aria-label="Zoom in"
+          className="flex h-9 w-9 items-center justify-center rounded-full shadow transition hover:opacity-90 disabled:opacity-40"
+          style={{ background: "var(--surface)", color: "var(--text-2)" }}
+        >
+          <span className="material-symbols-outlined text-[20px]" aria-hidden="true">zoom_in</span>
+        </button>
+        <button
+          onClick={() => setZoom((z) => Math.max(+(z - ZOOM_STEP).toFixed(2), ZOOM_MIN))}
+          disabled={zoom <= ZOOM_MIN}
+          title="Zoom out"
+          aria-label="Zoom out"
+          className="flex h-9 w-9 items-center justify-center rounded-full shadow transition hover:opacity-90 disabled:opacity-40"
+          style={{ background: "var(--surface)", color: "var(--text-2)" }}
+        >
+          <span className="material-symbols-outlined text-[20px]" aria-hidden="true">zoom_out</span>
+        </button>
+      </div>
       )}
 
-      {/* Controls */}
+      {/* Overlay controls */}
       {chunks.length > 0 && (
-        <div className="absolute right-2 top-2 flex flex-col gap-1.5">
+        <div className="absolute right-2 top-[7.25rem] flex flex-col gap-1.5">
           <button
             onClick={() => setShowOverlay((p) => !p)}
             title={showOverlay ? "Hide bounding boxes" : "Show bounding boxes"}
@@ -216,7 +255,7 @@ export default function BboxOverlayViewer({
 
       {/* Fallback: no image */}
       {!imageUrl && (
-        <div className="text-[13px] text-[var(--text-3)]">
+        <div className="absolute inset-0 flex items-center justify-center text-[13px] text-[var(--text-3)]">
           No saved preview image for this document
         </div>
       )}
