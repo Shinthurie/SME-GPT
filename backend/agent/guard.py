@@ -31,9 +31,30 @@ def _collect_numbers(value, out: set[float]) -> None:
             _collect_numbers(v, out)
 
 
-def collect_allowed_numbers(tool_outputs: list) -> set[float]:
-    """Every number present anywhere in this turn's tool results. tool_outputs
-    are ToolMessage.content values -- usually dicts, sometimes JSON strings."""
+def _expand_with_arithmetic(base: set[float]) -> set[float]:
+    """Add simple pairwise sums/differences of allowed numbers, so a legitimate
+    derived total (e.g. "surplus = income - expenses", both real/user-given
+    numbers) isn't blocked just because the sum itself wasn't independently
+    verified. Still refuses any figure not traceable back to a real number the
+    agent was actually given -- this only expands what combinations of THOSE
+    numbers are allowed, it doesn't invent new base numbers."""
+    expanded = set(base)
+    values = list(base)
+    for i, a in enumerate(values):
+        for b in values[i + 1:]:
+            expanded.add(round(a + b, 2))
+            expanded.add(round(abs(a - b), 2))
+    return expanded
+
+
+def collect_allowed_numbers(tool_outputs: list, human_texts: list | None = None) -> set[float]:
+    """Every number present anywhere in this turn's tool results, PLUS any
+    numbers the user themselves typed this turn (e.g. planning a budget with
+    hypothetical figures -- "I expect 300000 income and 220000 expenses" isn't
+    something a tool can verify, but it isn't a hallucination either since the
+    user supplied it). tool_outputs are ToolMessage.content values -- usually
+    dicts, sometimes JSON strings. Expanded with simple sums/differences so
+    basic arithmetic on these numbers (a total, a surplus) isn't blocked."""
     allowed: set[float] = set()
     for content in tool_outputs:
         if isinstance(content, str):
@@ -42,7 +63,10 @@ def collect_allowed_numbers(tool_outputs: list) -> set[float]:
             except (ValueError, TypeError):
                 continue
         _collect_numbers(content, allowed)
-    return allowed
+    for text in human_texts or []:
+        for token in _MONEY_TOKEN_RE.findall(text or ""):
+            allowed.add(round(float(token.replace(",", "")), 2))
+    return _expand_with_arithmetic(allowed)
 
 
 def answer_is_grounded(text: str, allowed: set[float]) -> bool:

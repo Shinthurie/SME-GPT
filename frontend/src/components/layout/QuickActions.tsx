@@ -2,7 +2,7 @@
 // IT-42: Quick Cash Entry + IT-43: Auto-Crop Scanner — floating action button
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import { getStoredLanguage } from "@/lib/i18n";
 import { addNotification } from "@/lib/notifications";
 import { resolveBackendUrl } from "@/lib/backendUrl";
@@ -112,8 +112,13 @@ function QuickCashSheet({ onClose }: { onClose: () => void }) {
 export default function QuickActions() {
   const lang = getStoredLanguage();
   const router = useRouter();
+  const pathname = usePathname();
   const [open, setOpen]     = useState(false);
   const [sheet, setSheet]   = useState<"cash"|null>(null);
+
+  // The chat page has its own fixed input bar in the same bottom-right corner —
+  // avoid stacking this FAB on top of it.
+  if (pathname?.startsWith("/query")) return null;
 
   return (
     <>
@@ -121,7 +126,7 @@ export default function QuickActions() {
 
       {/* Fan-out menu */}
       {open && (
-        <div className="fixed bottom-24 right-4 z-40 flex flex-col items-end gap-2">
+        <div className="fixed bottom-20 right-4 z-40 flex flex-col items-end gap-2">
           {/* Scan goes to the full upload page — same Image / PDF / Camera choice,
               preview and total-reconciliation guards as the main upload flow,
               instead of a separate image-only scanner. */}
@@ -143,7 +148,7 @@ export default function QuickActions() {
       {/* FAB */}
       <button
         onClick={() => setOpen(o => !o)}
-        className="fixed bottom-[88px] right-4 z-40 flex h-14 w-14 items-center justify-center rounded-full shadow-xl text-white transition hover:opacity-90 active:scale-95"
+        className="fixed bottom-[72px] right-4 z-40 flex h-14 w-14 items-center justify-center rounded-full shadow-xl text-white transition hover:opacity-90 active:scale-95"
         style={{ background: open ? "#64748b" : "var(--brand-mid)" }}
         aria-label="Quick actions">
         <span className="material-symbols-outlined text-[26px]">{open ? "close" : "add"}</span>

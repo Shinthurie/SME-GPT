@@ -124,20 +124,57 @@ async def rate_limit_middleware(request: Request, call_next):
     return await call_next(request)
 # ─────────────────────────────────────────────────────────────────────────────
 
-PROCESSING_SESSIONS: Dict[str, Dict[str, Any]] = {}
 _SESSION_TTL_SECS = int(os.getenv("SESSION_TTL_SECS", str(60 * 60 * 2)))  # default 2 hours
+
+
+def save_processing_session(session_id: str, user_id: str, data: dict):
+    """Persist an in-progress /process-document extraction so a backend
+    restart before /confirm-save doesn't lose the user's upload."""
+    query = """
+    INSERT INTO processing_sessions (id, user_id, data)
+    VALUES (%s, %s, %s::jsonb)
+    ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data, user_id = EXCLUDED.user_id
+    """
+    with get_db_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(query, (session_id, str(user_id), json.dumps(data, ensure_ascii=False)))
+        conn.commit()
+
+
+def load_processing_session(session_id: str) -> dict | None:
+    query = "SELECT data FROM processing_sessions WHERE id = %s"
+    with get_db_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(query, (session_id,))
+            row = cur.fetchone()
+    if not row:
+        return None
+    data = row.get("data") if isinstance(row, dict) else row[0]
+    return data
+
+
+def delete_processing_session(session_id: str):
+    query = "DELETE FROM processing_sessions WHERE id = %s"
+    with get_db_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(query, (session_id,))
+        conn.commit()
 
 
 def _evict_stale_sessions():
     while True:
         time.sleep(300)  # check every 5 minutes
-        cutoff = time.time() - _SESSION_TTL_SECS
-        with _rate_lock:
-            stale = [k for k, v in PROCESSING_SESSIONS.items() if v.get("_created_at", 0) < cutoff]
-            for k in stale:
-                PROCESSING_SESSIONS.pop(k, None)
-        if stale:
-            print(f"[SESSION GC] evicted {len(stale)} stale sessions", flush=True)
+        try:
+            query = "DELETE FROM processing_sessions WHERE created_at < now() - interval '%s seconds'"
+            with get_db_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(query, (_SESSION_TTL_SECS,))
+                    evicted = cur.rowcount
+                conn.commit()
+            if evicted:
+                print(f"[SESSION GC] evicted {evicted} stale sessions", flush=True)
+        except Exception as exc:
+            print(f"[SESSION GC] eviction pass failed: {exc}", flush=True)
 
 
 # NOTE (FR-31): image files in saved_documents/ are NOT application-layer encrypted.
@@ -251,6 +288,51 @@ def ensure_query_history_table():
         conn.commit()
 
 
+def ensure_processing_sessions_table():
+    if not DATABASE_URL:
+        return
+
+    query = """
+    CREATE TABLE IF NOT EXISTS processing_sessions (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        data JSONB NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+    """
+
+    with get_db_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(query)
+        conn.commit()
+
+
+def _scan_and_create_alerts():
+    """Daily job: check every user's financial snapshot for alert-worthy
+    conditions (alerts.py) and persist any newly-fired ones. Best-effort per
+    user -- one user's failure doesn't stop the scan for the rest."""
+    from alerts import check_alerts_for_user
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute('SELECT id, "companyName" FROM "User"')
+                users = cur.fetchall()
+    except Exception as e:
+        print(f"[ALERTS] failed to list users: {e}", flush=True)
+        return
+
+    total_created = 0
+    for u in users:
+        user_id = u.get("id") if isinstance(u, dict) else u[0]
+        company_name = (u.get("companyName") if isinstance(u, dict) else u[1]) or ""
+        try:
+            created = check_alerts_for_user(user_id, company_name)
+            total_created += len(created)
+        except Exception as e:
+            print(f"[ALERTS] scan failed for user {user_id}: {e}", flush=True)
+    print(f"[ALERTS] scan complete — {total_created} new alert(s) across {len(users)} user(s)", flush=True)
+
+
 @app.on_event("startup")
 def startup_event():
     try:
@@ -258,19 +340,24 @@ def startup_event():
         print("[DB] Query history table ready", flush=True)
     except Exception as e:
         print(f"[DB] Query history table init skipped/failed: {e}", flush=True)
+    try:
+        ensure_processing_sessions_table()
+        print("[DB] Processing sessions table ready", flush=True)
+    except Exception as e:
+        print(f"[DB] Processing sessions table init skipped/failed: {e}", flush=True)
     threading.Thread(target=_evict_stale_sessions, daemon=True, name="session-gc").start()
     print("[SESSION GC] stale session eviction thread started", flush=True)
     invalidate_column_cache()
 
-    # IT-48: Monthly P&L email scheduler (runs on 1st of each month at 08:00)
-    if os.getenv("MONTHLY_EMAIL_ENABLED", "false").lower() == "true":
+    # Proactive financial alerts: daily scan for negative/declining cash flow (see alerts.py)
+    if os.getenv("ALERTS_ENABLED", "true").lower() == "true":
         try:
             from apscheduler.schedulers.background import BackgroundScheduler
             from apscheduler.triggers.cron import CronTrigger
             _sched = BackgroundScheduler(daemon=True)
-            _sched.add_job(_send_monthly_pnl_emails, CronTrigger(day=1, hour=8, minute=0))
+            _sched.add_job(_scan_and_create_alerts, CronTrigger(hour=7, minute=0))
             _sched.start()
-            print("[SCHEDULER] Monthly P&L email scheduler started", flush=True)
+            print("[SCHEDULER] Financial alert scanner started", flush=True)
         except Exception as e:
             print(f"[SCHEDULER] Failed to start scheduler: {e}", flush=True)
 
@@ -284,6 +371,7 @@ def save_query_history_to_db(
     metrics: dict,
     evidence: list,
     source_file: str,
+    conversation_id: str | None = None,
 ):
     if not DATABASE_URL:
         raise RuntimeError("DATABASE_URL is not set.")
@@ -292,9 +380,9 @@ def save_query_history_to_db(
 
     query = """
     INSERT INTO query_history (
-        id, user_id, company_name, question, answer, explanation, metrics, evidence, source_file
+        id, user_id, company_name, question, answer, explanation, metrics, evidence, source_file, conversation_id
     )
-    VALUES (%s, %s, %s, %s, %s, %s, %s::jsonb, %s::jsonb, %s)
+    VALUES (%s, %s, %s, %s, %s, %s, %s::jsonb, %s::jsonb, %s, %s)
     """
 
     with get_db_connection() as conn:
@@ -311,6 +399,7 @@ def save_query_history_to_db(
                     json.dumps(metrics, ensure_ascii=False),
                     json.dumps(evidence, ensure_ascii=False),
                     source_file,
+                    str(conversation_id) if conversation_id else None,
                 ),
             )
         conn.commit()
@@ -318,12 +407,111 @@ def save_query_history_to_db(
     return history_id
 
 
+def load_conversation_turns(user_id: str, conversation_id: str, limit: int = 8):
+    """Last `limit` turns of a conversation, oldest-first, for feeding LLM context."""
+    if not DATABASE_URL:
+        return []
+
+    query = """
+    SELECT question, answer, explanation, created_at
+    FROM query_history
+    WHERE user_id = %s AND conversation_id = %s
+    ORDER BY created_at DESC
+    LIMIT %s
+    """
+
+    with get_db_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(query, (str(user_id), str(conversation_id), limit))
+            rows = cur.fetchall()
+
+    cols = ["question", "answer", "explanation", "created_at"]
+    turns = []
+    for row in rows:
+        r = row if isinstance(row, dict) else dict(zip(cols, row))
+        turns.append({
+            "question": r["question"] or "",
+            "answer": r["answer"] or "",
+            "explanation": r["explanation"] or "",
+        })
+    turns.reverse()  # oldest-first
+    return turns
+
+
+def load_conversations_for_user(user_id: str, limit: int = 30):
+    """One row per conversation_id: first question as title, last activity, turn count."""
+    if not DATABASE_URL:
+        return []
+
+    query = """
+    SELECT
+        conversation_id,
+        (ARRAY_AGG(question ORDER BY created_at ASC))[1]  AS title,
+        MAX(created_at)                                   AS last_activity,
+        COUNT(*)                                           AS turn_count
+    FROM query_history
+    WHERE user_id = %s AND conversation_id IS NOT NULL
+    GROUP BY conversation_id
+    ORDER BY MAX(created_at) DESC
+    LIMIT %s
+    """
+
+    with get_db_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(query, (str(user_id), limit))
+            rows = cur.fetchall()
+
+    cols = ["conversation_id", "title", "last_activity", "turn_count"]
+    conversations = []
+    for row in rows:
+        r = row if isinstance(row, dict) else dict(zip(cols, row))
+        conversations.append({
+            "conversation_id": str(r["conversation_id"]),
+            "title": r["title"] or "",
+            "last_activity": r["last_activity"].isoformat() if r["last_activity"] else "",
+            "turn_count": r["turn_count"],
+        })
+    return conversations
+
+
+def load_conversation_thread_for_user(user_id: str, conversation_id: str):
+    """Full ordered turn list for one conversation — used to reopen a chat thread."""
+    query = """
+    SELECT id, company_name, question, answer, explanation, metrics, evidence, source_file, created_at
+    FROM query_history
+    WHERE user_id = %s AND conversation_id = %s
+    ORDER BY created_at ASC
+    """
+
+    with get_db_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(query, (str(user_id), str(conversation_id)))
+            rows = cur.fetchall()
+
+    cols = ["id","company_name","question","answer","explanation","metrics","evidence","source_file","created_at"]
+    turns = []
+    for row in rows:
+        r = row if isinstance(row, dict) else dict(zip(cols, row))
+        turns.append({
+            "id": str(r["id"]),
+            "company_name": r["company_name"] or "",
+            "question": r["question"] or "",
+            "answer": r["answer"] or "",
+            "explanation": r["explanation"] or "",
+            "metrics": r["metrics"] or {},
+            "evidence": r["evidence"] or [],
+            "source_file": r["source_file"] or "",
+            "created_at": r["created_at"].isoformat() if r["created_at"] else "",
+        })
+    return turns
+
+
 def load_query_history_for_user(user_id: str):
     if not DATABASE_URL:
         return []
 
     query = """
-    SELECT id, company_name, question, answer, explanation, metrics, evidence, source_file, created_at
+    SELECT id, company_name, question, answer, explanation, metrics, evidence, source_file, created_at, conversation_id
     FROM query_history
     WHERE user_id = %s
     ORDER BY created_at DESC
@@ -334,7 +522,7 @@ def load_query_history_for_user(user_id: str):
             cur.execute(query, (str(user_id),))
             rows = cur.fetchall()
 
-    cols = ["id","company_name","question","answer","explanation","metrics","evidence","source_file","created_at"]
+    cols = ["id","company_name","question","answer","explanation","metrics","evidence","source_file","created_at","conversation_id"]
     history = []
     for row in rows:
         r = row if isinstance(row, dict) else dict(zip(cols, row))
@@ -348,6 +536,7 @@ def load_query_history_for_user(user_id: str):
             "evidence": r["evidence"] or [],
             "source_file": r["source_file"] or "",
             "created_at": r["created_at"].isoformat() if r["created_at"] else "",
+            "conversation_id": str(r["conversation_id"]) if r.get("conversation_id") else None,
         })
     return history
 
@@ -918,6 +1107,7 @@ class ManualDocumentRequest(BaseModel):
 class QueryRequest(BaseModel):
     company_name: str
     question: str
+    conversation_id: Optional[str] = None
 
 
 class ChatRequest(BaseModel):
@@ -1008,7 +1198,7 @@ async def process_document(
         preview = to_preview_data(fields)
 
         session_id = str(uuid.uuid4())
-        PROCESSING_SESSIONS[session_id] = {
+        save_processing_session(session_id, user_id, {
             "_created_at": time.time(),
             "user_id": user_id,
             "fields": fields,
@@ -1023,7 +1213,7 @@ async def process_document(
                 "safe_boxes": result.get("safe_boxes", []),
                 "rich_spatial_chunks_template": result.get("rich_spatial_chunks", {}),
             }
-        }
+        })
 
         return {
             "success": True,
@@ -1199,7 +1389,7 @@ async def process_document_stream(
 
             preview = to_preview_data(extracted_json)
 
-            PROCESSING_SESSIONS[session_id] = {
+            save_processing_session(session_id, user_id, {
                 "_created_at": time.time(),
                 "user_id": user_id,
                 "fields": extracted_json,
@@ -1214,7 +1404,7 @@ async def process_document_stream(
                     "safe_boxes": _safe_boxes,
                     "rich_spatial_chunks_template": _rich_template,
                 },
-            }
+            })
 
             # FR-33: audit log for streaming upload
             _log_audit_event(user_id, "DOCUMENT_UPLOAD",
@@ -1272,7 +1462,7 @@ async def get_session_image(session_id: str, authorization: str = Header(default
     """Return the temp preview image for a not-yet-saved bulk session."""
     from fastapi.responses import FileResponse
     user_id = get_current_user_id(authorization)
-    session = PROCESSING_SESSIONS.get(session_id)
+    session = load_processing_session(session_id)
     if not session or session.get("user_id") != user_id:
         raise HTTPException(status_code=404, detail="Session not found or expired")
     src = session.get("meta", {}).get("standard_image")
@@ -1291,7 +1481,7 @@ async def get_session_image(session_id: str, authorization: str = Header(default
 def confirm_save(payload: ConfirmSaveRequest, authorization: str = Header(default=None)):
     user_id = get_current_user_id(authorization)
     require_write_role(authorization)
-    session = PROCESSING_SESSIONS.get(payload.session_id)
+    session = load_processing_session(payload.session_id)
 
     if not session:
         raise HTTPException(
@@ -1441,7 +1631,7 @@ def confirm_save(payload: ConfirmSaveRequest, authorization: str = Header(defaul
     threading.Thread(target=_post_save_enrich, daemon=True).start()
     # ─────────────────────────────────────────────────────────────────────
 
-    PROCESSING_SESSIONS.pop(payload.session_id, None)
+    delete_processing_session(payload.session_id)
 
     _log_audit_event(user_id, "DOCUMENT_SAVED", f"document_id={document_id} action={save_result['action']}")
 
@@ -2808,10 +2998,19 @@ def ask_query(payload: QueryRequest, authorization: str = Header(default=None)):
     if not payload.question.strip():
         raise HTTPException(status_code=400, detail="Question is required.")
 
+    conversation_id = payload.conversation_id or str(uuid.uuid4())
+    conversation_history = []
+    if payload.conversation_id:
+        try:
+            conversation_history = load_conversation_turns(user_id, conversation_id)
+        except Exception:
+            conversation_history = []
+
     result = answer_financial_question(
         question=payload.question.strip(),
         company_name=payload.company_name.strip(),
         user_id=user_id,
+        conversation_history=conversation_history,
     )
 
     history_saved = True
@@ -2828,6 +3027,7 @@ def ask_query(payload: QueryRequest, authorization: str = Header(default=None)):
             metrics=result.get("metrics", {}),
             evidence=result.get("evidence", []),
             source_file=result.get("source_file", ""),
+            conversation_id=conversation_id,
         )
     except Exception as save_err:
         history_saved = False
@@ -2868,6 +3068,7 @@ def ask_query(payload: QueryRequest, authorization: str = Header(default=None)):
         "history_error": history_error,
         "history_id": history_id,
         "discrepancies": discrepancies,
+        "conversation_id": conversation_id,
     }
 
 
@@ -2974,6 +3175,38 @@ def delete_chat_thread(thread_id: str, authorization: str = Header(default=None)
         raise HTTPException(status_code=404, detail="Thread not found.")
     _log_audit_event(user_id, "AGENT_CHAT_THREAD_DELETED", f"thread: {thread_id[:80]}")
     return {"success": True, "message": "Thread deleted."}
+
+
+@app.get("/alerts")
+def get_alerts(authorization: str = Header(default=None)):
+    user_id = get_current_user_id(authorization)
+    try:
+        from alerts import load_recent_alerts
+        return {"success": True, "alerts": load_recent_alerts(user_id)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to load alerts: {e}")
+
+
+@app.get("/conversations")
+def get_conversations(authorization: str = Header(default=None)):
+    user_id = get_current_user_id(authorization)
+    try:
+        conversations = load_conversations_for_user(user_id)
+        return {"success": True, "conversations": conversations}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to load conversations: {e}")
+
+
+@app.get("/conversations/{conversation_id}")
+def get_conversation_thread(conversation_id: str, authorization: str = Header(default=None)):
+    user_id = get_current_user_id(authorization)
+    try:
+        turns = load_conversation_thread_for_user(user_id, conversation_id)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to load conversation: {e}")
+    if not turns:
+        raise HTTPException(status_code=404, detail="Conversation not found.")
+    return {"success": True, "conversation_id": conversation_id, "turns": turns}
 
 
 @app.get("/query-history")

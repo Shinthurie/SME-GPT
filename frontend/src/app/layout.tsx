@@ -2,7 +2,6 @@ import "./globals.css";
 import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import PwaRegister from "@/components/PwaRegister";
-import BulkProcessingWidget from "@/components/ui/BulkProcessingWidget";
 import ConfirmHost from "@/components/ui/ConfirmHost";
 
 const inter = Inter({ subsets: ["latin"] });
@@ -46,7 +45,6 @@ export default function RootLayout({
       <body className={inter.className}>
         <PwaRegister />
         {children}
-        <BulkProcessingWidget />
         <ConfirmHost />
       </body>
     </html>

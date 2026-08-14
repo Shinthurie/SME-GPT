@@ -33,3 +33,9 @@ docs/_srs_extracted.txt
 Thumbs.db
 
 frontend/nul
+
+# Personal academic report/submission materials — never part of the app repo
+/report/
+
+# Generated eval reports (backend/scripts/eval_answer_quality.py output)
+backend/eval_reports/

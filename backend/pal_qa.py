@@ -16,6 +16,8 @@ from __future__ import annotations
 
 import data_tools as dt
 from ai_helper import generate_explainable_answer
+from financial_advisor import continues_advisory_conversation, generate_financial_advice
+from llm_client import call_llm
 from pal_answer import generate_pal_answer
 from pal_executor import execute_plan
 from pal_planner import plan_query
@@ -82,6 +84,60 @@ def _wants_financial_aggregation(normalized_q: str) -> bool:
     return any(w in normalized_q for w in _FINANCIAL_AGG_WORDS)
 
 
+# ── Conversational follow-up context (factual queries) ──────────────────────
+# Note: the agentic engine (backend/agent/) gets multi-turn context natively
+# from LangGraph's MessagesState/checkpointer. This still-default /ask-query
+# path has no equivalent, so a lightweight LLM rewrite step fills the gap for
+# follow-ups ("what about payables?") without touching the tested PAL/legacy
+# routing below it -- it only rewrites the question text before routing.
+
+# Markers suggesting the question leans on something said earlier in the chat
+# rather than standing alone — a short question, or one starting with a
+# connector/pronoun. Liberal on purpose: worst case we send a self-contained
+# question through an LLM rewrite that returns it unchanged.
+_FOLLOWUP_MARKERS = (
+    "what about", "how about", "and ", "also", "same", "that", "those", "them", "it ",
+    "further", "again", "instead",
+    "ඒ ගැන", "තවත්", "ඒවා", "ඒක",
+)
+
+
+def _looks_like_followup(normalized_q: str) -> bool:
+    if len(normalized_q.split()) <= 6:
+        return True
+    return any(m in normalized_q for m in _FOLLOWUP_MARKERS)
+
+
+def _contextualize_question(question: str, conversation_history: list[dict] | None) -> str:
+    """Rewrite a follow-up ("what about payables?") into a self-contained question
+    using recent turns, so the existing keyword/PAL pipeline (unchanged) can route
+    and answer it normally. No-ops (returns `question` unchanged) whenever there's
+    no history or the question doesn't look like a follow-up — so callers that never
+    pass conversation_history (all existing tests) are completely unaffected."""
+    if not conversation_history:
+        return question
+    if not _looks_like_followup(dt.normalize_text(question)):
+        return question
+
+    history_text = "\n".join(
+        f"Q: {t.get('question', '')}\nA: {t.get('answer', '')}"
+        for t in conversation_history[-4:]
+    )
+    system = (
+        "Rewrite the user's latest question into one fully self-contained question, "
+        "using the conversation history only to resolve pronouns/short follow-up "
+        "references (e.g. 'what about payables' after a receivables question -> "
+        "'What is my total payable amount?'). If it's already self-contained, return "
+        "it unchanged. Reply with ONLY the rewritten question, nothing else."
+    )
+    prompt = f"Conversation history:\n{history_text}\n\nLatest question: {question}\n\nRewritten question:"
+    try:
+        rewritten = call_llm(prompt, system=system).strip().strip('"').strip()
+        return rewritten if rewritten else question
+    except Exception:
+        return question
+
+
 def _legacy_answer(
     question: str,
     company_name: str,
@@ -135,10 +191,34 @@ def _empty_scope_answer(message: str) -> dict:
     }
 
 
-def answer_financial_question(question: str, company_name: str, user_id: str) -> dict:
+def answer_financial_question(
+    question: str,
+    company_name: str,
+    user_id: str,
+    conversation_history: list[dict] | None = None,
+) -> dict:
     # Apply Sinhala/typo normalization before routing (same as analyze_financial_query)
     _corrected, _ = dt.spell_correct_query(question)
     _normalized = dt.normalize_query(_corrected)
+
+    # Advice-seeking questions ("how can I manage my budget") are a distinct class
+    # from factual lookups/aggregations — answer them via the financial advisor,
+    # grounded in the user's live data, instead of routing into PAL/legacy. A
+    # plain reply to the advisor's own clarifying question (e.g. "my expenses
+    # are rent 50000...") doesn't look advice-seeking on its own, so also stay
+    # on this path when the previous turn was itself advisory.
+    if dt._is_advice_question(_normalized) or continues_advisory_conversation(conversation_history):
+        return generate_financial_advice(question, company_name, user_id, conversation_history)
+
+    # Factual follow-ups ("what about payables?") get rewritten into a
+    # self-contained question using recent turns, then re-routed through the
+    # unchanged keyword/PAL pipeline below. No-ops when there's no history.
+    contextualized = _contextualize_question(question, conversation_history)
+    if contextualized != question:
+        question = contextualized
+        _corrected, _ = dt.spell_correct_query(question)
+        _normalized = dt.normalize_query(_corrected)
+
     question_type = dt.route_question(_normalized)
 
     # Prefer PAL for income/expense aggregations (e.g. "how much did we earn this
