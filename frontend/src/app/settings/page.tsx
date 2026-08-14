@@ -197,6 +197,17 @@ export default function SettingsPage() {
 
   const update = (key: keyof ProfileData, val: string | boolean) => setForm(p => ({ ...p, [key]: val }));
 
+  const handleSaveLanguage = async (next: AppLanguage) => {
+    const token = getStoredToken();
+    try {
+      await fetch("/api/profile", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+        body: JSON.stringify({ ...form, primaryLanguage: next }),
+      });
+    } catch {}
+  };
+
   const handleSave = async () => {
     setSaving(true); setMessage("");
     const token = getStoredToken();
@@ -550,7 +561,13 @@ export default function SettingsPage() {
                   <div className="flex w-full items-center justify-between gap-4 px-5 py-4">
                     <p className="text-[13px] text-[var(--text-1)]">{t.primaryLanguage}</p>
                     <select value={form.primaryLanguage}
-                      onChange={e => { update("primaryLanguage",e.target.value); setLang(e.target.value as AppLanguage); setStoredLanguage(e.target.value as AppLanguage); handleSave(); }}
+                      onChange={e => {
+                        const next = e.target.value as AppLanguage;
+                        setLang(next);
+                        setStoredLanguage(next);
+                        setForm(p => ({ ...p, primaryLanguage: next }));
+                        handleSaveLanguage(next);
+                      }}
                       className="rounded-xl border px-3 py-1.5 text-[13px]" style={{ background:"var(--bg)", borderColor:"var(--border)", color:"var(--text-1)" }}>
                       <option value="en">English</option>
                       <option value="si">සිංහල</option>

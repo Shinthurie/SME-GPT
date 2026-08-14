@@ -1,7 +1,7 @@
 "use client";
 
 // Renders the themed dialog for confirmDialog() / noticeDialog() (see
-// lib/confirm.ts). Mounted once in the root layout, next to BulkProcessingWidget.
+// lib/confirm.ts). Mounted once in the root layout.
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { _registerConfirmHost, ConfirmRequest } from "@/lib/confirm";

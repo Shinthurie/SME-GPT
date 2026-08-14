@@ -139,6 +139,141 @@ def filter_user_context(df: pd.DataFrame, user_id: str):
     return df[df["user_id"].astype(str) == str(user_id)].copy()
 
 
+# ── Financial advisor support ────────────────────────────────────────────────
+# Note: the agentic engine (backend/agent/) handles advisory-style questions
+# via its general tool-calling loop instead of a dedicated snapshot function.
+# This path serves the same purpose for the still-default /ask-query engine
+# (pal_qa.py), which has no equivalent grounded-advice capability of its own.
+
+_ADVICE_TRIGGER_PHRASES = (
+    "how can i", "how do i", "how should i", "how can we", "how do we", "how should we",
+    "how to", "any tips", "give me tips", "give me advice", "any advice", "recommend",
+    "what should i do", "what can i do", "best way to", "bring down", "cut down",
+    "improve my", "improve our", "manage my", "manage our", "reduce my", "reduce our",
+    "lower my", "lower our", "strategy for", "strategies for",
+    # Sinhala equivalents (common phrasing for advice-seeking)
+    "කොහොමද අඩු කරන්නේ", "කළමනාකරණය කරන්නේ කොහොමද", "උපදෙස්", "වැඩිදියුණු කරන්නේ",
+)
+
+_ADVICE_FINANCE_NOUNS = (
+    "budget", "receivable", "payable", "cash flow", "cashflow", "expense", "expenses",
+    "debt", "spending", "spend", "saving", "savings", "profit", "revenue", "finance",
+    "finances", "financial", "invoice", "invoices", "payment", "payments",
+    "අයවැය", "ලැබිය යුතු", "ගෙවිය යුතු", "වියදම",
+)
+
+# Planning requests ("help me plan next month") are advice-seeking on their own,
+# without needing a separate finance-noun match — "plan a month" doesn't contain
+# any of the nouns above but is unambiguously a planning request in this app.
+_PLANNING_TRIGGER_PHRASES = (
+    "help me plan", "help plan", "plan for", "planning for", "let's plan", "lets plan",
+    "make a plan", "create a plan", "financial plan", "budget plan", "help me budget",
+    "plan my", "plan next month", "plan for next month", "help me manage",
+    "සැලසුම් කරන්න", "මාසේ සැලසුම",
+)
+
+
+def _is_advice_question(normalized_q: str) -> bool:
+    """True for advice-seeking questions ("how can I manage my budget") as opposed
+    to factual lookups ("what is my total receivable"). Liberal on purpose: a false
+    positive still gets answered correctly by the advisor (which also reports the
+    real numbers), unlike misrouting a factual question into the arithmetic engine."""
+    q = normalized_q.lower()
+    if any(p in q for p in _PLANNING_TRIGGER_PHRASES):
+        return True
+    has_trigger = any(p in q for p in _ADVICE_TRIGGER_PHRASES)
+    has_finance_noun = any(n in q for n in _ADVICE_FINANCE_NOUNS)
+    return has_trigger and has_finance_noun
+
+
+def get_financial_snapshot(user_id: str, company_name: str) -> dict:
+    """Live financial snapshot for the advisor to ground its answer in real numbers:
+    totals, top open receivables/payables, this-month-vs-last-month net trend, and
+    the user's saved budget targets."""
+    df = load_dataset(user_id=user_id)
+    df = filter_user_context(df, user_id=user_id)
+    if company_name:
+        cn = normalize_text(company_name)
+        df = df[df["company_name"].apply(lambda v: normalize_text(v) == cn)]
+
+    total_receivable = 0.0
+    total_payable = 0.0
+    open_receivables = []
+    open_payables = []
+
+    for _, row in df.iterrows():
+        flow = normalize_flow(row.get("flow_type"))
+        amount = preferred_amount(row)
+        paid = str(row.get("paid_status", "")).strip().lower()
+        received = str(row.get("received_status", "")).strip().lower()
+        entry = {
+            "document_id": row.get("document_id", "NULL"),
+            "supplier_name": row.get("supplier_name", "NULL"),
+            "amount": amount,
+            "date": row.get("date", "NULL"),
+        }
+        if flow == "receivable" and received != "received":
+            total_receivable += amount
+            open_receivables.append(entry)
+        elif flow == "payable" and paid != "paid":
+            total_payable += amount
+            open_payables.append(entry)
+
+    open_receivables = sorted(open_receivables, key=lambda x: -x["amount"])[:5]
+    open_payables = sorted(open_payables, key=lambda x: -x["amount"])[:5]
+
+    # This-month vs last-month net (income minus expense), for trend context.
+    today = date.today()
+    this_month = today.strftime("%Y-%m")
+    last_month_date = (today.replace(day=1) - timedelta(days=1))
+    last_month = last_month_date.strftime("%Y-%m")
+
+    def _month_net(month_key: str) -> float:
+        net = 0.0
+        for _, row in df.iterrows():
+            d = _parse_date_for_filter(row.get("date"))
+            if d is None or d.strftime("%Y-%m") != month_key:
+                continue
+            flow = normalize_flow(row.get("flow_type"))
+            amount = preferred_amount(row)
+            if flow in ("receivable", "cash_inflow"):
+                net += amount
+            elif flow in ("payable", "cash_outflow"):
+                net -= amount
+        return round(net, 2)
+
+    net_this_month = _month_net(this_month)
+    net_last_month = _month_net(last_month)
+
+    budgets = {}
+    try:
+        from db import get_conn
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    'SELECT content FROM "ActivityLog" WHERE "userId"=%s AND type=%s '
+                    'ORDER BY "createdAt" DESC LIMIT 1',
+                    (str(user_id), "BUDGET_SETTINGS")
+                )
+                row = cur.fetchone()
+        if row:
+            content = row.get("content") if isinstance(row, dict) else row[0]
+            budgets = json.loads(content) if content else {}
+    except Exception:
+        budgets = {}
+
+    return {
+        "total_receivable_amount": round(total_receivable, 2),
+        "total_payable_amount": round(total_payable, 2),
+        "open_receivables": open_receivables,
+        "open_payables": open_payables,
+        "net_this_month": net_this_month,
+        "net_last_month": net_last_month,
+        "budgets": budgets,
+        "document_count": len(df),
+    }
+
+
 def filter_company_context(df: pd.DataFrame, company_name: str):
     target = normalize_text(company_name)
     if not target:
@@ -302,6 +437,17 @@ _SINHALA_VERB_MAP = {
     "overdue": "overdue",
     "ලැබිය යුතු": "receivable",
     "ගෙවිය යුතු": "payable",
+    # Finance nouns (totals/aggregates) — closes the gap where a question like
+    # "මගේ මුළු ලැබීම් කීයද?" (what is my total receivable?) had no English
+    # financial keyword left after normalization and fell through to the
+    # generic "summary" intent instead of a real answer.
+    "මුළු ලැබීම්": "total receivable",
+    "මුළු ආදායම": "total income",
+    "ආදායම": "income",
+    "මුළු වියදම": "total expenses",
+    "වියදම": "expense",
+    "මුළු ගෙවීම්": "total payable",
+    "ශේෂය": "balance",
     "suppliersලාට ගෙවන්න": "owe supplier",
     "customersලා අපිට": "customers owe us",
     "ගෙවන්න තියෙන customerලා": "customers who haven't paid",

@@ -11,6 +11,7 @@ import Image from "next/image";
 import { AppLanguage, getStoredLanguage, ui } from "@/lib/i18n";
 import { hasUnreadNotifications } from "@/lib/notifications";
 import { syncOverdueAlerts } from "@/lib/overdueAlerts";
+import { syncCashFlowAlerts } from "@/lib/cashFlowAlerts";
 import { formatMoney, otherPartyName } from "@/lib/format";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
@@ -179,6 +180,9 @@ export default function DashboardPage() {
         // IT-23: surface overdue payables/receivables as notifications.
         void syncOverdueAlerts(token);
 
+        // Surface cash-flow-health alerts (negative/declining net cash flow).
+        void syncCashFlowAlerts(token);
+
         // IT-20: fetch 6-month cash flow for the bar chart
         fetch(`${BACKEND_URL}/cash-flow?months=6`, {
           headers: { Authorization: `Bearer ${token}` }, cache: "no-store",
@@ -333,7 +337,6 @@ export default function DashboardPage() {
               { label: lang === "si" ? "ලාභ/පාඩු" : "P&L Report",       icon: "trending_up",  path: "/reports/pnl",      color: "#2252b5" },
               { label: lang === "si" ? "ගෙවිය යුතු ශේෂ" : "Outstanding Payments", icon: "payments", path: "/reports/payables", color: "#dc2626" },
               { label: lang === "si" ? "සැපයුම්කරුවන්" : "Suppliers", icon: "contacts", path: "/suppliers", color: "#16a34a" },
-              { label: lang === "si" ? "ශ්‍රේණිගත" : "Bulk Upload",    icon: "file_copy",  path: "/bulk-upload",    color: "#ea6c0a" },
               { label: lang === "si" ? "අතින් ලේඛනය" : "Manual Entry", icon: "edit_note",  path: "/manual-entry",   color: "#64748b" },
             ].map(({ label, icon, path, color }) => (
               <button key={path} onClick={() => router.push(path)}

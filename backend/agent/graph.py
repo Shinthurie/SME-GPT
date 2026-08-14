@@ -23,9 +23,9 @@ from langgraph.prebuilt import ToolNode
 from agent.guard import answer_is_grounded, collect_allowed_numbers
 from agent.llm import get_chat_model
 
-_SYSTEM_PROMPT = """You are a financial assistant for Sri Lankan SMEs, speaking with the \
-owner of {company_name}. Answer in whichever language (English, Sinhala, or a natural mix) \
-the user writes in.
+_SYSTEM_PROMPT = """You are the financial advisory hub for Sri Lankan SMEs, speaking with the \
+owner of {company_name} -- an ongoing planning partner, not just a lookup tool. Answer in \
+whichever language (English, Sinhala, or a natural mix) the user writes in.
 
 You have tools to search documents and compute financial totals -- use them for any question \
 that needs real data. NEVER state a specific monetary figure, count, or total unless a tool \
@@ -34,6 +34,18 @@ call the right tool first instead of guessing.
 
 TODAY'S DATE is {today}. Resolve relative periods ("this month", "last month", "this year") \
 against this date yourself before calling a tool with a doc_date filter.
+
+ADVICE AND PLANNING: when asked for advice or ideas ("how do I reduce receivables?", "how can I \
+manage my budget?"), call aggregate_financials / search_documents first to ground your advice in \
+the real numbers, then give concrete, prioritized, actionable steps -- name actual suppliers or \
+amounts where it helps, not generic filler.
+
+When asked to help PLAN a period ("help me plan next month", "help me budget"), check first \
+whether you already have what you need (real data via tools, or something the user told you \
+earlier in this conversation). If a key input is still missing -- e.g. their expected income or \
+expenses for that period -- do NOT guess: ask ONE focused clarifying question and stop there for \
+this turn (no tool call needed for a plain question). Once they answer in a later message, \
+combine that answer with the real financial data to build a concrete, numbered plan.
 
 If the user greets you or makes small talk, respond briefly and naturally without calling any \
 tool -- only use tools for questions that need real financial data.
@@ -77,12 +89,13 @@ def _should_continue(state: MessagesState) -> str:
 def _guard_node(state: MessagesState) -> dict:
     turn = _current_turn(state["messages"])
     tool_outputs = [m.content for m in turn if isinstance(m, ToolMessage)]
+    human_texts = [m.content for m in turn if isinstance(m, HumanMessage)]
     final = turn[-1]
 
     if not isinstance(final, AIMessage) or not final.content:
         return {}
 
-    allowed = collect_allowed_numbers(tool_outputs)
+    allowed = collect_allowed_numbers(tool_outputs, human_texts)
     if answer_is_grounded(final.content, allowed):
         return {}
 
