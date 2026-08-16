@@ -17,6 +17,7 @@ import { confirmDialog } from "@/lib/confirm";
 import { formatMoney, otherPartyName } from "@/lib/format";
 import { humanizeFlow } from "@/lib/humanize";
 import { resolveBackendUrl } from "@/lib/backendUrl";
+import Markdown from "@/components/ui/Markdown";
 
 const BACKEND_URL = resolveBackendUrl();
 
@@ -608,7 +609,7 @@ export default function AiAssistantChatPage() {
               {messages.map((m) => (
                 <div key={m.id} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
                   <div className={`max-w-[85%] ${m.role === "user" ? "" : "w-full"}`}>
-                    <div className="whitespace-pre-line rounded-2xl px-4 py-3 text-[14px] leading-6"
+                    <div className={`rounded-2xl px-4 py-3 text-[14px] leading-6 ${m.role === "user" || m.isError ? "whitespace-pre-line" : ""}`}
                       style={
                         m.role === "user"
                           ? { background: "var(--brand)", color: "#fff" }
@@ -616,7 +617,9 @@ export default function AiAssistantChatPage() {
                           ? { background: "rgba(220,38,38,0.08)", border: "1px solid rgba(220,38,38,0.2)", color: "#dc2626" }
                           : { background: "var(--surface)", border: "1px solid var(--border)", color: "var(--text-1)" }
                       }>
-                      {m.content}
+                      {m.role === "assistant" && !m.isError
+                        ? <Markdown text={m.content} />
+                        : m.content}
                     </div>
 
                     {m.role === "assistant" && (
