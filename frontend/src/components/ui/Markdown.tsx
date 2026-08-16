@@ -2,8 +2,11 @@ import React from "react";
 
 // A small, dependency-free markdown renderer for chat/answer text. Handles the
 // subset the LLM actually produces — **bold**, *italic*, `code`, headings,
-// unordered/ordered lists, --- rules, and blank-line-separated paragraphs — so
-// the answers read like a chat app instead of showing raw ** and ---.
+// unordered/ordered lists, --- rules, and blank-line-separated paragraphs.
+//
+// Optionally, names in `entities` are turned into tappable grey "pills"
+// (onEntityClick) even when they appear inside bold — used to make supplier /
+// customer names in a chat answer open their transaction history.
 
 const HR = /^\s*(-{3,}|\*{3,}|_{3,})\s*$/;
 const H = /^\s*(#{1,6})\s+(.*)$/;
@@ -11,14 +14,49 @@ const UL = /^\s*[-*+]\s+/;
 const OL = /^\s*\d+\.\s+/;
 const INLINE = /(\*\*[^*]+\*\*|`[^`]+`|\*[^*\s][^*]*\*)/g;
 
-function renderInline(text: string, k: string): React.ReactNode[] {
+type Ctx = { re: RegExp | null; onClick?: (name: string) => void };
+
+function EntityPill({ name, onClick }: { name: string; onClick?: (n: string) => void }) {
+  return (
+    <button
+      type="button"
+      onClick={() => onClick?.(name)}
+      className="mx-[1px] inline-flex items-center gap-1 rounded-md px-1.5 py-[1px] align-baseline text-[0.9em] font-medium transition hover:opacity-80"
+      style={{ background: "var(--surface-2)", border: "1px solid var(--border)", color: "var(--text-1)" }}
+    >
+      <span className="material-symbols-outlined text-[13px]" style={{ color: "var(--text-3)" }} aria-hidden="true">
+        storefront
+      </span>
+      {name}
+    </button>
+  );
+}
+
+// Split a plain-text run on known entity names, wrapping matches in pills.
+function renderText(text: string, k: string, ctx: Ctx): React.ReactNode[] {
+  if (!ctx.re) return [text];
+  const out: React.ReactNode[] = [];
+  let last = 0, i = 0, m: RegExpExecArray | null;
+  ctx.re.lastIndex = 0;
+  while ((m = ctx.re.exec(text)) !== null) {
+    if (m.index > last) out.push(text.slice(last, m.index));
+    out.push(<EntityPill key={`${k}e${i}`} name={m[0]} onClick={ctx.onClick} />);
+    last = m.index + m[0].length;
+    i++;
+    if (m.index === ctx.re.lastIndex) ctx.re.lastIndex++; // guard against zero-length loop
+  }
+  if (last < text.length) out.push(text.slice(last));
+  return out;
+}
+
+function renderInline(text: string, k: string, ctx: Ctx): React.ReactNode[] {
   const out: React.ReactNode[] = [];
   let last = 0, i = 0, m: RegExpExecArray | null;
   INLINE.lastIndex = 0;
   while ((m = INLINE.exec(text)) !== null) {
-    if (m.index > last) out.push(text.slice(last, m.index));
+    if (m.index > last) out.push(...renderText(text.slice(last, m.index), `${k}t${i}`, ctx));
     const tok = m[0];
-    if (tok.startsWith("**")) out.push(<strong key={`${k}b${i}`}>{tok.slice(2, -2)}</strong>);
+    if (tok.startsWith("**")) out.push(<strong key={`${k}b${i}`}>{renderText(tok.slice(2, -2), `${k}bb${i}`, ctx)}</strong>);
     else if (tok.startsWith("`"))
       out.push(
         <code key={`${k}c${i}`} className="rounded px-1 py-0.5 text-[0.86em]"
@@ -26,21 +64,37 @@ function renderInline(text: string, k: string): React.ReactNode[] {
           {tok.slice(1, -1)}
         </code>,
       );
-    else out.push(<em key={`${k}i${i}`}>{tok.slice(1, -1)}</em>);
+    else out.push(<em key={`${k}i${i}`}>{renderText(tok.slice(1, -1), `${k}ii${i}`, ctx)}</em>);
     last = m.index + tok.length;
     i++;
   }
-  if (last < text.length) out.push(text.slice(last));
+  if (last < text.length) out.push(...renderText(text.slice(last), `${k}tz`, ctx));
   return out;
 }
 
-export default function Markdown({ text }: { text: string }) {
+export default function Markdown({
+  text, entities, onEntityClick,
+}: {
+  text: string;
+  entities?: string[];
+  onEntityClick?: (name: string) => void;
+}) {
+  // Build the entity matcher (longest names first so "Silva Traders" wins over
+  // "Silva"). Skip very short names to avoid noise. Rebuilt per render — cheap.
+  const names = (entities || []).filter((n) => n && n.trim().length >= 3);
+  const re = names.length
+    ? new RegExp(
+        "(" + names.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).sort((a, b) => b.length - a.length).join("|") + ")",
+        "g",
+      )
+    : null;
+  const ctx: Ctx = { re, onClick: onEntityClick };
+
   const lines = (text || "").replace(/\r\n/g, "\n").split("\n");
   const blocks: React.ReactNode[] = [];
   let i = 0, key = 0;
 
-  const isSpecial = (ln: string) =>
-    HR.test(ln) || H.test(ln) || UL.test(ln) || OL.test(ln);
+  const isSpecial = (ln: string) => HR.test(ln) || H.test(ln) || UL.test(ln) || OL.test(ln);
 
   while (i < lines.length) {
     const line = lines[i];
@@ -55,7 +109,7 @@ export default function Markdown({ text }: { text: string }) {
     if (h) {
       blocks.push(
         <p key={key++} className="mt-1 font-bold" style={{ fontSize: h[1].length <= 2 ? "1.05em" : "1em" }}>
-          {renderInline(h[2], `h${key}`)}
+          {renderInline(h[2], `h${key}`, ctx)}
         </p>,
       );
       i++; continue;
@@ -64,7 +118,7 @@ export default function Markdown({ text }: { text: string }) {
     if (UL.test(line)) {
       const items: React.ReactNode[] = [];
       while (i < lines.length && UL.test(lines[i])) {
-        items.push(<li key={`${key}li${i}`}>{renderInline(lines[i].replace(UL, ""), `${key}l${i}`)}</li>);
+        items.push(<li key={`${key}li${i}`}>{renderInline(lines[i].replace(UL, ""), `${key}l${i}`, ctx)}</li>);
         i++;
       }
       blocks.push(<ul key={key++} className="list-disc space-y-1 pl-5">{items}</ul>);
@@ -74,14 +128,13 @@ export default function Markdown({ text }: { text: string }) {
     if (OL.test(line)) {
       const items: React.ReactNode[] = [];
       while (i < lines.length && OL.test(lines[i])) {
-        items.push(<li key={`${key}li${i}`}>{renderInline(lines[i].replace(OL, ""), `${key}o${i}`)}</li>);
+        items.push(<li key={`${key}li${i}`}>{renderInline(lines[i].replace(OL, ""), `${key}o${i}`, ctx)}</li>);
         i++;
       }
       blocks.push(<ol key={key++} className="list-decimal space-y-1 pl-5">{items}</ol>);
       continue;
     }
 
-    // Paragraph: consecutive plain lines, internal newlines kept as <br>.
     const para: string[] = [];
     while (i < lines.length && lines[i].trim() && !isSpecial(lines[i])) {
       para.push(lines[i]);
@@ -90,7 +143,7 @@ export default function Markdown({ text }: { text: string }) {
     const nodes: React.ReactNode[] = [];
     para.forEach((p, idx) => {
       if (idx > 0) nodes.push(<br key={`${key}br${idx}`} />);
-      nodes.push(...renderInline(p, `${key}p${idx}`));
+      nodes.push(...renderInline(p, `${key}p${idx}`, ctx));
     });
     blocks.push(<p key={key++}>{nodes}</p>);
   }
