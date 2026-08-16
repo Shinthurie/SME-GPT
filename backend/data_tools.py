@@ -453,6 +453,16 @@ _SINHALA_VERB_MAP = {
     "ගෙවන්න තියෙන customerලා": "customers who haven't paid",
     "ගෙවලා නැති customerලා": "customers who haven't paid",
     "සල්ලි ගෙවලාද": "paid us",
+    # Supplier/customer balance lookups phrased with a specific name — these used
+    # to fall through to a document count. Word order disambiguates direction:
+    #   "මට X ට කීයක් ගෙවන්න තියෙනවද"  = how much do I owe X  -> supplier
+    #   "X මට කීයක් ගෙවන්න තියෙනවද"    = how much does X owe me -> customer
+    # The longer "මට කීයක්…" phrase is matched first (longest-match), so only the
+    # subject-first form ("X මට …") routes to the customer side.
+    "මට කීයක් ගෙවන්න තියෙනවද": "customer owes me how much",
+    "ට කීයක් ගෙවන්න තියෙනවද": "owe supplier how much",
+    "ගෙන් කීයක් ලැබිය යුතුද": "customer owes me how much receivable",
+    "ගෙන් කීයක් ලැබිය යුතු": "customer owes me how much receivable",
 }
 
 
