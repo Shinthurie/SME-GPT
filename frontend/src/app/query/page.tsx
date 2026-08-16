@@ -18,6 +18,7 @@ import { formatMoney, otherPartyName } from "@/lib/format";
 import { humanizeFlow } from "@/lib/humanize";
 import { resolveBackendUrl } from "@/lib/backendUrl";
 import Markdown from "@/components/ui/Markdown";
+import SupplierHistoryDrawer from "@/components/ui/SupplierHistoryDrawer";
 
 const BACKEND_URL = resolveBackendUrl();
 
@@ -124,6 +125,10 @@ export default function AiAssistantChatPage() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [docScope, setDocScope] = useState<DocScope | null>(null);
   const [docImageExpanded, setDocImageExpanded] = useState(false);
+  // Supplier/customer names, used to turn mentions in an answer into tappable
+  // pills that open that counterparty's transaction history.
+  const [supplierNames, setSupplierNames] = useState<string[]>([]);
+  const [historyFor, setHistoryFor] = useState<string | null>(null);
 
   const t = ui[lang];
 
@@ -171,6 +176,17 @@ export default function AiAssistantChatPage() {
       if (s?.companyName) setCompanyName(s.companyName);
     });
     loadThreads();
+
+    // Load counterparty names once, so answers can linkify supplier mentions.
+    fetch(`${BACKEND_URL}/suppliers`, { headers: authHeaders() })
+      .then((r) => r.json())
+      .then((d) => {
+        const names = (d?.suppliers || d?.data || d || [])
+          .map((s: { name?: string }) => s?.name)
+          .filter((n: unknown): n is string => typeof n === "string" && n.trim().length >= 3);
+        setSupplierNames(names);
+      })
+      .catch(() => {});
 
     // Opened from "Ask about this document" (/query?doc=IN11): start a fresh,
     // document-scoped conversation.
@@ -618,7 +634,7 @@ export default function AiAssistantChatPage() {
                           : { background: "var(--surface)", border: "1px solid var(--border)", color: "var(--text-1)" }
                       }>
                       {m.role === "assistant" && !m.isError
-                        ? <Markdown text={m.content} />
+                        ? <Markdown text={m.content} entities={supplierNames} onEntityClick={setHistoryFor} />
                         : m.content}
                     </div>
 
@@ -769,6 +785,10 @@ export default function AiAssistantChatPage() {
       </div>
 
       <BottomNav />
+
+      {historyFor && (
+        <SupplierHistoryDrawer name={historyFor} lang={lang} onClose={() => setHistoryFor(null)} />
+      )}
     </MobileShell>
   );
 }
