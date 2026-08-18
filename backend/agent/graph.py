@@ -99,9 +99,14 @@ def _guard_node(state: MessagesState) -> dict:
     if answer_is_grounded(final.content, allowed):
         return {}
 
+    # Never dump raw tool JSON into the chat bubble — the exact figures the tools
+    # returned are already surfaced in the "How I worked this out" trace and the
+    # Sources panel. The bubble stays a clean, honest sentence pointing there.
     fallback = (
-        "I want to avoid stating a number I haven't actually verified. Here is the raw "
-        "result from the tools I used: " + "; ".join(str(o)[:300] for o in tool_outputs[-2:])
+        "I pulled the figures but couldn't fully verify the answer I was about to "
+        "give, so I'd rather not state a number I'm unsure of. You can see exactly "
+        "what my tools returned under “How I worked this out” below — or "
+        "ask me to try again."
     ) if tool_outputs else (
         "I couldn't ground that answer in verified data — could you rephrase your question?"
     )
