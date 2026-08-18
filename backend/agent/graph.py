@@ -88,12 +88,19 @@ def _should_continue(state: MessagesState) -> str:
 
 def _guard_node(state: MessagesState) -> dict:
     turn = _current_turn(state["messages"])
-    tool_outputs = [m.content for m in turn if isinstance(m, ToolMessage)]
-    human_texts = [m.content for m in turn if isinstance(m, HumanMessage)]
     final = turn[-1]
 
     if not isinstance(final, AIMessage) or not final.content:
         return {}
+
+    # Ground against every figure the tools produced across the WHOLE
+    # conversation, not just this turn. Restating a total that a tool computed a
+    # few turns ago (e.g. "of that LKR 541,750, break it down…") is legitimate
+    # continuity, not a fabricated number — grounding only against the current
+    # turn's tools was flagging those as unverified and blanking good answers.
+    all_msgs = state["messages"]
+    tool_outputs = [m.content for m in all_msgs if isinstance(m, ToolMessage)]
+    human_texts = [m.content for m in all_msgs if isinstance(m, HumanMessage)]
 
     allowed = collect_allowed_numbers(tool_outputs, human_texts)
     if answer_is_grounded(final.content, allowed):
