@@ -23,18 +23,34 @@ from __future__ import annotations
 
 from typing import Optional
 
-# DN status vocab (see CLAUDE.md "Database Schema"): only these two count as
-# progress toward delivery. pending / delayed / failed / returned are NOT
-# deliveries and leave the PO where it is.
-_DN_DELIVERED = "delivered"
-_DN_PARTIAL = "partially_delivered"
-
 # Manually-set terminal PO states the cascade must never clobber.
 _PO_TERMINAL = {"rejected", "cancelled"}
+
+# A DN's delivery is expressed two ways depending on how it was set: the
+# extraction pipeline derives `dn_status` (delivered / partially_delivered),
+# while the analysis-page Edit form (the only user-facing control) sets the DN's
+# `received_status` to "delivered"/"not_delivered" and does NOT re-derive
+# dn_status. Reconciliation therefore has to read BOTH so a user marking a DN
+# delivered actually cascades to its PO.
+_DELIVERED_TOKENS = {"delivered", "received"}
+_PARTIAL_TOKENS = {"partially_delivered", "partial", "partially_received"}
 
 
 def _norm(value) -> str:
     return str(value or "").strip().lower()
+
+
+def _dn_delivery(dn: dict) -> str:
+    """A Delivery Note's progress: 'delivered' | 'partial' | 'none'.
+    Reads dn_status first (pipeline-derived) then falls back to received_status
+    (what the Edit form sets)."""
+    for field in ("dn_status", "received_status"):
+        v = _norm(dn.get(field))
+        if v in _DELIVERED_TOKENS:
+            return "delivered"
+        if v in _PARTIAL_TOKENS:
+            return "partial"
+    return "none"
 
 
 def reconcile_po_status(po: dict, delivery_notes: list[dict]) -> Optional[str]:
@@ -56,11 +72,11 @@ def reconcile_po_status(po: dict, delivery_notes: list[dict]) -> Optional[str]:
     if not delivery_notes:
         return None
 
-    statuses = [_norm(dn.get("dn_status")) for dn in delivery_notes]
-    delivered = sum(1 for s in statuses if s == _DN_DELIVERED)
-    partial = sum(1 for s in statuses if s == _DN_PARTIAL)
+    progress = [_dn_delivery(dn) for dn in delivery_notes]
+    delivered = sum(1 for p in progress if p == "delivered")
+    partial = sum(1 for p in progress if p == "partial")
 
-    if delivered == len(statuses):
+    if delivered == len(progress):
         new_status = "fulfilled"
     elif delivered or partial:
         new_status = "partially_delivered"
@@ -98,10 +114,10 @@ def _delivery_stage(dns: list[dict]) -> str:
     """'none' | 'partial' | 'full' — the order's overall delivery progress."""
     if not dns:
         return "none"
-    statuses = [_norm(dn.get("dn_status")) for dn in dns]
-    delivered = sum(1 for s in statuses if s == _DN_DELIVERED)
-    partial = sum(1 for s in statuses if s == _DN_PARTIAL)
-    if delivered == len(statuses):
+    progress = [_dn_delivery(dn) for dn in dns]
+    delivered = sum(1 for p in progress if p == "delivered")
+    partial = sum(1 for p in progress if p == "partial")
+    if delivered == len(progress):
         return "full"
     if delivered or partial:
         return "partial"

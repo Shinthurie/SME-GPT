@@ -59,6 +59,21 @@ def test_payment_does_not_affect_fulfilment():
     assert reconcile_po_status(_po("approved"), dns) == "fulfilled"
 
 
+def test_dn_delivered_via_received_status_field():
+    # The Edit form sets received_status (not dn_status) on a DN, and PUT does
+    # not re-derive dn_status — so reconciliation must honour received_status.
+    dn = {"document_id": "DN1", "document_type": "dn",
+          "dn_status": "pending", "received_status": "delivered", "order_id": "ORD-1"}
+    assert reconcile_po_status(_po("approved"), [dn]) == "fulfilled"
+
+
+def test_dn_status_takes_precedence_over_received_status():
+    # Pipeline-derived dn_status wins when present.
+    dn = {"document_id": "DN1", "document_type": "dn",
+          "dn_status": "partially_delivered", "received_status": "delivered"}
+    assert reconcile_po_status(_po("pending"), [dn]) == "partially_delivered"
+
+
 # ── build_order_view (with a stubbed loader) ──────────────────────────────────
 
 def test_build_order_view_composes_and_reconciles(monkeypatch):
