@@ -5,12 +5,13 @@ import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { AppLanguage, getStoredLanguage, ui } from "@/lib/i18n";
 import { useTabSwipe } from "@/lib/useTabSwipe";
+import { getSession, peekSession } from "@/lib/auth";
 
 export default function BottomNav() {
   const pathname = usePathname();
   const navRef = useRef<HTMLElement | null>(null);
   const [lang, setLang] = useState<AppLanguage>("en");
-  const [isAdmin, setIsAdmin] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(() => peekSession()?.role === "admin");
 
   // Publish the nav's real rendered height as --bottom-nav-measured so no page
   // has to hardcode "the nav is 64px tall". It genuinely varies: the admin role
@@ -36,9 +37,11 @@ export default function BottomNav() {
 
   useEffect(() => {
     setLang(getStoredLanguage());
-    fetch("/api/auth/me", { cache: "no-store" })
-      .then((res) => res.json())
-      .then((data) => setIsAdmin(data?.user?.role === "admin"))
+    // Goes through the shared session cache rather than calling /api/auth/me
+    // directly: the nav remounts on every navigation, and this was a second
+    // round trip per page on top of the one the page itself was making.
+    getSession()
+      .then((s) => setIsAdmin(s?.role === "admin"))
       .catch(() => {});
   }, []);
 
