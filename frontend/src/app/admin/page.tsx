@@ -6,6 +6,7 @@ import MobileShell from "@/components/layout/MobileShell";
 import BottomNav from "@/components/layout/BottomNav";
 import LanguageSwitcher from "@/components/layout/LanguageSwitcher";
 import { getSession } from "@/lib/auth";
+import { Skeleton, PageBodySkeleton } from "@/components/ui/Skeleton";
 import { AppLanguage, getStoredLanguage, ui } from "@/lib/i18n";
 
 type AdminUser = {
@@ -58,9 +59,9 @@ export default function AdminPage() {
         router.push("/login");
         return;
       }
-      const res = await fetch("/api/auth/me", { cache: "no-store" });
-      const data = await res.json().catch(() => ({}));
-      if (data?.user?.role !== "admin") {
+      // getSession() already carries the role — the second /api/auth/me call
+      // that used to be here was fetching data we were holding.
+      if (session.role !== "admin") {
         router.push("/dashboard");
         return;
       }
@@ -113,7 +114,22 @@ export default function AdminPage() {
     setUsers((prev) => prev.map((u) => (u.id === userId ? { ...u, role: data.user.role } : u)));
   };
 
-  if (checking || !authorized) return null;
+  // Never paint nothing. While the role check is in flight the page's own frame
+  // stays on screen with placeholder content, so arriving here doesn't flash the
+  // bare body background.
+  if (checking || !authorized) {
+    return (
+      <MobileShell>
+        <div className="pad-nav" style={{ background: "var(--bg)" }}>
+          <main className="mx-auto w-full max-w-[900px] px-4 py-6 sm:px-6">
+            <Skeleton className="mb-5 h-[26px] w-40" />
+            <PageBodySkeleton cards={3} />
+          </main>
+          <BottomNav />
+        </div>
+      </MobileShell>
+    );
+  }
 
   return (
     <MobileShell>

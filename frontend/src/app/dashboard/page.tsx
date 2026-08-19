@@ -6,13 +6,14 @@ import MobileShell from "@/components/layout/MobileShell";
 import LanguageSwitcher from "@/components/layout/LanguageSwitcher";
 import BottomNav from "@/components/layout/BottomNav";
 import ThemeToggle from "@/components/layout/ThemeToggle";
-import { getSession, logoutUser, SessionUser, getStoredToken } from "@/lib/auth";
+import { getSession, logoutUser, peekSession, SessionUser, getStoredToken } from "@/lib/auth";
 import Image from "next/image";
 import { AppLanguage, getStoredLanguage, ui } from "@/lib/i18n";
 import { hasUnreadNotifications } from "@/lib/notifications";
 import { syncOverdueAlerts } from "@/lib/overdueAlerts";
 import { syncCashFlowAlerts } from "@/lib/cashFlowAlerts";
 import { formatMoney, otherPartyName } from "@/lib/format";
+import { Skeleton } from "@/components/ui/Skeleton";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from "recharts";
@@ -133,7 +134,9 @@ function RecentDocSkeleton() {
 
 export default function DashboardPage() {
   const router = useRouter();
-  const [session, setSession] = useState<SessionUser | null>(null);
+  // Seeded from the tab-level session cache, so arriving from another tab
+  // renders the real header immediately instead of gating on a fetch.
+  const [session, setSession] = useState<SessionUser | null>(() => peekSession());
   const [lang, setLang] = useState<AppLanguage>("en");
   const [summary, setSummary] = useState<SummaryData | null>(null);
   const [error, setError] = useState("");
@@ -214,7 +217,6 @@ export default function DashboardPage() {
     };
   }, []);
 
-  if (!session) return null;
 
   const t = ui[lang];
   const recentDocs = summary?.recent_documents || [];
@@ -271,7 +273,11 @@ export default function DashboardPage() {
                 <h1 className="text-[17px] font-extrabold tracking-tight text-[var(--text-1)] sm:text-[19px]">
                   SME-GPT
                 </h1>
-                <p className="truncate text-[12px] text-[var(--text-2)]">{session.companyName}</p>
+                {session ? (
+                  <p className="truncate text-[12px] text-[var(--text-2)]">{session.companyName}</p>
+                ) : (
+                  <Skeleton className="mt-1 h-[12px] w-28" />
+                )}
               </div>
             </div>
 

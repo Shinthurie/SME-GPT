@@ -7,7 +7,8 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import PageShell from "@/components/layout/PageShell";
-import { getSession, logoutUser, SessionUser, getStoredToken } from "@/lib/auth";
+import { PageBodySkeleton } from "@/components/ui/Skeleton";
+import { getSession, logoutUser, peekSession, invalidateSession, SessionUser, getStoredToken } from "@/lib/auth";
 import { AppLanguage, getStoredLanguage, ui, setStoredLanguage } from "@/lib/i18n";
 import { useTheme } from "@/lib/theme";
 import { noticeDialog } from "@/lib/confirm";
@@ -120,7 +121,9 @@ export default function SettingsPage() {
   const router     = useRouter();
   const { theme, toggle: toggleTheme } = useTheme();
   const [lang, setLang]     = useState<AppLanguage>("en");
-  const [session, setSession] = useState<SessionUser | null>(null);
+  // Seeded from the tab-level cache: on a tab switch the session is already
+  // known, so the real page renders on the first paint with no skeleton at all.
+  const [session, setSession] = useState<SessionUser | null>(() => peekSession());
   const [tab, setTab]         = useState<Tab>("account");
   // Profile state
   const [form, setForm]           = useState<ProfileData>({ fullName:"", profileImage:"", companyName:"", businessUnit:"", primaryLanguage:"en", autoClassify:true, twoFactorEnabled:false, phone:"", jobTitle:"", country:"" });
@@ -201,6 +204,9 @@ export default function SettingsPage() {
     const token = getStoredToken();
     try {
       const res  = await fetch("/api/profile", { method:"PUT", headers:{"Content-Type":"application/json","Authorization":`Bearer ${token}`}, body:JSON.stringify(form) });
+      // The cached session holds fullName/companyName — drop it so the next
+      // read reflects what was just saved.
+      invalidateSession();
       const data = await res.json();
       if (!res.ok) { setMessage(data.error || "Save failed"); return; }
       setMessage("Profile updated");
@@ -379,7 +385,21 @@ export default function SettingsPage() {
     { key:"export",       icon:"download",     en:"Export",       si:"නිර්යාතය"      },
   ];
 
-  if (!session) return null;
+  // Cold load only (no cached session yet). Render the page's own shell with
+  // placeholder content rather than null — the header, title and bottom nav are
+  // on screen instantly, and only the body swaps in. Returning null here is
+  // what produced the black/white flash between tabs.
+  if (!session) {
+    return (
+      <PageShell
+        backLabel={t.backToDashboard}
+        title={lang === "si" ? "සැකසීම්" : "Settings"}
+        width="standard"
+      >
+        <PageBodySkeleton cards={3} />
+      </PageShell>
+    );
+  }
 
   return (
     <PageShell
