@@ -280,6 +280,14 @@ def ensure_query_history_table():
         source_file TEXT,
         created_at TIMESTAMP DEFAULT NOW()
     );
+    -- Scaling: every read of a user's history filters by user_id (often newest
+    -- first), so index it — without this the query seq-scans the whole table,
+    -- which grows with EVERY user's queries. Self-healing on startup so it
+    -- exists in all environments (mirrored by migration 011).
+    CREATE INDEX IF NOT EXISTS idx_query_history_user
+      ON query_history (user_id);
+    CREATE INDEX IF NOT EXISTS idx_query_history_user_created
+      ON query_history (user_id, created_at DESC);
     """
 
     with get_db_connection() as conn:
@@ -1146,6 +1154,32 @@ class UpdateDocumentRequest(BaseModel):
 # =========================
 # ROUTES
 # =========================
+@app.get("/healthz")
+def healthz():
+    """Liveness probe for a load balancer / orchestrator. Intentionally does NO
+    external I/O (no DB, no LLM) so it answers instantly and only means "this
+    process is up". Use /readyz to gate traffic and /health for diagnostics."""
+    return {"ok": True}
+
+
+@app.get("/readyz")
+def readyz():
+    """Readiness probe: is this instance able to serve requests right now? Checks
+    the one hard dependency every request needs — the database — with a cheap
+    SELECT 1 through the pool. Returns 503 (not 200) when the DB is unreachable
+    so the load balancer stops routing traffic to a broken instance instead of
+    serving errors. Does not touch the LLM (an LLM outage degrades gracefully;
+    it must not mark a healthy instance unready)."""
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT 1")
+                cur.fetchone()
+        return {"ready": True, "db": "ok"}
+    except Exception as err:
+        raise HTTPException(status_code=503, detail=f"database unavailable: {err}")
+
+
 @app.get("/health")
 def health():
     from llm_client import (
