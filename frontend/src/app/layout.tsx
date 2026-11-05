@@ -3,6 +3,7 @@ import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import PwaRegister from "@/components/PwaRegister";
 import ViewportManager from "@/components/layout/ViewportManager";
+import NavTracker from "@/components/layout/NavTracker";
 import ConfirmHost from "@/components/ui/ConfirmHost";
 
 const inter = Inter({ subsets: ["latin"] });
@@ -63,6 +64,12 @@ export default function RootLayout({
             __html: `try{var t=localStorage.getItem('theme');if(t==='dark'||(!t&&window.matchMedia('(prefers-color-scheme: dark)').matches)){document.documentElement.setAttribute('data-theme','dark');}}catch(e){}`,
           }}
         />
+        {/* Apply saved text size before first paint (values mirror lib/textSize.ts) */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `try{var z={compact:0.9,large:1.1,xlarge:1.2}[localStorage.getItem('text-size')];if(z){document.documentElement.style.setProperty('--ui-scale',String(z));}}catch(e){}`,
+          }}
+        />
         <link
           rel="stylesheet"
           href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0"
@@ -71,6 +78,7 @@ export default function RootLayout({
       <body className={inter.className}>
         <PwaRegister />
         <ViewportManager />
+        <NavTracker />
         {children}
         <ConfirmHost />
       </body>

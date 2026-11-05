@@ -237,6 +237,40 @@ def index_document(doc: dict, tenant_id: str) -> dict:
 
 # ── query APIs ────────────────────────────────────────────────────────────────
 
+def expand_related_docs_many(doc_ids: list[str], tenant_id: str) -> set[str]:
+    """Batched expand_related_docs: every doc reachable from ANY of doc_ids via
+    a DocLink edge (forward/reverse order_ref, or a shared vendor/customer
+    entity), in a single round trip.
+
+    The per-document version issues 3+ queries per document; resolve_scope_with_c4
+    called it in a loop over the whole document set on every agent tool call,
+    which cost ~0.4 s per document against a remote Postgres (4 s for 10 docs,
+    and growing linearly). Same edges, same result set (as a union).
+    """
+    ids = [str(d) for d in doc_ids if d]
+    if not ids:
+        return set()
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            'SELECT "toDocId" AS doc FROM "DocLink"'
+            ' WHERE "tenantId"=%(t)s AND "fromDocId" = ANY(%(ids)s) AND "toDocId" IS NOT NULL'
+            "  AND COALESCE(status, 'auto') <> 'rejected'"
+            ' UNION'
+            ' SELECT "fromDocId" AS doc FROM "DocLink"'
+            ' WHERE "tenantId"=%(t)s AND "toDocId" = ANY(%(ids)s)'
+            "  AND COALESCE(status, 'auto') <> 'rejected'"
+            ' UNION'
+            ' SELECT peer."fromDocId" AS doc FROM "DocLink" src'
+            ' JOIN "DocLink" peer ON peer."tenantId" = src."tenantId"'
+            '  AND peer."toEntityRef" = src."toEntityRef"'
+            ' WHERE src."tenantId"=%(t)s AND src."fromDocId" = ANY(%(ids)s)'
+            '  AND src."toEntityRef" IS NOT NULL',
+            {"t": tenant_id, "ids": ids},
+        )
+        return {r["doc"] for r in cur.fetchall() if r.get("doc")}
+
+
 def expand_related_docs(doc_id: str, tenant_id: str) -> list[str]:
     """Return application doc IDs reachable from doc_id via any DocLink edge.
 

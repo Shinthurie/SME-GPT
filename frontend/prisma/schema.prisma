@@ -118,6 +118,11 @@ model FinancialDocument {
   documentId         String
   documentType       String?
   orderId            String?
+  // Migration 012 — own number vs. references (PO -> DN -> Invoice -> Receipt linking)
+  docNumber          String?
+  poRef              String?
+  dnRef              String?
+  invoiceRef         String?
   flowType           String?
   effectiveFlowType  String?
   companyName        String?
@@ -225,6 +230,8 @@ model DocLink {
   toEntityRef String?
   toDocId     String?
   confidence  Float    @default(1.0)
+  // Migration 012 — auto | suggested | confirmed | rejected
+  status      String   @default("auto")
   evidence    Json?
   createdAt   DateTime @default(now())
 
