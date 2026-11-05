@@ -10,9 +10,10 @@ Per invoice:
     total vs paid (linked receipts, or the invoice marked paid by the user)
 
 Outputs the order's delivery / invoicing / payment stage, a plain-language
-issue list (English + Sinhala), and the status updates to persist. Status
-updates only ever move forward: a status the user set (paid, rejected,
-cancelled, ...) is never downgraded.
+issue list (English + Sinhala), and the status updates to persist. PO delivery
+status tracks the DNs marked delivered (up or down); payment statuses only move
+forward, and a status the user set (paid, rejected, cancelled, ...) is never
+downgraded.
 """
 from __future__ import annotations
 
@@ -107,11 +108,21 @@ def compute_order(docs: list[dict], links: list[dict]) -> dict:
         "invoice_unit_price": None, "_inv_value": 0.0,
     } for c in catalog]
 
+    # A DN only counts as delivered once it is MARKED delivered (dn_status or
+    # received_status). Its line items say what is being shipped, not what
+    # arrived, so a pending DN -- or one with no status yet -- contributes no
+    # delivered quantity. A partially-delivered DN can't say how much arrived,
+    # so it moves the order to "partial" without adding quantities.
+    from order_reconciliation import _dn_delivery
+    dn_progress = {dn["document_id"]: _dn_delivery(dn["record"]) for dn in dns}
+    any_partial_dn = any(p == "partial" for p in dn_progress.values())
+
     if catalog:
         for dn in dns:
             matched, extra = _assign_lines(dn["items"], catalog)
-            for i, ls in matched.items():
-                lines[i]["delivered"] += sum(l["qty"] for l in ls)
+            if dn_progress[dn["document_id"]] == "delivered":
+                for i, ls in matched.items():
+                    lines[i]["delivered"] += sum(l["qty"] for l in ls)
             if pos:
                 for l in extra:
                     issues.append(_issue(
@@ -189,7 +200,8 @@ def compute_order(docs: list[dict], links: list[dict]) -> dict:
     if not dns:
         delivery_stage = "none"
     elif qty_lines and any(l["delivered"] for l in qty_lines):
-        delivery_stage = "full" if all(l["delivered"] >= l["ordered"] for l in qty_lines) else "partial"
+        all_lines_met = all(l["delivered"] >= l["ordered"] for l in qty_lines)
+        delivery_stage = "full" if all_lines_met and not any_partial_dn else "partial"
     else:
         # No comparable quantities: fall back to the DNs' own delivery status.
         from order_reconciliation import _delivery_stage
@@ -253,11 +265,18 @@ def compute_order(docs: list[dict], links: list[dict]) -> dict:
     payment_stage = ("none" if not invoice_rows or paid_total <= 0 else
                      "full" if all(r["status"] == "paid" for r in invoice_rows) else "partial")
 
-    # ── status updates to persist (forward-only) ─────────────────────────────
+    # ── status updates to persist ────────────────────────────────────────────
+    # PO delivery status follows its linked DNs both ways: it can also move
+    # back down (fulfilled -> partially_delivered -> approved/pending) when a
+    # DN is un-marked, removed, or was wrongly counted before. Manual terminal
+    # states (rejected/cancelled) are never touched.
     updates: list[dict] = []
     for po in pos:
         current = str(po["record"].get("po_status") or "").lower()
         target = {"full": "fulfilled", "partial": "partially_delivered"}.get(delivery_stage)
+        if target is None and dns and current in ("fulfilled", "partially_delivered"):
+            approved_by = str(po["record"].get("approved_by") or "").strip()
+            target = "approved" if approved_by and approved_by.upper() not in ("NULL", "NONE") else "pending"
         if target and current not in _PO_TERMINAL and current != target:
             updates.append({"document_id": po["document_id"], "field": "po_status", "from": current, "to": target})
     for row, inv in zip(invoice_rows, invoices):
