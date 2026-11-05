@@ -200,3 +200,195 @@ def reconcile_order(order_id: str, user_id: str) -> dict:
             print(f"[RECONCILE] failed to update {doc_id}: {err}", flush=True)
 
     return {"order_id": order_id, "changes": changes, "po_count": len(pos), "dn_count": len(dns)}
+
+
+# ── Linked orders (migration 012): PO -> DN -> Invoice -> Receipt ────────────
+# Orders are now the connected components of DocLink chain links
+# (document_links.py) instead of documents that happen to share an order_id
+# string, and are matched line-by-line by order_matching.compute_order.
+
+def _chain_inputs(user_id: str, records: list[dict] | None = None):
+    from dataset_manager import load_all_records
+    from document_links import prepare
+
+    records = records if records is not None else load_all_records(user_id=user_id)
+    prepared = {
+        str(r.get("document_id")): prepare(r)
+        for r in records
+        if _norm(r.get("document_type")) in ("po", "dn", "invoice", "receipt")
+    }
+    return records, prepared
+
+
+def _orders(prepared: dict, links: list[dict]) -> list[tuple[set, list[dict]]]:
+    """[(doc ids, active links)] for every connected order with 2+ documents."""
+    from document_links import ACTIVE_STATUSES, chain_component
+
+    active = [l for l in links if l["status"] in ACTIVE_STATUSES and l["from"] in prepared and l["to"] in prepared]
+    seen: set = set()
+    out = []
+    for doc_id in prepared:
+        if doc_id in seen:
+            continue
+        comp = chain_component(doc_id, active)
+        seen |= comp
+        if len(comp) > 1:
+            out.append((comp, [l for l in active if l["from"] in comp]))
+    return out
+
+
+def reconcile_tenant(user_id: str, dry_run: bool = False, records: list[dict] | None = None) -> dict:
+    """Relink a tenant's documents, match every linked order, and persist the
+    forward-only status updates (PO delivery, invoice payment). With dry_run
+    nothing is written and the report lists what would change."""
+    from dataset_manager import update_record_for_user
+    from document_links import load_tenant_links, relink_tenant
+    from order_matching import compute_order
+
+    records, prepared = _chain_inputs(user_id, records)
+    link_report = relink_tenant(user_id, dry_run=dry_run, records=records)
+    links = load_tenant_links(user_id)
+    if dry_run:  # DB still holds the old automatic links; use the proposal instead
+        links = [l for l in links if l["status"] in ("confirmed", "rejected")] + link_report["links"]
+
+    orders, all_updates = [], []
+    for comp, comp_links in _orders(prepared, links):
+        view = compute_order([prepared[d] for d in comp], comp_links)
+        orders.append({"documents": sorted(comp), "status": view["order_status"],
+                       "issues": [i["message_en"] for i in view["issues"]], "updates": view["updates"]})
+        all_updates.extend(view["updates"])
+
+    applied = []
+    if not dry_run:
+        by_doc: dict[str, dict] = {}
+        for u in all_updates:
+            by_doc.setdefault(u["document_id"], {})[u["field"]] = u["to"]
+        by_id = {str(r.get("document_id")): r for r in records}
+        for doc_id, fields in by_doc.items():
+            try:
+                update_record_for_user(user_id, doc_id, fields)
+                applied.append({"document_id": doc_id, **fields})
+                by_id.get(doc_id, {}).update(fields)  # keep the in-memory copy current
+            except Exception as err:  # never let reconciliation break a save
+                print(f"[RECONCILE] failed to update {doc_id}: {err}", flush=True)
+
+    return {"links": link_report, "orders": orders, "updates": all_updates, "applied": applied,
+            "records": records, "tenant_links": links}
+
+
+def _summary(prep: dict) -> dict:
+    rec = prep["record"]
+    return {
+        "document_id": prep["document_id"], "document_type": prep["type"],
+        "number": prep["refs"].get("doc_number") or "", "date": rec.get("date"),
+        "supplier_name": rec.get("supplier_name") or "", "amount": prep["total"],
+        "currency": rec.get("currency") or "LKR",
+    }
+
+
+def build_chain_view(document_id: str, user_id: str, records: list[dict] | None = None,
+                     links: list[dict] | None = None) -> Optional[dict]:
+    """The linked order around one document, for the document page: every
+    document in the chain, line-by-line ordered/delivered/invoiced, invoice
+    payments, issues, and pending link suggestions. Read-only.
+
+    Keeps the old build_order_view keys (order_id, documents, po_status,
+    delivery_stage, invoiced, paid, counts) so existing UI keeps working.
+    Returns None when the document has no links and no suggestions.
+    """
+    from document_links import chain_component, load_tenant_links
+    from order_matching import compute_order
+
+    _records, prepared = _chain_inputs(user_id, records)
+    if document_id not in prepared:
+        return None
+    links = links if links is not None else load_tenant_links(user_id)
+    comp = chain_component(document_id, links)
+    comp_links = [l for l in links if l["status"] in ("auto", "confirmed") and l["from"] in comp]
+    suggestions = [
+        dict(l, other=_summary(prepared[l["to"] if l["from"] in comp else l["from"]]))
+        for l in links
+        if l["status"] == "suggested" and (l["from"] in comp or l["to"] in comp)
+        and l["from"] in prepared and l["to"] in prepared
+    ]
+    if len(comp) < 2 and not suggestions:
+        return None
+
+    view = compute_order([prepared[d] for d in comp if d in prepared], comp_links)
+    pos = [d for d in view["documents"] if d["document_type"] == "po"]
+    po_update = next((u["to"] for u in view["updates"] if u["field"] == "po_status"), None)
+    anchor = pos[0] if pos else (view["documents"][0] if view["documents"] else {})
+    view.update({
+        "order_id": anchor.get("number") or anchor.get("document_id"),
+        "po_status": po_update or (_norm(pos[0].get("po_status")) if pos else None) or ("pending" if pos else None),
+        "invoiced": view["invoiced_stage"] != "none",
+        "paid": view["payment_stage"] == "full",
+        "links": comp_links,
+        "suggestions": suggestions,
+    })
+    return view
+
+
+def tenant_link_summary(user_id: str) -> dict[str, dict]:
+    """{document_id: {order, status, issues, linked}} for every linked document
+    -- one call for the Files list's chain chips and "Has issues" filter."""
+    views, links = tenant_order_views(user_id)
+    out: dict[str, dict] = {}
+    for v in views:
+        warn = [i for i in v["issues"] if i["severity"] in ("warning", "error")]
+        for d in v["document_ids"]:
+            out[d] = {"order": v["order_id"], "status": v["order_status"], "issues": len(warn),
+                      "linked": len(v["document_ids"]) - 1}
+    suggested = {l["from"] for l in links if l["status"] == "suggested"} | {l["to"] for l in links if l["status"] == "suggested"}
+    for d in suggested:
+        out.setdefault(d, {"order": None, "status": None, "issues": 0, "linked": 0})["suggestion"] = True
+    return out
+
+
+def tenant_order_views(user_id: str, records: list[dict] | None = None) -> tuple[list[dict], list[dict]]:
+    """Every linked order of a tenant, fully matched. Returns (views, links).
+    Each view is order_matching.compute_order() plus order_id (the anchor's
+    number), anchor_document_id and document_ids."""
+    from document_links import load_tenant_links
+    from order_matching import compute_order
+
+    _records, prepared = _chain_inputs(user_id, records)
+    links = load_tenant_links(user_id)
+    views = []
+    for comp, comp_links in _orders(prepared, links):
+        view = compute_order([prepared[d] for d in comp], comp_links)
+        pos = [d for d in view["documents"] if d["document_type"] == "po"]
+        anchor = pos[0] if pos else view["documents"][0]
+        view.update({
+            "order_id": anchor.get("number") or anchor.get("document_id"),
+            "anchor_document_id": anchor.get("document_id"),
+            "document_ids": sorted(comp),
+        })
+        views.append(view)
+    return views, links
+
+
+_SEVERITY_RANK = {"error": 0, "warning": 1, "info": 2}
+
+
+def tenant_order_issues(user_id: str) -> dict:
+    """Dashboard "Order issues" card: orders that need attention, worst first,
+    plus counts per kind of issue and pending link suggestions."""
+    views, links = tenant_order_views(user_id)
+    orders = []
+    counts = {"partial_delivery": 0, "over_billed": 0, "price_mismatch": 0, "unpaid_balance": 0,
+              "over_delivery": 0, "overpaid": 0, "item_not_on_po": 0, "delivered_not_invoiced": 0}
+    for v in views:
+        for i in v["issues"]:
+            counts[i["code"]] = counts.get(i["code"], 0) + 1
+        if not v["issues"]:
+            continue
+        issues = sorted(v["issues"], key=lambda i: _SEVERITY_RANK.get(i["severity"], 3))
+        orders.append({
+            "order_id": v["order_id"], "anchor_document_id": v["anchor_document_id"],
+            "order_status": v["order_status"], "counts": v["counts"], "totals": v["totals"],
+            "issues": [{k: i[k] for k in ("code", "severity", "message_en", "message_si")} for i in issues],
+        })
+    orders.sort(key=lambda o: (_SEVERITY_RANK.get(o["issues"][0]["severity"], 3), -len(o["issues"])))
+    suggestions = len({(l["from"], l["to"]) for l in links if l["status"] == "suggested"})
+    return {"orders": orders, "counts": counts, "suggestions": suggestions, "linked_orders": len(views)}
